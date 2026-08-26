@@ -133,6 +133,11 @@ badge auto-displays the newest gallery entry afterward, which matters for a
   drive the stock firmware over BLE (the app we're building); treat reflashing
   as a separate, brick-risky research project only worth it with a spare unit
   and a wired recovery plan.
+- **A full no-teardown runbook** for another agent to attempt the BLE OTA path
+  is in [`docs/OTA-RESEARCH.md`](docs/OTA-RESEARCH.md): recon → obtain recovery
+  image → prove the path with a benign reflash → only then a custom image, with
+  the brick analysis and the JieLi RCSP-OTA references (`Jieli-Tech/Android-JL_OTA`
+  et al.).
 
 ## Environment gotchas
 - This PC has **no working Bluetooth** (phantom AX210). Use the phone as bridge.
