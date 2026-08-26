@@ -103,10 +103,40 @@ Build **`factory-android-badges`**, a new repo based on
 ### Deliverables requested
 - WORKLOG.md + NOTES.md (this + companion). ← you are here.
 
+### Design derisk — watch-face mock (confirmed)
+- Rendered the Devin face as an HTML/canvas mock, injected into a fresh Chrome
+  tab on the phone via CDP, and screenshotted it. It matches the brief exactly:
+  Devin mark centred (its interior negative space renders correctly via the
+  SVG's evenodd fill), "$17.34" on-demand in grey below, outer green **day**
+  ring + inner amber **week** ring over faint tracks. Saved to
+  `docs/design-mock-devin.png`. This fixed the exact geometry to port to Flutter
+  (368 canvas, r=158/120, stroke 26, arcs from −90° clockwise, rounded caps).
+
+### Build — first scaffold pushed
+Created **github.com/jethac/factory-android-badges** (private) and pushed the
+initial scaffold (45 files):
+- Vendored verbatim from factory: `factory_client.dart`, `provider_marks.dart`,
+  `tile_groups.dart`, `assets/icons/devin.svg`, plus Android scaffolding +
+  launcher icons.
+- Ported the E87/JieLi protocol to Dart under `lib/e87/`: framing, CRC-16/XMODEM,
+  the byte-exact JieLi auth cipher (with the captured test vector in
+  `test/jieli_cipher_test.dart`), the 6-step handshake, and the 9-phase windowed
+  upload state machine. `e87_client.dart` uses `flutter_blue_plus` (MTU 517,
+  490-byte chunks → 503-byte frames, under the ATT limit that broke the web app).
+- `render/provider_face.dart` paints the watch face → 368×368 JPEG;
+  `render/devin_face.dart` maps a factory `Board` → the Devin `FaceModel`.
+- `badge_sync.dart` fetches once, renders once, pushes to every badge on a timer.
+- `main.dart` control-surface UI: preview, E87 scan, per-badge status, Sync now.
+
+### Honest status
+- **Unbuilt.** No Flutter toolchain in this environment, so nothing here has been
+  compiled or run. The protocol is a faithful transcription of the working Python
+  reference; the cipher/CRC ports are pinned by test vectors that a
+  `flutter test` will confirm.
+
 ### Next steps
-- [ ] Prototype the Devin watch-face render (derisk the visual cheaply).
-- [ ] Create the `factory-android-badges` repo.
-- [ ] Scaffold Flutter app; vendor `factory_client.dart`.
-- [ ] Port E87 protocol (BLE + JieLi cipher) to Dart.
-- [ ] Multi-badge sync manager; wire up UI.
-- [ ] On-device test via adb.
+- [ ] On a Flutter machine: `flutter pub get && flutter test` (cipher/CRC vectors).
+- [ ] Fill `lib/config.dart`: factory baseUrl/token, real Devin tile ids, badge ids.
+- [ ] `flutter run`; scan for the B-431, add its id, Sync now; watch a push land.
+- [ ] Verify the badge auto-displays the newest gallery image (watch-face behaviour).
+- [ ] Tune ring semantics / colours against the real numbers if needed.
