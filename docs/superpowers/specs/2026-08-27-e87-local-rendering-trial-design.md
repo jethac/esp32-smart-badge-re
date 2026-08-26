@@ -1,6 +1,6 @@
 # E87 local-rendering trial: Android controller and rewriteable badge firmware
 
-**Status:** Amended draft written for user review
+**Status:** Approved for implementation on 2026-08-27
 
 **Date:** 2026-08-27
 
