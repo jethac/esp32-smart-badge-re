@@ -1,0 +1,35 @@
+name: factory_badges
+description: "A phone BLE gateway that mirrors factory's Devin usage onto E87 round badges."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Provider marks are the same SVGs factory serves, drawn from the same files
+  # rather than traced into Dart, so the badge cannot drift from the page.
+  flutter_svg: ^2.3.0
+
+  # Rasterised badge face → JPEG (the badge stores/display a raw JPEG).
+  image: ^4.2.0
+
+  # BLE to the JieLi/E87 badges. Android BluetoothGatt at MTU 517 writes full
+  # frames — no 512-byte cap like Web Bluetooth on Chrome.
+  flutter_blue_plus: ^1.32.0
+
+  # Runtime BLUETOOTH_SCAN / BLUETOOTH_CONNECT / location prompts (Android 12+).
+  permission_handler: ^11.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icons/
