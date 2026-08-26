@@ -1,6 +1,6 @@
 # E87 local-rendering trial: Android controller and rewriteable badge firmware
 
-**Status:** Draft written for user review
+**Status:** Amended draft written for user review
 
 **Date:** 2026-08-27
 
@@ -22,6 +22,12 @@ The same custom firmware must remain rewriteable without showing the vendor's
 receiving UI. A physical staged hold on badge button 1 opens normal pairing at
 3 seconds and, if the hold continues, enters a minimal firmware-update mode at
 10 seconds. A 16-second hardware reset provides a hung-runtime fallback.
+
+External power must not replace the current face with the vendor battery gauge
+or redirect the badge into a charging-only application mode. While plugged in,
+the badge continues charging, keeps its normal renderer and BLE service active
+indefinitely, and suppresses automatic display sleep. Button 2 remains an
+explicit manual sleep/wake override.
 
 The deliverables are:
 
@@ -45,6 +51,8 @@ The deliverables are:
 - Bonding with one remembered phone and silent reconnect/update after bonding.
 - Local battery overlay, pairing UI, update UI, sleep/wake behavior, and the
   staged 3/10/16-second recovery behavior.
+- Charge-through operation: normal face and BLE remain available while the
+  battery charges, with no stock charging screen or charger-triggered sleep.
 - Assets compiled into the application image; no dependency on the stock
   `UIRES` partition.
 - A physically gated, minimal BLE maintenance mode that exposes JieLi's official
@@ -92,6 +100,12 @@ The deliverables are:
   OTA because that changes the partition/boot contract. This trial preserves
   the current single-bank layout. A/B is a later wired-repartitioning project,
   not an implied feature of this image.
+- The SDK separates electrical charger handling from charging-page presentation.
+  The custom image retains charger detection, charge start/close, full-charge,
+  low-voltage, and wake handling, but it does not route charger events to
+  `ID_WINDOW_BATCHARGE`, `IDLE_MODE_CHARGE`, or the stock charged-screen-saver
+  policy. Exact charging pins, limits, NVDC behavior, and thermal characteristics
+  remain board-profile facts that must be verified on sacrificial hardware.
 
 Every target-sensitive fact and its source is recorded in the firmware
 authoring guide. Implementation must preserve its **PROVEN**, **INFERRED**, and
@@ -214,7 +228,8 @@ ordinary BLE disconnect. A cold boot or non-retentive sleep discards it.
 - Existing bond but no values since boot: `WAITING FOR PHONE`.
 - Pairing window: `PAIRING` with a simple countdown; no QR code is required.
 - Battery tap: dim the current background and show a large integer percentage
-  for 2.5 seconds, then restore the prior screen.
+  for 2.5 seconds, with a compiled `bolt` glyph when the charger reports
+  charging or full, then restore the prior screen.
 - Update countdown: from 7 through 10 seconds show `KEEP HOLDING FOR UPDATE`
   and a visible countdown.
 - Update mode: `READY TO UPDATE — RELEASE BUTTON`, battery percentage, and
@@ -318,7 +333,48 @@ enters the lowest verified wakeable power state. Pressing button 2 wakes the
 badge. If the selected state retains RAM, the last face is redrawn; otherwise
 the badge cold-boots to `WAITING FOR PHONE` or `PAIR ME NOW` and the phone
 reconnect worker resends current values. Metrics are never written to flash to
-hide this distinction.
+hide this distinction. V1 has no ordinary inactivity timeout: button 2 is the
+only user-level path into sleep, although low-voltage and hardware safety logic
+may still force a protected shutdown.
+
+The power policy records whether sleep was entered explicitly by button 2.
+That `manual_sleep` state remains authoritative across charger insertion and
+removal: external power never wakes a manually sleeping badge, but button 2
+always can.
+
+### 7.4 Charge-through display mode
+
+Charger presence is an input to the normal application state machine, not a UI
+mode. The board adapter derives one `external_power` boolean from the SDK's
+charger-online signal and separately reports `charging`, `full`, or `fault` for
+the overlay and diagnostics; higher layers never read target RAM addresses
+directly. Booting with external power present follows the ordinary E87 boot path,
+shows `PAIR ME NOW`, `WAITING FOR PHONE`, or the current semantic face as
+appropriate, and starts the normal BLE service. It does not enter
+`IDLE_MODE_CHARGE`.
+
+On charger insertion, firmware executes the board's ordinary electrical charge
+start path without hiding the current screen, showing `ID_WINDOW_BATCHARGE`,
+disconnecting BLE, clearing semantic state, or resetting the application. If
+`manual_sleep` is set, the badge remains asleep until button 2 is pressed.
+
+While external power remains present and `manual_sleep` is clear, stock
+screen-saver, backlight-timeout, panel-sleep, and application auto-shutdown
+transitions are inhibited. The display stays at its normal configured
+brightness, BLE remains connectable, and semantic writes continue to redraw the
+face. This does not force periodic redraws and does not change charger current
+control, charge termination, full-charge detection, low-voltage protection, or
+any verified hardware safety mechanism.
+
+Button 2 sets or clears `manual_sleep` while plugged in using the same panel and
+BLE sleep/wake sequence as on battery; it does not stop charging. Charger events
+also never preempt pairing, countdown, or application-side maintenance UI. After
+loader handoff, the persistent loader owns presentation and its plugged-power
+behavior is verified separately. On unplug, the current visible/application
+state is preserved and ordinary battery-powered low-voltage protection remains
+active without a page change or reboot. A manually sleeping badge remains
+asleep; an awake badge continues running until button 2 or a safety condition
+stops it.
 
 ## 8. Battery behavior
 
@@ -337,6 +393,11 @@ charger topology on the physical model-1542 is not established, so V1 does not
 pretend it has a coulomb count or reliable charging compensation. Before release,
 the discharge table and ADC scale are checked against DMM readings at several
 loads and adjusted in the board profile if measured evidence requires it.
+
+The battery overlay uses the calibrated voltage-derived integer percentage and
+separately shows the hardware charging/full state with the `bolt` glyph. It does
+not claim remaining time or coulomb-count accuracy. Charging-table selection is
+enabled only after its relationship to the physical model-1542 has been measured.
 
 The maintenance screen remains reachable at any battery level so it can explain
 the problem, but loader handoff is refused below the calibrated 50-percent point
@@ -405,6 +466,12 @@ validated wired/programmer migration; it is outside this trial.
   validated artifact.
 - Display initialization failure keeps the backlight off and leaves BLE/update
   recovery reachable; it must not enter a reset loop.
+- Charger insertion, charge start, full-charge, charge close, and unplug events
+  preserve the current application/UI state. A charger event must never invoke
+  the stock charging page or erase the RAM-only semantic face.
+- A failed or unavailable charger-status input falls back to ordinary
+  awake/manual-sleep presentation policy and omits the `bolt` glyph; it must not
+  alter electrical charging controls or suppress low-voltage protection.
 - Watchdog resets are recorded for diagnosis but do not masquerade as the
   deliberate `P33_PPINR_RST` maintenance-entry cause.
 - Low voltage blocks loader handoff. If voltage fails after handoff, the next
@@ -423,7 +490,8 @@ validated wired/programmer migration; it is outside this trial.
   packets, and idempotent resend behavior.
 - Firmware C tests for packet validation, atomic state commit, the 3/7/10/16
   timing state machine, reset-source routing, battery interpolation, maintenance
-  entry, and every pre-loader abort path.
+  entry, every pre-loader abort path, and all combinations of external power and
+  `manual_sleep`.
 - Golden renders for 0, 1, 50, 99, and 100 percent on both rings, plus battery,
   pairing, countdown, and update screens. Pixel tests check fixed icons,
   clockwise geometry, round caps, clipping, and credit formatting.
@@ -433,7 +501,9 @@ validated wired/programmer migration; it is outside this trial.
 - Container unpack/repack verification, hashes, profile check, Qix wrapper CRC,
   and an exact single-bank loader/update dry run using the output artifact.
 - Static checks proving normal firmware has no stock UIRES dependency and the
-  Android normal path cannot invoke update writes.
+  Android normal path cannot invoke update writes. A link/source assertion also
+  proves that charger events cannot select `ID_WINDOW_BATCHARGE` or
+  `IDLE_MODE_CHARGE` in the E87 application.
 
 ### Charged sacrificial-badge ladder
 
@@ -447,15 +517,22 @@ validated wired/programmer migration; it is outside this trial.
 5. Measure released/button-1/button-2/both ADC clusters across all available
    badges; then validate tap, pairing, countdown, 10-second update, and
    16-second hung-runtime reset-source recovery.
-6. Compare battery voltage with a DMM and validate the overlay timeout.
-7. Bond the Redmi, send boundary metric packets, disconnect/reconnect silently,
+6. Compare battery voltage with a DMM and validate the overlay timeout and
+   charging glyph.
+7. Test boot while plugged in, insertion/removal while awake and while manually
+   asleep, button-2 sleep/wake while charging, charge completion, and metric
+   writes throughout. Run an eight-hour plugged-in display-and-BLE soak while
+   logging current, battery voltage, enclosure/battery temperature, charger
+   state, disconnects, and unintended page or sleep transitions. Stop the test
+   immediately on abnormal heat, charge-current behavior, swelling, or odor.
+8. Bond the Redmi, send boundary metric packets, disconnect/reconnect silently,
    and verify no receiving graphic appears.
-8. Enter update mode physically and exercise every pre-loader cancel point.
+9. Enter update mode physically and exercise every pre-loader cancel point.
    After preserving a sacrificial recovery route, interrupt a loader transfer,
    rediscover its update advertisement, resume the same artifact, and boot it.
-9. Complete a second single-bank rewrite from the newly installed application
+10. Complete a second single-bank rewrite from the newly installed application
    to prove the staged maintenance path is genuinely reusable.
-10. Repeat normal sync and update tests on the Z Fold 7 after Redmi validation.
+11. Repeat normal sync and update tests on the Z Fold 7 after Redmi validation.
 
 Any failure stops the ladder at that stage. Results, hashes, current draw,
 photos, and captured BLE traces are appended to the firmware authoring guide or
@@ -476,6 +553,12 @@ The trial is complete when:
 - a deliberately hung runtime reaches update mode through the 16-second reset
   and reset-source early-boot route;
 - button 2 sleeps and wakes the device with the documented RAM-retention result;
+- booting or inserting external power never replaces the normal face with a
+  charging page; while plugged in and not manually asleep, the face and BLE
+  remain active through an eight-hour soak and continue accepting metric writes;
+- button 2 can manually sleep and wake the badge while it continues charging,
+  and unplugging preserves the awake/manual-sleep state without rebooting or
+  changing the current face;
 - every pre-loader cancel returns safely to maintenance or normal mode, and an
   interrupted post-handoff transfer reconnects to the loader and resumes;
 - a verified single-bank update boots, and the new image accepts another update;

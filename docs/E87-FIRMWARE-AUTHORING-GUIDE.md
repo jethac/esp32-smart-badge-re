@@ -585,6 +585,64 @@ button wake source. On wake: restore clocks and DBI state, exit panel sleep with
 the recovered delays, then redraw. Measure current in every state; successful
 API calls are not a power measurement.
 
+### 9.1 Charge-through display operation
+
+The stock badge's full-screen battery gauge on USB insertion proves that the
+physical unit detects external power and executes a charge path. It does not by
+itself prove charger pins, current limits, NVDC mode, or thermal limits. The
+model-1552 target disassembly provides stronger application-level evidence
+(**PROVEN for model 1552; model-1542 applicability remains UNVERIFIED**):
+
+- charge-state byte `0x00103151` uses 0 offline, 1 low, 2 charging, and 3 full;
+- charger dispatcher `0x0C03C848`, state derivation `0x0C03C990`, and full-state
+  logic `0x0C03C920` are separate from charging-page function `0x0C011B52`;
+- code at `0x0C014A58` treats states greater than 1 as charger-online.
+
+The pinned official SDK exposes the same separation (**PROVEN SDK seam; exact
+target configuration remains UNVERIFIED**):
+
+- `SDK/cpu/br35/charge/charge_config.c:10-81` owns charger wake sources,
+  `charge_data`, `charge_init`, and the online power rail selection;
+- `SDK/apps/watch/battery/charge.c:74-81,188-337` owns electrical charge
+  start/close and insertion/removal handling;
+- `SDK/apps/watch/battery/charge.c:339-452` separately hides the current window
+  and selects `ID_WINDOW_BATCHARGE` for charge events;
+- `SDK/apps/watch/app_main.c:375-411` may route a plugged boot to
+  `APP_MODE_IDLE/IDLE_MODE_CHARGE`, depending on board configuration;
+- `SDK/apps/watch/mode/power_on/power_on.c:33-60` avoids the normal dial while a
+  charger is online, and `SDK/apps/watch/ui/jlui_app/ui_screen_saver.c:140-149`
+  applies a separate charged-screen policy.
+
+For the local-rendering trial, charge-through operation is **REQUIRED BY THE
+APPROVED DESIGN but hardware-unverified until the sacrificial-badge ladder**.
+Keep the electrical charge and wake path, but replace the stock mode/UI routing
+with one explicit policy:
+
+| Event/state | Required application result |
+|---|---|
+| Boot with charger online | Enter normal E87 face and BLE service; never `IDLE_MODE_CHARGE` |
+| Insert while awake | Continue the current face/BLE state and start charging; never show `ID_WINDOW_BATCHARGE` |
+| Insert while button-2 `manual_sleep` is set | Continue charging but remain asleep until button 2 |
+| Stay plugged and awake | Inhibit stock panel/backlight/application timeouts; continue BLE writes |
+| Button 2 while plugged | Sleep/wake panel and BLE without closing the charger |
+| Unplug while awake | Preserve the face and continue until button 2 or a safety condition stops it |
+| Unplug during `manual_sleep` | Remain asleep until button 2 |
+
+Do not rely only on global timeout macros. Make charger presence and
+`manual_sleep` inputs to a small testable power-policy function, and ensure all
+charger events bypass stock charging-page actions. The trial has no ordinary
+inactivity timeout; button 2 is its user-level sleep control. Do not disable
+charge termination, full detection, low-voltage protection, or any measured
+current/thermal safeguard to obtain an always-on screen.
+
+Hardware validation must include boot-plugged, insert/remove in every awake and
+manual-sleep state, metric writes and reconnection while charging, button-2
+sleep/wake without stopping charge current, full-charge termination, and an
+eight-hour display-plus-BLE soak. Log supply current, battery voltage, charger
+state, disconnects, unintended UI/power transitions, and enclosure/battery
+temperature; stop immediately on abnormal heat, current behavior, swelling, or
+odor.
+
 ## 10. Android host role
 
 For the custom firmware, Android is the network/provisioning host, not the
