@@ -19,8 +19,12 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import java.lang.ref.ReferenceQueue;
+import java.lang.ref.WeakReference;
 import java.util.Arrays;
-import java.util.IdentityHashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
 import java.util.UUID;
 import net.jethachan.factory_badges.diagnostic.UserVisibleError;
 import net.jethachan.factory_badges.model.BadgeState;
@@ -105,13 +109,14 @@ public final class NormalGattClient implements AutoCloseable {
                 listener);
         this.bondReceiver = new BondReceiver();
         try {
-            if (Build.VERSION.SDK_INT >= 33) {
+            int receiverFlags = receiverFlagsForApi(Build.VERSION.SDK_INT);
+            if (receiverFlags != 0) {
                 this.applicationContext.registerReceiver(
                         bondReceiver,
                         new IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED),
                         null,
                         bleHandler,
-                        Context.RECEIVER_NOT_EXPORTED);
+                        receiverFlags);
             } else {
                 this.applicationContext.registerReceiver(
                         bondReceiver,
@@ -184,6 +189,22 @@ public final class NormalGattClient implements AutoCloseable {
         }
     }
 
+    static int receiverFlagsForApi(int sdkInt) {
+        if (sdkInt < 31) {
+            throw new IllegalArgumentException("sdkInt must be at least 31");
+        }
+        return sdkInt >= 33 ? Context.RECEIVER_EXPORTED : 0;
+    }
+
+    static boolean addressesMatch(String selectedAddress, String changedAddress) {
+        return selectedAddress != null && selectedAddress.equals(changedAddress);
+    }
+
+    static boolean callbackEligible(
+            boolean gattMatches, long generation, long activeGeneration) {
+        return gattMatches && generation > 0 && generation == activeGeneration;
+    }
+
     static Core.CharacteristicAccess accessFromProperties(int properties) {
         return new Core.CharacteristicAccess(
                 (properties & BluetoothGattCharacteristic.PROPERTY_READ) != 0,
@@ -204,7 +225,12 @@ public final class NormalGattClient implements AutoCloseable {
         byte[] copy = Arrays.copyOf(value, value.length);
         int writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT;
         if (sdkInt >= 33) {
-            return port.writeModern(copy, writeType) == BluetoothStatusCodes.SUCCESS;
+            int result = port.writeModern(copy, writeType);
+            if (result == BluetoothStatusCodes
+                    .ERROR_MISSING_BLUETOOTH_CONNECT_PERMISSION) {
+                throw new PermissionFailure();
+            }
+            return result == BluetoothStatusCodes.SUCCESS;
         }
         port.setLegacyWriteType(writeType);
         if (!port.setLegacyValue(copy)) {
@@ -301,6 +327,112 @@ public final class NormalGattClient implements AutoCloseable {
         private static final long serialVersionUID = 1L;
     }
 
+    static final class DriverSlot<T> {
+        private T attachment;
+        private boolean closed;
+
+        synchronized void attach(T value) {
+            if (value == null) {
+                throw new IllegalArgumentException("attachment must not be null");
+            }
+            if (closed) {
+                throw new IllegalStateException("driver slot is closed");
+            }
+            if (attachment != null) {
+                throw new IllegalStateException("attachment already set");
+            }
+            attachment = value;
+        }
+
+        synchronized boolean matches(T candidate) {
+            return candidate != null && candidate == attachment;
+        }
+
+        synchronized T currentOrNull() {
+            return attachment;
+        }
+
+        synchronized T require() {
+            if (closed || attachment == null) {
+                throw new IllegalStateException("driver attachment is unavailable");
+            }
+            return attachment;
+        }
+
+        synchronized T closeAndTake() {
+            if (closed) {
+                return null;
+            }
+            closed = true;
+            T previous = attachment;
+            attachment = null;
+            return previous;
+        }
+    }
+
+    static final class WeakIdentityHistory<T> {
+        private final ReferenceQueue<T> queue = new ReferenceQueue<T>();
+        private final Set<IdentityReference<T>> entries =
+                new HashSet<IdentityReference<T>>();
+
+        boolean contains(T value) {
+            if (value == null) {
+                return false;
+            }
+            purgeStaleEntries();
+            return entries.contains(new IdentityReference<T>(value, null));
+        }
+
+        void add(T value) {
+            if (value == null) {
+                throw new IllegalArgumentException("value must not be null");
+            }
+            purgeStaleEntries();
+            entries.add(new IdentityReference<T>(value, queue));
+        }
+
+        private void purgeStaleEntries() {
+            Object cleared;
+            while ((cleared = queue.poll()) != null) {
+                entries.remove(cleared);
+            }
+            Iterator<IdentityReference<T>> iterator = entries.iterator();
+            while (iterator.hasNext()) {
+                if (iterator.next().get() == null) {
+                    iterator.remove();
+                }
+            }
+        }
+
+        private static final class IdentityReference<T>
+                extends WeakReference<T> {
+            private final int identityHash;
+
+            IdentityReference(T value, ReferenceQueue<T> queue) {
+                super(value, queue);
+                identityHash = System.identityHashCode(value);
+            }
+
+            @Override
+            public int hashCode() {
+                return identityHash;
+            }
+
+            @Override
+            public boolean equals(Object other) {
+                if (this == other) {
+                    return true;
+                }
+                if (!(other instanceof IdentityReference)) {
+                    return false;
+                }
+                Object value = get();
+                return value != null
+                        && value == ((IdentityReference<?>) other).get();
+            }
+        }
+    }
+
     static final class Core implements BondCoordinator.Listener {
         interface Connector {
             GattDriver connect(long generation);
@@ -374,8 +506,8 @@ public final class NormalGattClient implements AutoCloseable {
         private final Clock clock;
         private final Listener listener;
         private final BondCoordinator bondCoordinator;
-        private final IdentityHashMap<GattDriver, Boolean> usedDrivers =
-                new IdentityHashMap<GattDriver, Boolean>();
+        private final WeakIdentityHistory<GattDriver> usedDrivers =
+                new WeakIdentityHistory<GattDriver>();
 
         private long generationCounter;
         private long activeGeneration;
@@ -496,12 +628,12 @@ public final class NormalGattClient implements AutoCloseable {
                 closeUnusedDriver(driver);
                 return;
             }
-            if (driver == null || usedDrivers.containsKey(driver)) {
+            if (driver == null || usedDrivers.contains(driver)) {
                 terminalError(new UserVisibleError(
                         UserVisibleError.Code.CONNECT_FAILED));
                 return;
             }
-            usedDrivers.put(driver, Boolean.TRUE);
+            usedDrivers.add(driver);
             activeDriver = driver;
             queue = new GattOperationQueue(driver, scheduler);
             nextToken = 1L;
@@ -918,7 +1050,7 @@ public final class NormalGattClient implements AutoCloseable {
             if (driver == null || driver == activeDriver) {
                 return;
             }
-            usedDrivers.put(driver, Boolean.TRUE);
+            usedDrivers.add(driver);
             try {
                 driver.disconnect();
             } catch (RuntimeException ignored) {
@@ -1233,7 +1365,9 @@ public final class NormalGattClient implements AutoCloseable {
                 return;
             }
             try {
-                if (!selected.getAddress().equals(changedDevice.getAddress())) {
+                String selectedAddress = selected.getAddress();
+                String changedAddress = changedDevice.getAddress();
+                if (!addressesMatch(selectedAddress, changedAddress)) {
                     return;
                 }
             } catch (SecurityException denied) {
@@ -1261,21 +1395,15 @@ public final class NormalGattClient implements AutoCloseable {
     }
 
     private final class AndroidGattDriver implements Core.GattDriver {
-        private BluetoothGatt gatt;
-        private boolean closed;
+        private final DriverSlot<BluetoothGatt> slot =
+                new DriverSlot<BluetoothGatt>();
 
         void attach(BluetoothGatt attachedGatt) {
-            if (attachedGatt == null) {
-                throw new IllegalArgumentException("gatt must not be null");
-            }
-            if (gatt != null) {
-                throw new IllegalStateException("gatt already attached");
-            }
-            gatt = attachedGatt;
+            slot.attach(attachedGatt);
         }
 
         boolean matches(BluetoothGatt callbackGatt) {
-            return callbackGatt != null && callbackGatt == gatt;
+            return slot.matches(callbackGatt);
         }
 
         @Override
@@ -1375,8 +1503,8 @@ public final class NormalGattClient implements AutoCloseable {
 
         @Override
         public void disconnect() {
-            BluetoothGatt attachedGatt = gatt;
-            if (attachedGatt == null || closed) {
+            BluetoothGatt attachedGatt = slot.currentOrNull();
+            if (attachedGatt == null) {
                 return;
             }
             try {
@@ -1388,21 +1516,14 @@ public final class NormalGattClient implements AutoCloseable {
 
         @Override
         public void close() {
-            if (closed) {
-                return;
-            }
-            closed = true;
-            BluetoothGatt attachedGatt = gatt;
+            BluetoothGatt attachedGatt = slot.closeAndTake();
             if (attachedGatt != null) {
                 attachedGatt.close();
             }
         }
 
         private BluetoothGatt requireGatt() {
-            if (gatt == null || closed) {
-                throw new IllegalStateException("GATT is unavailable");
-            }
-            return gatt;
+            return slot.require();
         }
     }
 
@@ -1556,41 +1677,28 @@ public final class NormalGattClient implements AutoCloseable {
         }
 
         private void route(BluetoothGatt callbackGatt, Runnable callback) {
-            if (!driver.matches(callbackGatt)) {
-                closeStaleDriver();
-                return;
-            }
             if (Looper.myLooper() == bleHandler.getLooper()) {
-                routeOnBleThread(callback);
+                routeOnBleThread(callbackGatt, callback);
             } else if (!bleHandler.post(new Runnable() {
                 @Override
                 public void run() {
-                    routeOnBleThread(callback);
+                    routeOnBleThread(callbackGatt, callback);
                 }
             })) {
                 driver.close();
             }
         }
 
-        private void routeOnBleThread(Runnable callback) {
-            if (generation != core.activeGeneration()) {
+        private void routeOnBleThread(
+                BluetoothGatt callbackGatt, Runnable callback) {
+            if (!callbackEligible(
+                    driver.matches(callbackGatt),
+                    generation,
+                    core.activeGeneration())) {
                 driver.close();
                 return;
             }
             callback.run();
-        }
-
-        private void closeStaleDriver() {
-            if (Looper.myLooper() == bleHandler.getLooper()) {
-                driver.close();
-            } else {
-                bleHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        driver.close();
-                    }
-                });
-            }
         }
     }
 }

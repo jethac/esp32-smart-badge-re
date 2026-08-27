@@ -8,6 +8,7 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import android.bluetooth.BluetoothStatusCodes;
 import java.lang.reflect.Field;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -477,6 +478,55 @@ public final class NormalGattClientTest {
     }
 
     @Test
+    public void intentionalDisconnectClosesOnceInEveryLivePhase() {
+        for (int mode = 0; mode < 6; mode++) {
+            Harness h = new Harness(BondState.BONDED);
+            FakeDriver driver = h.addDriver();
+            if (mode == 3) {
+                driver.table.addBattery();
+            }
+            long generation = h.core.connect();
+            if (mode >= 1) {
+                h.core.onConnectionStateChanged(generation, driver, 0, true);
+            }
+            if (mode >= 2) {
+                h.core.onServicesDiscovered(generation, driver, 0);
+            }
+            if (mode >= 3) {
+                h.build(generation, driver, VALID_BUILD, 0);
+            }
+            if (mode == 5) {
+                assertTrue(h.core.writeState(new BadgeState(4, 5, 1727)));
+            }
+
+            h.core.disconnect();
+            h.core.disconnect();
+
+            assertEquals(1, driver.disconnectCalls);
+            assertEquals(1, driver.closeCalls);
+            assertEquals(0, h.listener.disconnects.size());
+            assertEquals(0, h.listener.errors.size());
+            assertEquals(0, h.listener.acknowledged.size());
+        }
+    }
+
+    @Test
+    public void liveDriverIdentityCannotBeReusedAfterTeardown() {
+        Harness h = new Harness(BondState.BONDED);
+        FakeDriver driver = h.addDriver();
+        h.core.connect();
+        h.core.disconnect();
+        h.connector.drivers.addLast(driver);
+
+        h.core.connect();
+
+        assertEquals(UserVisibleError.Code.CONNECT_FAILED,
+                h.listener.onlyError().code());
+        assertEquals(1, driver.disconnectCalls);
+        assertEquals(1, driver.closeCalls);
+    }
+
+    @Test
     public void wrongKindAndUuidCallbacksPreserveActiveQueueToken() {
         Harness h = new Harness(BondState.BONDED);
         FakeDriver driver = h.addDriver();
@@ -592,6 +642,20 @@ public final class NormalGattClientTest {
             assertEquals(0, h.listener.acknowledged.size());
             assertEquals(1, driver.closeCalls);
         }
+    }
+
+    @Test
+    public void modernReturnedPermissionStatusMapsBluetoothPermissionMissing() {
+        Harness h = new Harness(BondState.BONDED);
+        FakeDriver driver = h.addDriver();
+        driver.modernWriteStatus = Integer.valueOf(
+                BluetoothStatusCodes.ERROR_MISSING_BLUETOOTH_CONNECT_PERMISSION);
+        h.ready(driver);
+
+        assertTrue(h.core.writeState(new BadgeState(4, 5, 1727)));
+        assertEquals(
+                UserVisibleError.Code.BLUETOOTH_PERMISSION_MISSING,
+                h.listener.onlyError().code());
     }
 
     @Test
@@ -741,6 +805,7 @@ public final class NormalGattClientTest {
 
         boolean writeResult = true;
         RuntimeException writeFailure;
+        Integer modernWriteStatus;
         @Override public boolean discoverServices() {
             discoverCalls++;
             if (discoverFailure != null) {
@@ -768,6 +833,11 @@ public final class NormalGattClientTest {
             if (writeFailure != null) {
                 throw writeFailure;
             }
+            if (modernWriteStatus != null) {
+                return NormalGattClient.writeAcknowledgedForApi(
+                        33, value,
+                        new ModernStatusWritePort(modernWriteStatus.intValue()));
+            }
             writes.add(new WriteCall(
                     Key.of(service, characteristic),
                     Arrays.copyOf(value, value.length)));
@@ -780,6 +850,31 @@ public final class NormalGattClientTest {
 
         @Override public void close() {
             closeCalls++;
+        }
+    }
+
+    private static final class ModernStatusWritePort
+            implements NormalGattClient.WritePort {
+        private final int status;
+
+        ModernStatusWritePort(int status) {
+            this.status = status;
+        }
+
+        @Override public void setLegacyWriteType(int type) {
+            throw new AssertionError("legacy path");
+        }
+
+        @Override public boolean setLegacyValue(byte[] value) {
+            throw new AssertionError("legacy path");
+        }
+
+        @Override public boolean writeLegacy() {
+            throw new AssertionError("legacy path");
+        }
+
+        @Override public int writeModern(byte[] value, int type) {
+            return status;
         }
     }
 
