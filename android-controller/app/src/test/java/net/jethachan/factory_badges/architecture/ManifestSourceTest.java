@@ -90,6 +90,52 @@ public final class ManifestSourceTest {
                         storageRemovalFixture(
                                 " tools:targetApi=\"33\"", narrow, narrow, "")));
     }
+    // Mutation caught: the service stays at the obsolete package path or becomes exposed.
+    @Test
+    public void sourceAndMergedManifestsDeclareOnlyPrivateConnectedDeviceService()
+            throws Exception {
+        String source = new String(Files.readAllBytes(
+                Paths.get("app/src/main/AndroidManifest.xml")),
+                StandardCharsets.UTF_8);
+        String merged = new String(Files.readAllBytes(Paths.get(
+                "app/build/intermediates/merged_manifests/debug/"
+                        + "processDebugManifest/AndroidManifest.xml")),
+                StandardCharsets.UTF_8);
+
+        assertBadgeSyncService(source, ".sync.BadgeSyncService");
+        assertBadgeSyncService(
+                merged,
+                "net.jethachan.factory_badges.sync.BadgeSyncService");
+    }
+
+    // Mutation caught: an exported, wrong-type, or intent-filter service is accepted.
+    @Test
+    public void serviceAuditRejectsUnsafeComponentShapes() {
+        assertThrows(AssertionError.class, () -> assertBadgeSyncService(
+                serviceFixture("true", "connectedDevice", ""),
+                ".sync.BadgeSyncService"));
+        assertThrows(AssertionError.class, () -> assertBadgeSyncService(
+                serviceFixture("false", "dataSync", ""),
+                ".sync.BadgeSyncService"));
+        assertThrows(AssertionError.class, () -> assertBadgeSyncService(
+                serviceFixture(
+                        "false",
+                        "connectedDevice",
+                        "<intent-filter><action android:name=\"example\" />"
+                                + "</intent-filter>"),
+                ".sync.BadgeSyncService"));
+    }
+
+    // Mutation caught: a receiver or provider introduces an alternate background entry point.
+    @Test
+    public void serviceAuditRejectsAdditionalBackgroundComponents() {
+        assertThrows(AssertionError.class, () -> assertBadgeSyncService(
+                serviceFixture("false", "connectedDevice", "<receiver />"),
+                ".sync.BadgeSyncService"));
+        assertThrows(AssertionError.class, () -> assertBadgeSyncService(
+                serviceFixture("false", "connectedDevice", "<provider />"),
+                ".sync.BadgeSyncService"));
+    }
 
     @Test
     public void mergedDebugManifestHasNoForbiddenPermissionsOrCleartextTraffic() throws Exception {
@@ -139,6 +185,54 @@ public final class ManifestSourceTest {
         List<String> mergedPermissions = effectivePermissions(xml, false);
         assertFalse(sourcePermissions.contains("android.permission.INTERNET"));
         assertTrue(mergedPermissions.contains("android.permission.INTERNET"));
+    }
+    private static void assertBadgeSyncService(String xml, String expectedName)
+            throws Exception {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(true);
+        Element manifest = factory.newDocumentBuilder().parse(
+                new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)))
+                .getDocumentElement();
+        NodeList applications = manifest.getElementsByTagName("application");
+        assertEquals("one application", 1, applications.getLength());
+        Element application = (Element) applications.item(0);
+        assertEquals("usesCleartextTraffic is forbidden",
+                "", application.getAttributeNS(
+                        ANDROID_NAMESPACE, "usesCleartextTraffic"));
+
+        NodeList services = application.getElementsByTagName("service");
+        assertEquals("one service", 1, services.getLength());
+        Element service = (Element) services.item(0);
+        assertEquals("badge sync service name",
+                expectedName,
+                service.getAttributeNS(ANDROID_NAMESPACE, "name"));
+        assertEquals("badge sync service must not be exported",
+                "false",
+                service.getAttributeNS(ANDROID_NAMESPACE, "exported"));
+        assertEquals("badge sync service foreground type",
+                "connectedDevice",
+                service.getAttributeNS(
+                        ANDROID_NAMESPACE, "foregroundServiceType"));
+        assertEquals("badge sync service has no intent filter",
+                0,
+                service.getElementsByTagName("intent-filter").getLength());
+        assertEquals("no receiver",
+                0,
+                application.getElementsByTagName("receiver").getLength());
+        assertEquals("no provider",
+                0,
+                application.getElementsByTagName("provider").getLength());
+    }
+
+    private static String serviceFixture(
+            String exported, String foregroundType, String child) {
+        return "<manifest xmlns:android=\"" + ANDROID_NAMESPACE + "\">"
+                + "<application><service "
+                + "android:name=\".sync.BadgeSyncService\" "
+                + "android:exported=\"" + exported + "\" "
+                + "android:foregroundServiceType=\"" + foregroundType + "\">"
+                + child
+                + "</service></application></manifest>";
     }
 
     private static void assertStorageRemovalLintIgnoresAreNarrow(String xml)

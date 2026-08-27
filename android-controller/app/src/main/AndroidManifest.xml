@@ -28,7 +28,7 @@
         <activity android:name=".MainActivity" android:exported="true" />
         <activity android:name=".MaintenanceActivity" android:exported="false" />
         <service
-            android:name=".BadgeSyncService"
+            android:name=".sync.BadgeSyncService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
     </application>

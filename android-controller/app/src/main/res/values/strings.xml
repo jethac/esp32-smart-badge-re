@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="badge_sync_channel_name">Badge sync</string>
+    <string name="badge_sync_notification_title">Badge sync active</string>
+    <string name="badge_sync_notification_waiting">Waiting for a badge</string>
+    <string name="badge_sync_notification_connecting">Connecting to badge</string>
+    <string name="badge_sync_notification_ready">Badge connected</string>
+    <string name="badge_sync_notification_retry">Reconnecting to badge</string>
+    <string name="badge_sync_notification_error">Badge sync needs attention</string>
+</resources>
