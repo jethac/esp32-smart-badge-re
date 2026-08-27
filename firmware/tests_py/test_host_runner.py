@@ -44,13 +44,21 @@ class HostRunnerIntegrationTest(unittest.TestCase):
     def relative(self, path: Path) -> str:
         return path.relative_to(REPO_ROOT).as_posix()
 
-    def run_runner(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+    def run_runner(
+        self,
+        *arguments: str,
+        runner: Path = RUNNER,
+        cwd: Path = REPO_ROOT,
+        extra_environment: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["LC_ALL"] = "C"
         environment["TZ"] = "UTC"
+        if extra_environment is not None:
+            environment.update(extra_environment)
         return subprocess.run(
-            [sys.executable, str(RUNNER), *arguments],
-            cwd=REPO_ROOT,
+            [sys.executable, str(runner), *arguments],
+            cwd=cwd,
             env=environment,
             check=False,
             shell=False,
@@ -84,6 +92,53 @@ class HostRunnerIntegrationTest(unittest.TestCase):
         )
         compiler.chmod(compiler.stat().st_mode | stat.S_IXUSR)
         return str(compiler), marker
+
+    def make_environment_spy_compiler(self) -> tuple[str, Path]:
+        marker = self.root / "compiler-environment"
+        compiler = self.root / "environment-spy-compiler"
+        env_executable = shutil.which("env") or "/usr/bin/env"
+        compiler.write_text(
+            "#!/bin/sh\n"
+            f"'{env_executable}' | sort > '{marker.as_posix()}'\n"
+            f"exec '{HOST_CC}' \"$@\"\n",
+            encoding="utf-8",
+        )
+        compiler.chmod(compiler.stat().st_mode | stat.S_IXUSR)
+        return str(compiler), marker
+
+    def make_sandbox(self, name: str = "sandbox") -> Path:
+        sandbox = self.root / name
+        inputs = (
+            "firmware/tools/test-host.py",
+            "firmware/locks/sdk.lock.json",
+            "firmware/host/suites.json",
+            "firmware/host/test_support.h",
+            "firmware/host/test_main.c",
+            "firmware/host/test_harness.c",
+            "firmware/overlay/SDK/apps/watch/include/e87/e87_types.h",
+        )
+        for spelling in inputs:
+            destination = sandbox / spelling
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(REPO_ROOT / spelling, destination)
+        (sandbox / "firmware" / ".host-build").mkdir(parents=True)
+        return sandbox
+
+    def run_sandbox_with_spy(
+        self, sandbox: Path
+    ) -> tuple[subprocess.CompletedProcess[str], Path]:
+        compiler, marker = self.make_spy_compiler()
+        result = self.run_runner(
+            "--suite",
+            "harness",
+            "--cc",
+            compiler,
+            "--build-root",
+            "firmware/.host-build/test-output",
+            runner=sandbox / "firmware" / "tools" / "test-host.py",
+            cwd=sandbox,
+        )
+        return result, marker
 
     def write_manifest(self, value: dict[str, object], name: str) -> str:
         path = self.root / name
@@ -170,7 +225,28 @@ class HostRunnerIntegrationTest(unittest.TestCase):
             ],
             [entry["path"] for entry in receipt["headers"]],
         )
-        self.assertIn("-DE87_HOST_TEST=1", receipt["compileArguments"])
+        self.assertEqual(
+            [
+                receipt["compiler"]["resolvedPath"],
+                "-std=c11",
+                "-O0",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                "-pedantic",
+                "-fno-common",
+                "-DE87_HOST_TEST=1",
+                "-I",
+                "firmware/host",
+                "-I",
+                "firmware/overlay/SDK/apps/watch/include",
+                "firmware/host/test_main.c",
+                "firmware/host/test_harness.c",
+                "-o",
+                "BUILD/host-test",
+            ],
+            receipt["compileArguments"],
+        )
         self.assertEqual(0, receipt["process"]["exitStatus"])
 
     def test_unknown_suite_is_rejected_before_compiler_lookup(self) -> None:
@@ -532,6 +608,133 @@ class HostRunnerIntegrationTest(unittest.TestCase):
                 fake_root.rmdir()
             except OSError:
                 pass
+
+    def test_fixed_test_main_symlink_is_rejected_before_compiler_identity(self) -> None:
+        sandbox = self.make_sandbox("main-symlink")
+        test_main = sandbox / "firmware" / "host" / "test_main.c"
+        outside = self.root / "outside-test-main.c"
+        shutil.copy2(test_main, outside)
+        test_main.unlink()
+        os.symlink(outside, test_main)
+
+        result, marker = self.run_sandbox_with_spy(sandbox)
+
+        self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+        self.assertIn("test_main.c", result.stderr)
+        self.assertIn("symlink", result.stderr.lower())
+        self.assertFalse(marker.exists())
+
+    def test_recursive_header_graph_is_rejected_before_compiler_identity(self) -> None:
+        mutations = ("symlink", "missing", "escape", "nested-missing", "malformed")
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                sandbox = self.make_sandbox(f"header-{mutation}")
+                header = (
+                    sandbox
+                    / "firmware"
+                    / "overlay"
+                    / "SDK"
+                    / "apps"
+                    / "watch"
+                    / "include"
+                    / "e87"
+                    / "e87_types.h"
+                )
+                expected = "missing"
+                if mutation == "symlink":
+                    outside = self.root / "outside-e87-types.h"
+                    shutil.copy2(header, outside)
+                    header.unlink()
+                    os.symlink(outside, header)
+                    expected = "symlink"
+                elif mutation == "missing":
+                    header.unlink()
+                elif mutation == "escape":
+                    header.write_text(
+                        '#include "../../../../../../../../outside.h"\n',
+                        encoding="utf-8",
+                    )
+                    expected = "traversal"
+                elif mutation == "nested-missing":
+                    header.write_text(
+                        '#include "missing_nested.h"\n'
+                        + header.read_text(encoding="utf-8"),
+                        encoding="utf-8",
+                    )
+                else:
+                    header.write_text('#include "bad;header.h"\n', encoding="utf-8")
+                    expected = "forbidden"
+
+                result, marker = self.run_sandbox_with_spy(sandbox)
+
+                self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+                self.assertIn(expected, result.stderr.lower())
+                self.assertFalse(marker.exists())
+
+    def test_preexisting_suite_symlink_cannot_redirect_generated_outputs(self) -> None:
+        outside = self.root / "outside-output"
+        outside.mkdir()
+        sentinel = outside / "sentinel"
+        sentinel.write_text("untouched\n", encoding="utf-8")
+        os.symlink(outside, self.build_root / "harness")
+
+        result = self.run_runner(*self.harness_arguments())
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual([sentinel], list(outside.iterdir()))
+        receipts = list(
+            self.build_root.glob(
+                "invocation-*/harness/buffer-budget/run-1/receipt.json"
+            )
+        )
+        self.assertEqual(1, len(receipts), receipts)
+
+    def test_compiler_children_receive_only_sanitized_environment(self) -> None:
+        compiler, marker = self.make_environment_spy_compiler()
+        injected_include = self.root / "injected-include"
+        injected_include.mkdir()
+        (injected_include / "stdint.h").write_text(
+            '#error "CPATH reached the compiler"\n', encoding="utf-8"
+        )
+        dependency_output = self.root / "outside-dependencies.d"
+        dangerous_names = (
+            "CPATH",
+            "C_INCLUDE_PATH",
+            "CPLUS_INCLUDE_PATH",
+            "OBJC_INCLUDE_PATH",
+            "LIBRARY_PATH",
+            "COMPILER_PATH",
+            "GCC_EXEC_PREFIX",
+            "DEPENDENCIES_OUTPUT",
+            "SUNPRO_DEPENDENCIES",
+            "LD_PRELOAD",
+            "LD_LIBRARY_PATH",
+            "DYLD_INSERT_LIBRARIES",
+            "DYLD_LIBRARY_PATH",
+            "E87_UNEXPECTED_CHILD_VARIABLE",
+        )
+        environment = {name: injected_include.as_posix() for name in dangerous_names}
+        environment["DEPENDENCIES_OUTPUT"] = dependency_output.as_posix()
+        environment["SUNPRO_DEPENDENCIES"] = dependency_output.as_posix()
+        environment["LD_PRELOAD"] = "libm.so.6"
+
+        result = self.run_runner(
+            "--suite",
+            "harness",
+            "--cc",
+            compiler,
+            "--build-root",
+            self.relative(self.build_root),
+            extra_environment=environment,
+        )
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertTrue(marker.is_file())
+        child_environment = marker.read_text(encoding="utf-8")
+        for name in dangerous_names:
+            with self.subTest(name=name):
+                self.assertNotIn(f"{name}=", child_environment)
+        self.assertFalse(dependency_output.exists())
 
 
 if __name__ == "__main__":

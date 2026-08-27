@@ -16,7 +16,7 @@ import stat
 import subprocess
 import sys
 import tempfile
-from typing import Any, Iterable
+from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +25,7 @@ DEFAULT_MANIFEST = "firmware/host/suites.json"
 DEFAULT_BUILD_ROOT = "firmware/.host-build"
 BUILD_ROOT_PATH = REPO_ROOT / DEFAULT_BUILD_ROOT
 BUILD_ROOT = (REPO_ROOT / DEFAULT_BUILD_ROOT).resolve()
+FIXED_TEST_MAIN = "firmware/host/test_main.c"
 FIXED_FLAGS = [
     "-std=c11",
     "-O0",
@@ -50,7 +51,10 @@ NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 HEX_40_RE = re.compile(r"^[0-9a-f]{40}$")
 HEX_64_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 DRIVE_RE = re.compile(r"^[A-Za-z]:")
-LOCAL_INCLUDE_RE = re.compile(r'^\s*#\s*include\s*"([^"]+)"')
+LOCAL_INCLUDE_RE = re.compile(
+    r'^\s*#\s*include\s*"([^"]+)"\s*(?:(?://.*)|(?:/\*.*\*/\s*))?$'
+)
+LOCAL_INCLUDE_START_RE = re.compile(r'^\s*#\s*include\s*"')
 
 
 class RunnerError(Exception):
@@ -67,6 +71,12 @@ class SuiteCase:
     name: str
     test: str
     sources: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CaseInputs:
+    sources: tuple[str, ...]
+    headers: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -336,10 +346,25 @@ def select_cases(suite: str, suites: dict[str, list[SuiteCase]]) -> list[SuiteCa
     return list(suites[suite])
 
 
-def child_environment() -> dict[str, str]:
-    environment = os.environ.copy()
-    environment["LC_ALL"] = "C"
-    environment["TZ"] = "UTC"
+def child_environment(executable: Path) -> dict[str, str]:
+    path_entries = [str(executable.parent), *os.defpath.split(os.pathsep)]
+    environment = {
+        "LC_ALL": "C",
+        "PATH": os.pathsep.join(dict.fromkeys(item for item in path_entries if item)),
+        "TZ": "UTC",
+    }
+    if os.name == "nt":
+        for name in (
+            "SYSTEMROOT",
+            "SystemRoot",
+            "WINDIR",
+            "COMSPEC",
+            "PATHEXT",
+            "TEMP",
+            "TMP",
+        ):
+            if name in os.environ:
+                environment[name] = os.environ[name]
     return environment
 
 
@@ -348,7 +373,7 @@ def run_identity_command(arguments: list[str], label: str) -> str:
         result = subprocess.run(
             arguments,
             cwd=REPO_ROOT,
-            env=child_environment(),
+            env=child_environment(Path(arguments[0])),
             check=False,
             shell=False,
             capture_output=True,
@@ -427,40 +452,165 @@ def validate_build_root(value: str) -> Path:
     return resolved
 
 
+def verified_directory(path: Path, label: str, parent: Path | None = None) -> Path:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise RunnerError(f"{label}: cannot inspect directory: {error}") from error
+    if stat.S_ISLNK(metadata.st_mode):
+        raise RunnerError(f"{label}: symlinked directory is forbidden")
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise RunnerError(f"{label}: path is not a directory")
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as error:
+        raise RunnerError(f"{label}: cannot resolve directory: {error}") from error
+    if parent is not None and resolved.parent != parent:
+        raise RunnerError(f"{label}: directory escaped its verified parent")
+    return resolved
+
+
+def prepare_invocation_root(build_root: Path) -> Path:
+    try:
+        build_root.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise RunnerError(f"build root: cannot create directory: {error}") from error
+    assert_no_symlink(build_root, "build root")
+    verified_root = verified_directory(build_root, "build root")
+    if not verified_root.is_relative_to(BUILD_ROOT):
+        raise RunnerError("build root must be beneath firmware/.host-build")
+    try:
+        invocation = Path(
+            tempfile.mkdtemp(prefix="invocation-", dir=verified_root)
+        )
+    except OSError as error:
+        raise RunnerError(f"invocation root: cannot create directory: {error}") from error
+    return verified_directory(invocation, "invocation root", verified_root)
+
+
+def create_output_directory(parent: Path, name: str, label: str) -> Path:
+    candidate = parent / name
+    try:
+        candidate.mkdir(exist_ok=False)
+    except OSError as error:
+        raise RunnerError(f"{label}: cannot create directory: {error}") from error
+    return verified_directory(candidate, label, parent)
+
+
+def validate_generated_file(path: Path, parent: Path, label: str) -> Path:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise RunnerError(f"{label}: cannot inspect file: {error}") from error
+    if stat.S_ISLNK(metadata.st_mode):
+        raise RunnerError(f"{label}: symlinked file is forbidden")
+    if not stat.S_ISREG(metadata.st_mode):
+        raise RunnerError(f"{label}: path is not a regular file")
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as error:
+        raise RunnerError(f"{label}: cannot resolve file: {error}") from error
+    if resolved.parent != parent:
+        raise RunnerError(f"{label}: file escaped its verified parent")
+    return resolved
+
+
+def write_new_text_file(path: Path, value: str) -> None:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        stream = os.fdopen(descriptor, "w", encoding="utf-8", newline="\n")
+    except BaseException:
+        os.close(descriptor)
+        raise
+    with stream:
+        stream.write(value)
+
+
 def hash_record(spelling: str) -> dict[str, str]:
     return {"path": spelling, "sha256": sha256_file(REPO_ROOT / spelling)}
 
 
-def scan_headers(source_spellings: Iterable[str], includes: list[str]) -> list[str]:
-    include_paths = [REPO_ROOT / include for include in includes]
-    allowed_paths = [path.resolve() for path in include_paths]
-    result: list[str] = []
+def validate_case_inputs(case: SuiteCase, includes: list[str]) -> CaseInputs:
+    source_spellings = (FIXED_TEST_MAIN, case.test, *case.sources)
+    for index, spelling in enumerate(source_spellings):
+        label = (
+            f"fixed test main {FIXED_TEST_MAIN}"
+            if index == 0
+            else f"test input {spelling}"
+        )
+        existing_repo_path(spelling, label, directory=False)
+
+    include_paths: list[Path] = []
+    for spelling in includes:
+        _, resolved = existing_repo_path(
+            spelling, f"include directory {spelling}", directory=True
+        )
+        include_paths.append(resolved)
+
+    headers: list[str] = []
     seen: set[Path] = set()
 
     def visit(path: Path) -> None:
-        for line in path.read_text(encoding="utf-8").splitlines():
+        source_spelling = path.relative_to(REPO_ROOT).as_posix()
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError) as error:
+            raise RunnerError(
+                f"compiled input is not a readable UTF-8 file: {source_spelling}: {error}"
+            ) from error
+        for line_number, line in enumerate(lines, start=1):
             match = LOCAL_INCLUDE_RE.match(line)
             if match is None:
+                if LOCAL_INCLUDE_START_RE.match(line):
+                    raise RunnerError(
+                        f"malformed local include in {source_spelling}:{line_number}"
+                    )
                 continue
-            name = match.group(1)
+            name = validate_relative_spelling(
+                match.group(1),
+                f"local include in {source_spelling}:{line_number}",
+            )
             candidates = [path.parent / name, *(root / name for root in include_paths)]
-            header = next((item for item in candidates if item.is_file()), None)
-            if header is None:
+            resolved: Path | None = None
+            for candidate in candidates:
+                label = f"local header {name}"
+                assert_no_symlink(candidate, label)
+                try:
+                    metadata = candidate.lstat()
+                except FileNotFoundError:
+                    continue
+                except OSError as error:
+                    raise RunnerError(f"{label}: cannot inspect path: {error}") from error
+                if stat.S_ISLNK(metadata.st_mode):
+                    raise RunnerError(f"{label}: symlinked path is forbidden")
+                if not stat.S_ISREG(metadata.st_mode):
+                    raise RunnerError(f"{label}: path is not a regular file")
+                try:
+                    resolved = candidate.resolve(strict=True)
+                except OSError as error:
+                    raise RunnerError(f"{label}: cannot resolve path: {error}") from error
+                if not resolved.is_relative_to(REPO_ROOT):
+                    raise RunnerError(f"{label}: resolved path escapes repository")
+                if not any(resolved.is_relative_to(root) for root in include_paths):
+                    raise RunnerError(
+                        f"compiled header is outside include allowlist: {name}"
+                    )
+                break
+            if resolved is None:
                 raise RunnerError(f"compiled source references missing local header: {name}")
-            assert_no_symlink(header, "compiled header")
-            resolved = header.resolve(strict=True)
-            if not any(resolved.is_relative_to(root) for root in allowed_paths):
-                raise RunnerError(f"compiled header is outside include allowlist: {name}")
             if resolved in seen:
                 continue
             seen.add(resolved)
             spelling = resolved.relative_to(REPO_ROOT).as_posix()
-            result.append(spelling)
+            headers.append(spelling)
             visit(resolved)
 
     for spelling in source_spellings:
         visit(REPO_ROOT / spelling)
-    return result
+    return CaseInputs(tuple(source_spellings), tuple(headers))
 
 
 def normalize_argument(value: str, run_dir: Path) -> str:
@@ -471,6 +621,7 @@ def normalize_argument(value: str, run_dir: Path) -> str:
 
 def build_case(
     case: SuiteCase,
+    inputs: CaseInputs,
     requested_cases: list[dict[str, str]],
     includes: list[str],
     manifest_spelling: str,
@@ -479,17 +630,16 @@ def build_case(
     run_dir: Path,
 ) -> RunEvidence | None:
     executable = run_dir / ("host-test.exe" if os.name == "nt" else "host-test")
-    source_spellings = ["firmware/host/test_main.c", case.test, *case.sources]
     arguments = [str(compiler.resolved), *FIXED_FLAGS]
     for include in includes:
         arguments.extend(["-I", include])
-    arguments.extend(source_spellings)
+    arguments.extend(inputs.sources)
     arguments.extend(["-o", str(executable)])
     try:
         compile_result = subprocess.run(
             arguments,
             cwd=REPO_ROOT,
-            env=child_environment(),
+            env=child_environment(compiler.resolved),
             check=False,
             shell=False,
             capture_output=True,
@@ -510,11 +660,12 @@ def build_case(
             file=sys.stderr,
         )
         return None
+    executable = validate_generated_file(executable, run_dir, "compiled executable")
     try:
         process = subprocess.run(
             [str(executable)],
             cwd=REPO_ROOT,
-            env=child_environment(),
+            env=child_environment(executable),
             check=False,
             shell=False,
             capture_output=True,
@@ -527,11 +678,6 @@ def build_case(
     stderr = normalize_text(process.stderr)
     sys.stdout.write(stdout)
     sys.stderr.write(stderr)
-    try:
-        headers = scan_headers(source_spellings, includes)
-    except (OSError, UnicodeError, RunnerError) as error:
-        print(f"receipt header scan failed: {error}", file=sys.stderr)
-        return None
     receipt = {
         "case": {"name": case.name, "suite": case.suite},
         "compileArguments": [normalize_argument(item, run_dir) for item in arguments],
@@ -543,7 +689,7 @@ def build_case(
             "version": compiler.version,
         },
         "executable": {"path": f"BUILD/{executable.name}", "sha256": sha256_file(executable)},
-        "headers": [hash_record(path) for path in headers],
+        "headers": [hash_record(path) for path in inputs.headers],
         "linker": compiler.linker,
         "manifest": {"path": manifest_spelling, "sha256": sha256_file(manifest_path)},
         "process": {
@@ -561,14 +707,19 @@ def build_case(
             "path": "firmware/locks/sdk.lock.json",
             "sha256": sha256_file(LOCK_PATH),
         },
-        "sources": [hash_record(path) for path in source_spellings],
+        "sources": [hash_record(path) for path in inputs.sources],
     }
-    (run_dir / "receipt.json").write_text(canonical_json(receipt), encoding="utf-8", newline="\n")
+    try:
+        write_new_text_file(run_dir / "receipt.json", canonical_json(receipt))
+    except OSError as error:
+        print(f"receipt write failed: {error}", file=sys.stderr)
+        return None
     return RunEvidence(executable, stdout, stderr, process.returncode, receipt)
 
 
 def run_selected_cases(
     cases: list[SuiteCase],
+    inputs_by_case: dict[tuple[str, str], CaseInputs],
     includes: list[str],
     manifest_spelling: str,
     manifest_path: Path,
@@ -578,24 +729,46 @@ def run_selected_cases(
 ) -> int:
     requested = [{"suite": case.suite, "case": case.name} for case in cases]
     failed = False
-    build_root.mkdir(parents=True, exist_ok=True)
+    invocation = prepare_invocation_root(build_root)
+    suite_roots: dict[str, Path] = {}
     for case in cases:
-        case_root = build_root / case.suite / case.name
-        case_root.mkdir(parents=True, exist_ok=True)
-        invocation = Path(tempfile.mkdtemp(prefix="invocation-", dir=case_root))
-        first_dir = invocation / "run-1"
-        first_dir.mkdir()
+        suite_root = suite_roots.get(case.suite)
+        if suite_root is None:
+            suite_root = create_output_directory(
+                invocation, case.suite, f"suite output {case.suite}"
+            )
+            suite_roots[case.suite] = suite_root
+        case_root = create_output_directory(
+            suite_root, case.name, f"case output {case.suite}/{case.name}"
+        )
+        first_dir = create_output_directory(case_root, "run-1", "first run output")
+        inputs = inputs_by_case[(case.suite, case.name)]
         first = build_case(
-            case, requested, includes, manifest_spelling, manifest_path, compiler, first_dir
+            case,
+            inputs,
+            requested,
+            includes,
+            manifest_spelling,
+            manifest_path,
+            compiler,
+            first_dir,
         )
         if first is None or first.status != 0:
             failed = True
             continue
         if verify_reproducible:
-            second_dir = invocation / "run-2"
-            second_dir.mkdir()
+            second_dir = create_output_directory(
+                case_root, "run-2", "second run output"
+            )
             second = build_case(
-                case, requested, includes, manifest_spelling, manifest_path, compiler, second_dir
+                case,
+                inputs,
+                requested,
+                includes,
+                manifest_spelling,
+                manifest_path,
+                compiler,
+                second_dir,
             )
             if second is None or second.status != 0:
                 failed = True
@@ -634,6 +807,10 @@ def main() -> int:
             arguments.manifest
         )
         cases = select_cases(arguments.suite, suites)
+        inputs_by_case = {
+            (case.suite, case.name): validate_case_inputs(case, includes)
+            for case in cases
+        }
         if arguments.list_suites:
             for suite_name in sorted(suites):
                 if all("/fixtures/" not in case.test for case in suites[suite_name]):
@@ -649,6 +826,7 @@ def main() -> int:
         return 2
     return run_selected_cases(
         cases,
+        inputs_by_case,
         includes,
         manifest_spelling,
         manifest_path,
