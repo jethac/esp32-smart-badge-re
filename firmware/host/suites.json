@@ -13,6 +13,16 @@
         "sources": ["firmware/overlay/SDK/apps/watch/e87/e87_button_fsm.c"]
       }
     ],
+    "classifier": [
+      {
+        "name": "button-classifier",
+        "test": "firmware/host/test_button_classifier.c",
+        "sources": [
+          "firmware/overlay/SDK/apps/watch/e87/e87_button_classifier.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_button_fsm.c"
+        ]
+      }
+    ],
     "harness": [
       {
         "name": "buffer-budget",
