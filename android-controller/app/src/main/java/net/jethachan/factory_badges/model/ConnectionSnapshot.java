@@ -69,7 +69,8 @@ public final class ConnectionSnapshot {
         }
 
         validatePhase(syncEnabled, phase, selectedDeviceName, selectedDeviceAddress,
-                bonded, buildInfo, nextReconnectDelayMs, error);
+                bonded, buildInfo, batteryPercent, lastAcknowledgedState,
+                nextReconnectDelayMs, error);
 
         this.syncEnabled = syncEnabled;
         this.phase = phase;
@@ -171,8 +172,25 @@ public final class ConnectionSnapshot {
             String selectedDeviceAddress,
             boolean bonded,
             BuildInfo buildInfo,
+            Integer batteryPercent,
+            BadgeState lastAcknowledgedState,
             Long nextReconnectDelayMs,
             UserVisibleError error) {
+        boolean hasSelectedDevice = selectedDeviceAddress != null;
+        if (!hasSelectedDevice
+                && (selectedDeviceName != null
+                || bonded
+                || buildInfo != null
+                || batteryPercent != null
+                || lastAcknowledgedState != null)) {
+            throw new IllegalArgumentException(
+                    "connection metadata requires a selected device address");
+        }
+        if (batteryPercent != null && buildInfo == null) {
+            throw new IllegalArgumentException(
+                    "batteryPercent requires validated build info");
+        }
+
         if (phase == Phase.DISABLED) {
             if (syncEnabled) {
                 throw new IllegalArgumentException("DISABLED phase requires sync disabled");
@@ -182,14 +200,27 @@ public final class ConnectionSnapshot {
         }
 
         if (phase == Phase.NO_DEVICE) {
-            if (selectedDeviceName != null || selectedDeviceAddress != null) {
-                throw new IllegalArgumentException("NO_DEVICE phase cannot select a device");
+            if (hasSelectedDevice || bonded || buildInfo != null || batteryPercent != null) {
+                throw new IllegalArgumentException(
+                        "NO_DEVICE phase cannot contain device or connection metadata");
             }
-        } else if (phase != Phase.DISABLED && selectedDeviceAddress == null) {
+        } else if (phase != Phase.DISABLED && !hasSelectedDevice) {
             throw new IllegalArgumentException("enabled device phase requires an address");
         }
 
-        if (phase == Phase.READY) {
+        if (phase == Phase.BONDING) {
+            if (bonded || buildInfo != null || batteryPercent != null) {
+                throw new IllegalArgumentException(
+                        "BONDING phase must precede bond and build validation");
+            }
+        } else if (phase == Phase.CONNECTING
+                || phase == Phase.DISCOVERING
+                || phase == Phase.VALIDATING_BUILD) {
+            if (!bonded || buildInfo != null || batteryPercent != null) {
+                throw new IllegalArgumentException(
+                        "pre-READY connection phase requires only a selected bond");
+            }
+        } else if (phase == Phase.READY) {
             if (!bonded || buildInfo == null) {
                 throw new IllegalArgumentException(
                         "READY phase requires a bond and validated build info");
@@ -199,17 +230,23 @@ public final class ConnectionSnapshot {
                         "READY phase cannot contain retry or error state");
             }
         } else if (phase == Phase.RETRY_WAIT) {
-            if (nextReconnectDelayMs == null
+            if (!bonded
+                    || nextReconnectDelayMs == null
                     || (error != null && !error.retryable())) {
                 throw new IllegalArgumentException(
-                        "RETRY_WAIT phase requires a reconnect delay");
+                        "RETRY_WAIT phase requires a bonded device and reconnect delay");
             }
         } else if (phase == Phase.ERROR) {
             if (error == null || error.retryable() || nextReconnectDelayMs != null) {
                 throw new IllegalArgumentException(
                         "ERROR phase requires only a terminal error");
             }
-        } else if (error != null || nextReconnectDelayMs != null) {
+        }
+
+        if (phase != Phase.READY
+                && phase != Phase.RETRY_WAIT
+                && phase != Phase.ERROR
+                && (error != null || nextReconnectDelayMs != null)) {
             throw new IllegalArgumentException(
                     "retry and error fields do not belong to this phase");
         }
