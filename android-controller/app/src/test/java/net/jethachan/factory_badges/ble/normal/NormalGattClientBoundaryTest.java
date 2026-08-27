@@ -188,6 +188,76 @@ public final class NormalGattClientBoundaryTest {
     }
 
     @Test
+    public void receiverApi33ConstantIsIsolatedInPrivateAnnotatedThunk() throws Exception {
+        String source = new String(Files.readAllBytes(Paths.get(
+                "app/src/main/java/net/jethachan/factory_badges/ble/normal/"
+                        + "NormalGattClient.java")), StandardCharsets.UTF_8);
+        String dispatcher = methodBody(
+                source, "static int receiverFlagsForApi(int sdkInt)");
+        String thunkSignature = "private static int receiverExportedFlagApi33()";
+        String thunk = methodBody(source, thunkSignature);
+
+        assertFalse(dispatcher.contains("Context.RECEIVER_EXPORTED"));
+        assertTrue(dispatcher.contains(
+                "sdkInt >= 33 ? receiverExportedFlagApi33() : 0"));
+        assertEquals(1, occurrences(source, "Context.RECEIVER_EXPORTED"));
+        assertTrue(source.contains(
+                "@android.annotation.TargetApi(33)\n    " + thunkSignature));
+        assertTrue(thunk.matches(
+                "(?s)^\\s*return\\s+Context\\.RECEIVER_EXPORTED\\s*;\\s*$"));
+        assertFalse(source.contains("import android.annotation.TargetApi;"));
+        assertFalse(source.contains("@SuppressLint"));
+        assertFalse(source.contains("@RequiresApi"));
+    }
+
+    @Test
+    public void modernWriteApiIsIsolatedInPrivateAnnotatedThunk() throws Exception {
+        String source = new String(Files.readAllBytes(Paths.get(
+                "app/src/main/java/net/jethachan/factory_badges/ble/normal/"
+                        + "NormalGattClient.java")), StandardCharsets.UTF_8);
+        String thunkSignature = "private int writeCharacteristicApi33(";
+        String thunk = methodBody(source, thunkSignature).replaceAll("\\s+", " ");
+        String modern = methodBody(source, "public int writeModern(")
+                .replaceAll("\\s+", " ");
+
+        assertTrue(source.contains(
+                "@android.annotation.TargetApi(33)\n        " + thunkSignature));
+        assertEquals(2, occurrences(source, "writeCharacteristicApi33("));
+        assertFalse(modern.contains("attachedGatt.writeCharacteristic("));
+        assertTrue(modern.contains(
+                "return writeCharacteristicApi33( attachedGatt, characteristic, "
+                        + "copiedValue, writeType);"));
+        assertTrue(thunk.contains(
+                "try { return attachedGatt.writeCharacteristic( characteristic, "
+                        + "copiedValue, writeType); }"));
+        assertTrue(thunk.contains(
+                "catch (SecurityException denied) { throw new PermissionFailure(); }"));
+    }
+
+    @Test
+    public void driverCloseDetachesBeforeSwallowingOnlySecurityException()
+            throws Exception {
+        String source = new String(Files.readAllBytes(Paths.get(
+                "app/src/main/java/net/jethachan/factory_badges/ble/normal/"
+                        + "NormalGattClient.java")), StandardCharsets.UTF_8);
+        int driverStart = source.indexOf(
+                "private final class AndroidGattDriver implements Core.GattDriver");
+        assertTrue(driverStart >= 0);
+        String close = methodBody(
+                source.substring(driverStart), "public void close()");
+
+        int detach = close.indexOf("slot.closeAndTake()");
+        int platformClose = close.indexOf("attachedGatt.close()");
+        assertTrue(detach >= 0);
+        assertTrue(platformClose > detach);
+        assertEquals(1, occurrences(close, "slot.closeAndTake()"));
+        assertEquals(1, occurrences(close, "attachedGatt.close()"));
+        assertEquals(1, occurrences(close, "catch (SecurityException ignored)"));
+        assertEquals(1, occurrences(close, "catch ("));
+        assertFalse(close.contains("slot.attach("));
+    }
+
+    @Test
     public void propertyAndApiHelpersChooseAcknowledgedWritePaths() {
         assertFalse(NormalGattClient.accessFromProperties(0x04).acknowledgedWritable());
         assertTrue(NormalGattClient.accessFromProperties(0x08).acknowledgedWritable());

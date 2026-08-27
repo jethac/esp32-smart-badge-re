@@ -193,7 +193,12 @@ public final class NormalGattClient implements AutoCloseable {
         if (sdkInt < 31) {
             throw new IllegalArgumentException("sdkInt must be at least 31");
         }
-        return sdkInt >= 33 ? Context.RECEIVER_EXPORTED : 0;
+        return sdkInt >= 33 ? receiverExportedFlagApi33() : 0;
+    }
+
+    @android.annotation.TargetApi(33)
+    private static int receiverExportedFlagApi33() {
+        return Context.RECEIVER_EXPORTED;
     }
 
     static boolean addressesMatch(String selectedAddress, String changedAddress) {
@@ -1488,14 +1493,27 @@ public final class NormalGattClient implements AutoCloseable {
                             }
 
                             @Override
-                            public int writeModern(
-                                    byte[] copiedValue, int writeType) {
-                                return attachedGatt.writeCharacteristic(
-                                        characteristic,
-                                        copiedValue,
-                                        writeType);
+                            public int writeModern(byte[] copiedValue, int writeType) {
+                                return writeCharacteristicApi33(
+                                        attachedGatt, characteristic, copiedValue, writeType);
                             }
                         });
+            } catch (SecurityException denied) {
+                throw new PermissionFailure();
+            }
+        }
+
+        @android.annotation.TargetApi(33)
+        private int writeCharacteristicApi33(
+                BluetoothGatt attachedGatt,
+                BluetoothGattCharacteristic characteristic,
+                byte[] copiedValue,
+                int writeType) {
+            try {
+                return attachedGatt.writeCharacteristic(
+                        characteristic,
+                        copiedValue,
+                        writeType);
             } catch (SecurityException denied) {
                 throw new PermissionFailure();
             }
@@ -1518,7 +1536,11 @@ public final class NormalGattClient implements AutoCloseable {
         public void close() {
             BluetoothGatt attachedGatt = slot.closeAndTake();
             if (attachedGatt != null) {
-                attachedGatt.close();
+                try {
+                    attachedGatt.close();
+                } catch (SecurityException ignored) {
+                    // The detached platform handle stays closed to this driver.
+                }
             }
         }
 

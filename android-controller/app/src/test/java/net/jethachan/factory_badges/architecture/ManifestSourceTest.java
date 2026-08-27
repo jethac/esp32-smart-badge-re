@@ -2,6 +2,7 @@ package net.jethachan.factory_badges.architecture;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -44,6 +45,50 @@ public final class ManifestSourceTest {
         List<String> permissions = effectivePermissions(xml, true);
         assertOnlyAllowedPermissions(permissions);
         assertBluetoothScanUsesNeverForLocation(xml, true);
+    }
+
+    @Test
+    public void sourceManifestHasOnlyNarrowStorageRemovalLintIgnores() throws Exception {
+        String xml = new String(Files.readAllBytes(Paths.get("app/src/main/AndroidManifest.xml")),
+                StandardCharsets.UTF_8);
+
+        assertStorageRemovalLintIgnoresAreNarrow(xml);
+    }
+
+    @Test
+    public void storageRemovalLintIgnoreAuditRejectsEveryBroadPlacement() {
+        String narrow = " tools:ignore=\"ScopedStorage\"";
+        String misplaced = "<uses-permission android:name=\"android.permission.INTERNET\""
+                + " tools:node=\"remove\" tools:ignore=\"ScopedStorage\" />";
+        String extra = "<application tools:ignore=\"ScopedStorage\" />";
+
+        assertThrows(AssertionError.class, () ->
+                assertStorageRemovalLintIgnoresAreNarrow(
+                        storageRemovalFixture("", "", narrow, "")));
+        assertThrows(AssertionError.class, () ->
+                assertStorageRemovalLintIgnoresAreNarrow(
+                        storageRemovalFixture("", "", narrow, misplaced)));
+        assertThrows(AssertionError.class, () ->
+                assertStorageRemovalLintIgnoresAreNarrow(
+                        storageRemovalFixture(
+                                "",
+                                " tools:ignore=\"ScopedStorage,NewApi\"",
+                                narrow,
+                                "")));
+        assertThrows(AssertionError.class, () ->
+                assertStorageRemovalLintIgnoresAreNarrow(
+                        storageRemovalFixture(
+                                " tools:ignore=\"ScopedStorage\"",
+                                narrow,
+                                narrow,
+                                "")));
+        assertThrows(AssertionError.class, () ->
+                assertStorageRemovalLintIgnoresAreNarrow(
+                        storageRemovalFixture("", narrow, narrow, extra)));
+        assertThrows(AssertionError.class, () ->
+                assertStorageRemovalLintIgnoresAreNarrow(
+                        storageRemovalFixture(
+                                " tools:targetApi=\"33\"", narrow, narrow, "")));
     }
 
     @Test
@@ -94,6 +139,63 @@ public final class ManifestSourceTest {
         List<String> mergedPermissions = effectivePermissions(xml, false);
         assertFalse(sourcePermissions.contains("android.permission.INTERNET"));
         assertTrue(mergedPermissions.contains("android.permission.INTERNET"));
+    }
+
+    private static void assertStorageRemovalLintIgnoresAreNarrow(String xml)
+            throws Exception {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(true);
+        NodeList elements = factory.newDocumentBuilder().parse(
+                new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)))
+                .getElementsByTagName("*");
+        int readStorageNodes = 0;
+        int writeStorageNodes = 0;
+        for (int index = 0; index < elements.getLength(); index++) {
+            Element element = (Element) elements.item(index);
+            assertEquals("tools:targetApi is forbidden",
+                    "", element.getAttributeNS(TOOLS_NAMESPACE, "targetApi"));
+            String ignore = element.getAttributeNS(TOOLS_NAMESPACE, "ignore");
+            String permission = isPermissionDeclaration(element)
+                    ? element.getAttributeNS(ANDROID_NAMESPACE, "name")
+                    : "";
+            boolean readStorage =
+                    "android.permission.READ_EXTERNAL_STORAGE".equals(permission);
+            boolean writeStorage =
+                    "android.permission.WRITE_EXTERNAL_STORAGE".equals(permission);
+            if (readStorage || writeStorage) {
+                assertEquals(permission + " must remain a removal node",
+                        "remove", element.getAttributeNS(TOOLS_NAMESPACE, "node"));
+                assertEquals(permission + " must ignore only ScopedStorage",
+                        "ScopedStorage", ignore);
+                if (readStorage) {
+                    readStorageNodes++;
+                } else {
+                    writeStorageNodes++;
+                }
+            } else {
+                assertEquals("tools:ignore is allowed only on storage removals: "
+                        + element.getTagName(), "", ignore);
+            }
+        }
+        assertEquals("one READ_EXTERNAL_STORAGE removal", 1, readStorageNodes);
+        assertEquals("one WRITE_EXTERNAL_STORAGE removal", 1, writeStorageNodes);
+    }
+
+    private static String storageRemovalFixture(
+            String manifestTools,
+            String readTools,
+            String writeTools,
+            String extraElement) {
+        return "<manifest xmlns:android=\"" + ANDROID_NAMESPACE + "\""
+                + " xmlns:tools=\"" + TOOLS_NAMESPACE + "\"" + manifestTools + ">"
+                + "<uses-permission android:name="
+                + "\"android.permission.READ_EXTERNAL_STORAGE\""
+                + " tools:node=\"remove\"" + readTools + " />"
+                + "<uses-permission android:name="
+                + "\"android.permission.WRITE_EXTERNAL_STORAGE\""
+                + " tools:node=\"remove\"" + writeTools + " />"
+                + extraElement
+                + "</manifest>";
     }
 
     private static List<String> effectivePermissions(
