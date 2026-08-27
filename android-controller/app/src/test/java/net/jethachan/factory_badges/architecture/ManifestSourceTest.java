@@ -216,8 +216,8 @@ public final class ManifestSourceTest {
                 "app/build/intermediates/merged_manifests/debug/"
                         + "processDebugManifest/AndroidManifest.xml")),
                 StandardCharsets.UTF_8);
-        assertLauncherApplication(source, ".ui.MainActivity");
-        assertLauncherApplication(merged,
+        assertLauncherApplication(source, "", ".ui.MainActivity");
+        assertLauncherApplication(merged, "net.jethachan.factory_badges",
                 "net.jethachan.factory_badges.ui.MainActivity");
     }
 
@@ -245,24 +245,33 @@ public final class ManifestSourceTest {
                 launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
                         goodFilter, "<activity android:name=\".MaintenanceActivity\" />"),
                 launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
-                        goodFilter, "<activity-alias android:name=\".Alias\" />")
+                        goodFilter, "<activity-alias android:name=\".Alias\" />"),
+                launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
+                        goodFilter, "").replace("<manifest ", "<manifest package=\"wrong.example\" "),
+                launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
+                        goodFilter, "<meta-data android:name=\"unexpected\" android:value=\"1\" />")
         };
         for (String xml : bad) {
             assertThrows(AssertionError.class,
-                    () -> assertLauncherApplication(xml, ".ui.MainActivity"));
+                    () -> assertLauncherApplication(xml, "", ".ui.MainActivity"));
         }
     }
 
-    private static void assertLauncherApplication(String xml, String expectedName)
+    private static void assertLauncherApplication(
+            String xml, String expectedPackage, String expectedName)
             throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(true);
         Element manifest = factory.newDocumentBuilder().parse(
                 new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)))
                 .getDocumentElement();
+        assertEquals("manifest package", expectedPackage,
+                manifest.getAttribute("package"));
         NodeList applications = manifest.getElementsByTagName("application");
         assertEquals("one application", 1, applications.getLength());
         Element application = (Element) applications.item(0);
+        assertEquals("no application metadata", 0,
+                application.getElementsByTagName("meta-data").getLength());
         assertEquals("app label", "@string/app_name",
                 application.getAttributeNS(ANDROID_NAMESPACE, "label"));
         assertEquals("app theme", "@style/Theme.FactoryBadges",
@@ -322,6 +331,8 @@ public final class ManifestSourceTest {
         NodeList applications = manifest.getElementsByTagName("application");
         assertEquals("one application", 1, applications.getLength());
         Element application = (Element) applications.item(0);
+        assertEquals("no application metadata", 0,
+                application.getElementsByTagName("meta-data").getLength());
         assertEquals("usesCleartextTraffic is forbidden",
                 "", application.getAttributeNS(
                         ANDROID_NAMESPACE, "usesCleartextTraffic"));

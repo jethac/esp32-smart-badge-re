@@ -124,8 +124,7 @@ public final class MainResourcesSourceTest {
 
     // Mutation: clip at large fonts, change an ID, add a forbidden view, or loosen slider semantics.
     @Test public void layoutHasExactStructureIdsAndAccessibility() throws Exception {
-        Document document = parse(Files.readAllBytes(
-                Paths.get("app/src/main/res/layout/activity_main.xml")));
+        Document document = layout();
         Element root = document.getDocumentElement();
         assertEquals("ScrollView", root.getTagName());
         Element content = onlyElementChild(root);
@@ -175,27 +174,162 @@ public final class MainResourcesSourceTest {
         }
     }
 
-    // Mutation: change the platform theme parent or introduce dynamic/remote presentation.
+    // Mutation: retain the right strings but wire any of the three controls to the wrong one.
+    @Test public void buttonsUseExactStringResources() throws Exception {
+        assertButtonTextResources(layout());
+    }
+
+    // Mutation: shrink or remove a direct separator between two logical groups.
+    @Test public void logicalGroupsHaveDirectEightDpSeparation() throws Exception {
+        assertLogicalGroupSpacing(layout());
+    }
+
+    @Test public void fractionalDpLogicalSpacingIsAccepted() throws Exception {
+        Document fractionalSpacing = layout();
+        directSeparator(fractionalSpacing, "day_seek", "week_label").setAttributeNS(
+                ANDROID, "android:layout_height", "8.5dp");
+
+        assertLogicalGroupSpacing(fractionalSpacing);
+    }
+
+    @Test public void goneLogicalSeparatorIsRejected() throws Exception {
+        Document goneSpacing = layout();
+        directSeparator(goneSpacing, "day_seek", "week_label").setAttributeNS(
+                ANDROID, "android:visibility", "gone");
+
+        assertThrows(AssertionError.class, () -> assertLogicalGroupSpacing(goneSpacing));
+    }
+
+    // Mutation: change the platform theme parent, item set, or reviewed neutral values.
     @Test public void themeIsExactNeutralPlatformTheme() throws Exception {
-        Document document = parse(Files.readAllBytes(Paths.get("app/src/main/res/values/styles.xml")));
-        Element style = (Element) document.getElementsByTagName("style").item(0);
-        assertNotNull(style);
-        assertEquals("Theme.FactoryBadges", style.getAttribute("name"));
-        assertEquals("@android:style/Theme.Material.Light.NoActionBar", style.getAttribute("parent"));
+        assertExactTheme(styles());
         String xml = new String(Files.readAllBytes(Paths.get("app/src/main/res/values/styles.xml")),
                 StandardCharsets.UTF_8);
-        assertTrue(xml.contains("windowActionModeOverlay"));
-        assertTrue(xml.contains("windowLightStatusBar"));
         assertFalse(xml.matches("(?s).*https?://.*"));
     }
 
-    // Mutation: let a malformed fixture satisfy a structural assertion by substring alone.
-    @Test public void malformedLayoutFixturesAreRejectedStructurally() {
+    // Mutation: let malformed DOM fixtures satisfy button, spacing, or theme assertions.
+    @Test public void malformedLayoutFixturesAreRejectedStructurally() throws Exception {
         assertThrows(AssertionError.class, () -> assertSeek(parse(
                 ("<ScrollView xmlns:android='http://schemas.android.com/apk/res/android'>"
                         + "<SeekBar android:id='@+id/day_seek' android:max='99'/></ScrollView>")
                                 .getBytes(StandardCharsets.UTF_8)),
                 "day_seek", "@string/day_seek_description"));
+
+        Document wrongButton = layout();
+        byId(wrongButton, "choose_badge_button").setAttributeNS(
+                ANDROID, "android:text", "@string/stop_sync");
+        assertThrows(AssertionError.class, () -> assertButtonTextResources(wrongButton));
+
+        Document tightSpacing = layout();
+        directSeparator(tightSpacing, "day_seek", "week_label").setAttributeNS(
+                ANDROID, "android:layout_height", "1dp");
+        assertThrows(AssertionError.class, () -> assertLogicalGroupSpacing(tightSpacing));
+
+        Document wrongTheme = styles();
+        themeItem(wrongTheme, "android:windowActionModeOverlay").setTextContent("true");
+        assertThrows(AssertionError.class, () -> assertExactTheme(wrongTheme));
+    }
+
+    private static void assertButtonTextResources(Document document) {
+        assertEquals("@string/choose_badge",
+                attr(byId(document, "choose_badge_button"), "text"));
+        assertEquals("@string/start_sync", attr(byId(document, "sync_button"), "text"));
+        assertEquals("@string/stop_sync",
+                attr(byId(document, "stop_sync_button"), "text"));
+    }
+
+    private static void assertLogicalGroupSpacing(Document document) {
+        String[][] boundaries = {
+                {"main_title", "selected_badge_label"},
+                {"choose_badge_button", "connection_label"},
+                {"notification_warning_value", "day_label"},
+                {"day_seek", "week_label"},
+                {"week_seek", "credit_label"},
+                {"last_sync_value", "sync_button"}
+        };
+        for (String[] boundary : boundaries) {
+            Element separator = directSeparator(document, boundary[0], boundary[1]);
+            assertFalse(boundary[0] + " separator participates in layout",
+                    "gone".equals(attr(separator, "visibility")));
+            String height = attr(separator, "layout_height");
+            assertTrue(boundary[0] + " separator uses nonnegative decimal dp",
+                    height.matches("[0-9]+(?:\\.[0-9]+)?dp"));
+            double dp = Double.parseDouble(height.substring(0, height.length() - 2));
+            assertTrue(boundary[0] + " separator is at least 8dp", dp >= 8);
+        }
+    }
+
+    private static Element directSeparator(Document document, String beforeId, String afterId) {
+        Element before = byId(document, beforeId);
+        Element after = byId(document, afterId);
+        Element separator = nextElementSibling(before);
+        assertNotNull(beforeId + " has a separator", separator);
+        assertEquals(beforeId + " separator", "Space", separator.getTagName());
+        assertTrue(beforeId + " separator is directly followed by " + afterId,
+                nextElementSibling(separator) == after);
+        return separator;
+    }
+
+    private static Element nextElementSibling(Node node) {
+        Node sibling = node.getNextSibling();
+        while (sibling != null && !(sibling instanceof Element)) {
+            sibling = sibling.getNextSibling();
+        }
+        return (Element) sibling;
+    }
+
+    private static void assertExactTheme(Document document) {
+        NodeList styles = document.getElementsByTagName("style");
+        assertEquals("one style", 1, styles.getLength());
+        Element style = (Element) styles.item(0);
+        assertEquals("Theme.FactoryBadges", style.getAttribute("name"));
+        assertEquals("@android:style/Theme.Material.Light.NoActionBar",
+                style.getAttribute("parent"));
+
+        Map<String, String> expected = new LinkedHashMap<>();
+        expected.put("android:windowActionModeOverlay", "false");
+        expected.put("android:windowLightStatusBar", "true");
+        expected.put("android:windowBackground", "#FAFAFA");
+        expected.put("android:navigationBarColor", "#FAFAFA");
+        expected.put("android:statusBarColor", "#FAFAFA");
+        expected.put("android:textColorPrimary", "#000000");
+        expected.put("android:colorAccent", "#5F6368");
+
+        Map<String, String> actual = new LinkedHashMap<>();
+        NodeList children = style.getChildNodes();
+        for (int index = 0; index < children.getLength(); index++) {
+            Node child = children.item(index);
+            if (!(child instanceof Element)) continue;
+            Element item = (Element) child;
+            assertEquals("theme child", "item", item.getTagName());
+            String name = item.getAttribute("name");
+            assertFalse("duplicate theme item " + name, actual.containsKey(name));
+            actual.put(name, item.getTextContent().trim());
+        }
+        assertEquals("theme item cardinality", expected.size(), actual.size());
+        assertEquals("theme item map", expected, actual);
+    }
+
+    private static Element themeItem(Document document, String name) {
+        Element found = null;
+        NodeList items = document.getElementsByTagName("item");
+        for (int index = 0; index < items.getLength(); index++) {
+            Element item = (Element) items.item(index);
+            if (!name.equals(item.getAttribute("name"))) continue;
+            assertTrue("one theme item " + name, found == null);
+            found = item;
+        }
+        assertNotNull("theme item " + name, found);
+        return found;
+    }
+
+    private static Document layout() throws Exception {
+        return parse(Files.readAllBytes(Paths.get("app/src/main/res/layout/activity_main.xml")));
+    }
+
+    private static Document styles() throws Exception {
+        return parse(Files.readAllBytes(Paths.get("app/src/main/res/values/styles.xml")));
     }
 
     private static void assertSeek(Document document, String id, String description) {
