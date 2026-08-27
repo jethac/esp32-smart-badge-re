@@ -33,16 +33,36 @@ static bool snapshot_equal(const struct e87_state_snapshot *left,
            left->revision == right->revision;
 }
 
-static bool packet_is_valid(const uint8_t packet[8])
+static enum e87_state_error
+expected_single_byte_mutation_error(size_t position, uint8_t replacement)
 {
-    return packet[0] == UINT8_C(1) &&
-           packet[1] <= UINT8_C(100) &&
-           packet[2] <= UINT8_C(100) &&
-           packet[3] == UINT8_C(0) &&
-           packet[4] == UINT8_C(0xBF) &&
-           packet[5] == UINT8_C(0x06) &&
-           packet[6] == UINT8_C(0x00) &&
-           packet[7] == UINT8_C(0x00);
+    switch (position) {
+    case 0U:
+        return replacement == UINT8_C(1)
+                   ? E87_STATE_OK
+                   : E87_STATE_ERROR_VERSION;
+    case 1U:
+        return replacement <= UINT8_C(100)
+                   ? E87_STATE_OK
+                   : E87_STATE_ERROR_DAY;
+    case 2U:
+        return replacement <= UINT8_C(100)
+                   ? E87_STATE_OK
+                   : E87_STATE_ERROR_WEEK;
+    case 3U:
+        return replacement == UINT8_C(0)
+                   ? E87_STATE_OK
+                   : E87_STATE_ERROR_FLAGS;
+    case 4U:
+    case 5U:
+    case 6U:
+    case 7U:
+        return replacement == golden_packet[position]
+                   ? E87_STATE_OK
+                   : E87_STATE_ERROR_CREDIT;
+    default:
+        return E87_STATE_ERROR_ARGUMENT;
+    }
 }
 
 static bool decode_rejection_preserves(const uint8_t *packet,
@@ -164,20 +184,22 @@ E87_TEST(decode_rejects_every_single_byte_mutation_atomically)
             struct e87_metrics actual;
             struct e87_metrics before;
             enum e87_state_error error;
+            enum e87_state_error expected;
 
             memcpy(packet, golden_packet, sizeof(packet));
             packet[position] = (uint8_t)replacement;
             memset(&actual, 0xA5, sizeof(actual));
             memcpy(&before, &actual, sizeof(before));
             error = e87_state_decode(packet, sizeof(packet), &actual);
+            expected = expected_single_byte_mutation_error(
+                position, (uint8_t)replacement);
 
-            if (packet_is_valid(packet)) {
-                E87_ASSERT_EQ_U32(E87_STATE_OK, error);
+            E87_ASSERT_EQ_U32(expected, error);
+            if (expected == E87_STATE_OK) {
                 E87_ASSERT_EQ_U32(packet[1], actual.day);
                 E87_ASSERT_EQ_U32(packet[2], actual.week);
                 E87_ASSERT_EQ_U32(UINT32_C(1727), actual.credit_cents);
             } else {
-                E87_ASSERT_TRUE(error != E87_STATE_OK);
                 E87_ASSERT_TRUE(bytes_equal(&before, &actual, sizeof(actual)));
             }
         }
@@ -204,6 +226,14 @@ E87_TEST(decode_rejects_null_arguments_atomically)
     struct e87_metrics actual;
     struct e87_metrics before;
 
+    E87_ASSERT_EQ_U32(UINT32_C(0), E87_STATE_OK);
+    E87_ASSERT_EQ_U32(UINT32_C(1), E87_STATE_ERROR_ARGUMENT);
+    E87_ASSERT_EQ_U32(UINT32_C(2), E87_STATE_ERROR_LENGTH);
+    E87_ASSERT_EQ_U32(UINT32_C(3), E87_STATE_ERROR_VERSION);
+    E87_ASSERT_EQ_U32(UINT32_C(4), E87_STATE_ERROR_DAY);
+    E87_ASSERT_EQ_U32(UINT32_C(5), E87_STATE_ERROR_WEEK);
+    E87_ASSERT_EQ_U32(UINT32_C(6), E87_STATE_ERROR_FLAGS);
+    E87_ASSERT_EQ_U32(UINT32_C(7), E87_STATE_ERROR_CREDIT);
     memset(&actual, 0xA5, sizeof(actual));
     memcpy(&before, &actual, sizeof(before));
     E87_ASSERT_EQ_U32(E87_STATE_ERROR_ARGUMENT,
@@ -218,7 +248,22 @@ E87_TEST(decode_rejects_null_arguments_atomically)
 
 E87_TEST(decode_uses_stable_error_precedence)
 {
+    static const uint8_t invalid_credit_packets[][8] = {
+        {UINT8_C(1), UINT8_C(40), UINT8_C(60), UINT8_C(0),
+         UINT8_C(0x00), UINT8_C(0x00), UINT8_C(0x00), UINT8_C(0x00)},
+        {UINT8_C(1), UINT8_C(40), UINT8_C(60), UINT8_C(0),
+         UINT8_C(0x01), UINT8_C(0x00), UINT8_C(0x00), UINT8_C(0x00)},
+        {UINT8_C(1), UINT8_C(40), UINT8_C(60), UINT8_C(0),
+         UINT8_C(0xBE), UINT8_C(0x06), UINT8_C(0x00), UINT8_C(0x00)},
+        {UINT8_C(1), UINT8_C(40), UINT8_C(60), UINT8_C(0),
+         UINT8_C(0xC0), UINT8_C(0x06), UINT8_C(0x00), UINT8_C(0x00)},
+        {UINT8_C(1), UINT8_C(40), UINT8_C(60), UINT8_C(0),
+         UINT8_C(0x06), UINT8_C(0xBF), UINT8_C(0x00), UINT8_C(0x00)},
+        {UINT8_C(1), UINT8_C(40), UINT8_C(60), UINT8_C(0),
+         UINT8_C(0xFF), UINT8_C(0xFF), UINT8_C(0xFF), UINT8_C(0xFF)},
+    };
     uint8_t packet[8];
+    size_t index;
 
     E87_ASSERT_TRUE(decode_rejection_preserves(
         NULL, 7U, E87_STATE_ERROR_ARGUMENT));
@@ -239,6 +284,13 @@ E87_TEST(decode_uses_stable_error_precedence)
     packet[3] = UINT8_C(0);
     E87_ASSERT_TRUE(decode_rejection_preserves(
         packet, sizeof(packet), E87_STATE_ERROR_CREDIT));
+    for (index = 0U;
+         index < sizeof(invalid_credit_packets) /
+                     sizeof(invalid_credit_packets[0]);
+         index += 1U) {
+        E87_ASSERT_TRUE(decode_rejection_preserves(
+            invalid_credit_packets[index], 8U, E87_STATE_ERROR_CREDIT));
+    }
 }
 
 E87_TEST(store_init_rejects_invalid_sync_without_mutation)
@@ -348,10 +400,14 @@ E87_TEST(store_changed_commit_increments_once_and_old_snapshot_is_immutable)
     const struct e87_metrics second = {
         UINT8_C(56), UINT8_C(78), UINT32_C(1727)
     };
+    const struct e87_metrics third = {
+        UINT8_C(90), UINT8_C(10), UINT32_C(1727)
+    };
     struct e87_state_store store;
     struct e87_state_snapshot old_snapshot;
     struct e87_state_snapshot old_copy;
     struct e87_state_snapshot current;
+    struct e87_state_snapshot wrapped;
 
     E87_ASSERT_TRUE(e87_state_store_init(&store, &sync));
     E87_ASSERT_TRUE(e87_state_commit(&store, &first));
@@ -364,8 +420,19 @@ E87_TEST(store_changed_commit_increments_once_and_old_snapshot_is_immutable)
     E87_ASSERT_EQ_U32(UINT32_C(1), old_snapshot.revision);
     E87_ASSERT_TRUE(metrics_equal(&second, &current.metrics));
     E87_ASSERT_EQ_U32(UINT32_C(2), current.revision);
-    E87_ASSERT_EQ_U32(UINT32_C(4), lock.enter_count);
-    E87_ASSERT_EQ_U32(UINT32_C(4), lock.leave_count);
+
+    /*
+     * Host-only white-box seed: this visible private-by-contract field is the
+     * only practical way to exercise the specified uint32_t revision wrap.
+     */
+    store.private_current.revision = UINT32_MAX;
+    E87_ASSERT_TRUE(e87_state_commit(&store, &third));
+    E87_ASSERT_TRUE(e87_state_snapshot(&store, &wrapped));
+    E87_ASSERT_TRUE(snapshot_equal(&old_snapshot, &old_copy));
+    E87_ASSERT_TRUE(metrics_equal(&third, &wrapped.metrics));
+    E87_ASSERT_EQ_U32(UINT32_C(0), wrapped.revision);
+    E87_ASSERT_EQ_U32(UINT32_C(6), lock.enter_count);
+    E87_ASSERT_EQ_U32(UINT32_C(6), lock.leave_count);
     E87_ASSERT_TRUE(fake_lock_is_clean(&lock));
 }
 
@@ -377,6 +444,7 @@ E87_TEST(store_rejects_direct_invalid_metrics_without_lock_or_mutation)
         {UINT8_C(101), UINT8_C(0), UINT32_C(1727)},
         {UINT8_C(0), UINT8_C(101), UINT32_C(1727)},
         {UINT8_C(0), UINT8_C(0), UINT32_C(0)},
+        {UINT8_C(0), UINT8_C(0), UINT32_C(1)},
         {UINT8_C(0), UINT8_C(0), UINT32_C(1726)},
         {UINT8_C(0), UINT8_C(0), UINT32_C(1728)},
         {UINT8_C(0), UINT8_C(0), UINT32_C(0x0000BF06)},

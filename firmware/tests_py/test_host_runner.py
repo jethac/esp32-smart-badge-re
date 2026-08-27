@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
-import re
 from pathlib import Path
 import shutil
 import stat
@@ -20,7 +20,6 @@ RUNNER = REPO_ROOT / "firmware" / "tools" / "test-host.py"
 HOST_CC = os.environ.get("E87_HOST_CC", "/usr/bin/gcc-11")
 TEST_ROOT = REPO_ROOT / "firmware" / ".host-build" / "python-tests"
 COMPILER_SHA256 = "821af3c74506283c179ca413bb33e6b528805a4dd8a5c09df125e5ad560a9e89"
-LOCAL_INCLUDE_RE = re.compile(r'^\s*#\s*include\s*"([^"]+)"')
 
 
 class HostRunnerIntegrationTest(unittest.TestCase):
@@ -108,60 +107,135 @@ class HostRunnerIntegrationTest(unittest.TestCase):
         compiler.chmod(compiler.stat().st_mode | stat.S_IXUSR)
         return str(compiler), marker
 
-    def sandbox_inputs(self) -> tuple[list[str], list[str]]:
-        manifest_spelling = "firmware/host/suites.json"
-        manifest = json.loads(
-            (REPO_ROOT / manifest_spelling).read_text(encoding="utf-8")
+    @staticmethod
+    def checked_repo_file(repository: Path, spelling: str) -> Path:
+        components = spelling.split("/")
+        relative = Path(spelling)
+        if (
+            not spelling
+            or relative.is_absolute()
+            or "\\" in spelling
+            or any(component in {"", ".", ".."} for component in components)
+        ):
+            raise AssertionError(
+                f"sandbox input path must be strict repository-relative: {spelling}"
+            )
+
+        repository_resolved = repository.resolve(strict=True)
+        cursor = repository
+        metadata = None
+        for component in components:
+            cursor = cursor / component
+            metadata = cursor.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                raise AssertionError(f"sandbox input has symlinked path: {spelling}")
+        resolved = cursor.resolve(strict=True)
+        if not resolved.is_relative_to(repository_resolved):
+            raise AssertionError(f"sandbox input escapes repository: {spelling}")
+        if metadata is None or not stat.S_ISREG(metadata.st_mode):
+            raise AssertionError(f"sandbox input is not a regular file: {spelling}")
+        return resolved
+
+    def load_runner_validation(self, repository: Path):
+        runner_path = self.checked_repo_file(
+            repository, "firmware/tools/test-host.py"
         )
-        include_spellings = list(manifest["includeDirectories"])
-        include_roots = [REPO_ROOT / spelling for spelling in include_spellings]
-        pending = {
+        module_name = f"_e87_host_runner_sandbox_{id(self)}"
+        specification = importlib.util.spec_from_file_location(
+            module_name, runner_path
+        )
+        if specification is None or specification.loader is None:
+            raise AssertionError("cannot load host runner validation")
+        module = importlib.util.module_from_spec(specification)
+        sys.modules[module_name] = module
+        try:
+            specification.loader.exec_module(module)
+        finally:
+            sys.modules.pop(module_name, None)
+        if Path(module.REPO_ROOT).resolve(strict=True) != repository.resolve(
+            strict=True
+        ):
+            raise AssertionError("host runner resolved an unexpected repository")
+        return module
+
+    def sandbox_inputs(self) -> tuple[list[str], list[str]]:
+        repository = REPO_ROOT.resolve(strict=True)
+        validation = self.load_runner_validation(repository)
+        validation.validate_sdk_lock()
+        manifest_spelling, _, include_spellings, suites = (
+            validation.validate_manifest(validation.DEFAULT_MANIFEST)
+        )
+        discovered = {
             "firmware/tools/test-host.py",
             "firmware/locks/sdk.lock.json",
             manifest_spelling,
-            "firmware/host/test_main.c",
         }
-        for cases in manifest["suites"].values():
-            for case in cases:
-                pending.add(case["test"])
-                pending.update(case["sources"])
 
-        discovered: set[str] = set()
-        while pending:
-            spelling = min(pending)
-            pending.remove(spelling)
-            if spelling in discovered:
-                continue
-            discovered.add(spelling)
-            path = REPO_ROOT / spelling
-            if path.suffix not in {".c", ".h"}:
-                continue
-            for line in path.read_text(encoding="utf-8").splitlines():
-                match = LOCAL_INCLUDE_RE.match(line)
-                if match is None:
-                    continue
-                name = match.group(1)
-                candidates = [path.parent / name]
-                candidates.extend(root / name for root in include_roots)
-                header = next((item for item in candidates if item.is_file()), None)
-                if header is None:
-                    raise AssertionError(
-                        f"sandbox input {spelling} has unresolved header {name}"
-                    )
-                pending.add(header.relative_to(REPO_ROOT).as_posix())
+        for cases in suites.values():
+            for case in cases:
+                inputs = validation.validate_case_inputs(case, include_spellings)
+                discovered.update(inputs.sources)
+                for header in inputs.headers:
+                    if Path(header).suffix != ".h":
+                        raise AssertionError(
+                            f"sandbox header extension is not allowlisted: {header}"
+                        )
+                    discovered.add(header)
         return sorted(discovered), include_spellings
 
+    @staticmethod
+    def sandbox_destination(sandbox: Path, spelling: str) -> Path:
+        sandbox_resolved = sandbox.resolve(strict=False)
+        destination = sandbox / spelling
+        if not destination.resolve(strict=False).is_relative_to(sandbox_resolved):
+            raise AssertionError(
+                f"sandbox destination escapes copy root: {spelling}"
+            )
+        return destination
+
     def make_sandbox(self, name: str = "sandbox") -> Path:
+        owner = self.root.resolve(strict=True)
         sandbox = self.root / name
+        if not sandbox.resolve(strict=False).is_relative_to(owner):
+            raise AssertionError(f"sandbox name escapes test root: {name}")
         inputs, include_directories = self.sandbox_inputs()
         for spelling in include_directories:
-            (sandbox / spelling).mkdir(parents=True, exist_ok=True)
+            self.sandbox_destination(sandbox, spelling).mkdir(
+                parents=True, exist_ok=True
+            )
         for spelling in inputs:
-            destination = sandbox / spelling
+            source = self.checked_repo_file(REPO_ROOT, spelling)
+            destination = self.sandbox_destination(sandbox, spelling)
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(REPO_ROOT / spelling, destination)
-        (sandbox / "firmware" / ".host-build").mkdir(parents=True)
+            shutil.copy2(source, destination, follow_symlinks=False)
+        self.sandbox_destination(
+            sandbox, "firmware/.host-build"
+        ).mkdir(parents=True)
         return sandbox
+
+    def make_discovery_repo(
+        self, name: str, manifest: dict[str, object]
+    ) -> Path:
+        source_root = REPO_ROOT
+        repository = self.root / name
+        for spelling in (
+            "firmware/tools/test-host.py",
+            "firmware/locks/sdk.lock.json",
+        ):
+            destination = repository / spelling
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_root / spelling, destination)
+        manifest_path = repository / "firmware" / "host" / "suites.json"
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+        )
+        (repository / "firmware" / "host" / "test_main.c").write_text(
+            "int main(void) { return 0; }\n", encoding="utf-8"
+        )
+        for spelling in manifest["includeDirectories"]:
+            (repository / spelling).mkdir(parents=True, exist_ok=True)
+        return repository
 
     def run_sandbox_with_spy(
         self, sandbox: Path
@@ -714,6 +788,97 @@ class HostRunnerIntegrationTest(unittest.TestCase):
                 self.assertEqual(2, result.returncode, result.stdout + result.stderr)
                 self.assertIn(expected, result.stderr.lower())
                 self.assertFalse(marker.exists())
+
+    def test_sandbox_discovery_rejects_symlinked_recursive_header(self) -> None:
+        # Break caught: suite discovery laundering a symlink target into a
+        # regular sandbox file before the runner can reject the symlink.
+        manifest: dict[str, object] = {
+            "schemaVersion": 1,
+            "includeDirectories": [
+                "firmware/host",
+                "firmware/overlay/SDK/apps/watch/include",
+            ],
+            "suites": {
+                "extra": [
+                    {
+                        "name": "recursive-header",
+                        "test": "firmware/host/test_extra.c",
+                        "sources": [],
+                    }
+                ]
+            },
+        }
+        repository = self.make_discovery_repo("symlink-discovery", manifest)
+        (repository / "firmware" / "host" / "test_extra.c").write_text(
+            '#include "e87/discovered.h"\n', encoding="utf-8"
+        )
+        outside = self.root / "outside-discovered.h"
+        outside.write_text("#define E87_OUTSIDE 1\n", encoding="utf-8")
+        header = (
+            repository
+            / "firmware"
+            / "overlay"
+            / "SDK"
+            / "apps"
+            / "watch"
+            / "include"
+            / "e87"
+            / "discovered.h"
+        )
+        header.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(outside, header)
+
+        global REPO_ROOT
+        original_root = REPO_ROOT
+        error: Exception | None = None
+        try:
+            REPO_ROOT = repository
+            try:
+                self.sandbox_inputs()
+            except Exception as caught:
+                error = caught
+        finally:
+            REPO_ROOT = original_root
+
+        self.assertIsNotNone(error, "symlinked discovered header was accepted")
+        self.assertIn("symlink", str(error).lower())
+
+    def test_sandbox_copy_rejects_traversal_before_external_write(self) -> None:
+        # Break caught: a manifest path with '..' escaping the sandbox copy root.
+        traversal = "firmware/host/../../../escaped.c"
+        manifest: dict[str, object] = {
+            "schemaVersion": 1,
+            "includeDirectories": [
+                "firmware/host",
+                "firmware/overlay/SDK/apps/watch/include",
+            ],
+            "suites": {
+                "extra": [
+                    {"name": "escape", "test": traversal, "sources": []}
+                ]
+            },
+        }
+        repository = self.make_discovery_repo("traversal-discovery", manifest)
+        (self.root / "escaped.c").write_text(
+            "int e87_escape;\n", encoding="utf-8"
+        )
+        escaped_destination = self.root / "nested" / "escaped.c"
+
+        global REPO_ROOT
+        original_root = REPO_ROOT
+        error: Exception | None = None
+        try:
+            REPO_ROOT = repository
+            try:
+                self.make_sandbox("nested/sandbox")
+            except Exception as caught:
+                error = caught
+        finally:
+            REPO_ROOT = original_root
+
+        self.assertIsNotNone(error, "traversal spelling was accepted")
+        self.assertRegex(str(error).lower(), "traversal|relative|escape")
+        self.assertFalse(escaped_destination.exists())
 
     def test_preexisting_suite_symlink_cannot_redirect_generated_outputs(self) -> None:
         outside = self.root / "outside-output"
