@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/main_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/main_title"
+            android:textAppearance="@android:style/TextAppearance.Material.Headline" />
+
+        <Space android:layout_width="1dp" android:layout_height="16dp" />
+
+        <TextView
+            android:id="@+id/selected_badge_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/selected_badge_label" />
+
+        <TextView
+            android:id="@+id/selected_badge_value"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/no_badge_selected" />
+
+        <Button
+            android:id="@+id/choose_badge_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="48dp"
+            android:text="@string/choose_badge" />
+
+        <Space android:layout_width="1dp" android:layout_height="16dp" />
+
+        <TextView
+            android:id="@+id/connection_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/connection_label" />
+
+        <TextView
+            android:id="@+id/connection_status_value"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:accessibilityLiveRegion="polite"
+            android:text="@string/status_service_connecting" />
+
+        <TextView
+            android:id="@+id/connection_detail_value"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:accessibilityLiveRegion="polite"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/sync_pair_guidance"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:accessibilityLiveRegion="polite"
+            android:text="@string/guidance_wait_for_service" />
+
+        <TextView
+            android:id="@+id/local_warning_value"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:accessibilityLiveRegion="assertive"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/notification_warning_value"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:accessibilityLiveRegion="polite"
+            android:text="@string/notification_permission_warning"
+            android:visibility="gone" />
+
+        <Space android:layout_width="1dp" android:layout_height="16dp" />
+
+        <TextView
+            android:id="@+id/day_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:labelFor="@id/day_seek"
+            android:text="@string/day_label" />
+
+        <TextView
+            android:id="@+id/day_value"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/percent_format" />
+
+        <SeekBar
+            android:id="@+id/day_seek"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:contentDescription="@string/day_seek_description"
+            android:max="100"
+            android:min="0"
+            android:progress="0"
+            android:splitTrack="false" />
+
+        <Space android:layout_width="1dp" android:layout_height="8dp" />
+
+        <TextView
+            android:id="@+id/week_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:labelFor="@id/week_seek"
+            android:text="@string/week_label" />
+
+        <TextView
+            android:id="@+id/week_value"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/percent_format" />
+
+        <SeekBar
+            android:id="@+id/week_seek"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:contentDescription="@string/week_seek_description"
+            android:max="100"
+            android:min="0"
+            android:progress="0"
+            android:splitTrack="false" />
+
+        <Space android:layout_width="1dp" android:layout_height="16dp" />
+
+        <TextView
+            android:id="@+id/credit_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/credit_label" />
+
+        <TextView
+            android:id="@+id/credit_value"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:contentDescription="@string/credit_description"
+            android:text="@string/credit_value" />
+
+        <TextView
+            android:id="@+id/last_sync_value"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:accessibilityLiveRegion="polite"
+            android:text="@string/last_sync_never" />
+
+        <Space android:layout_width="1dp" android:layout_height="16dp" />
+
+        <Button
+            android:id="@+id/sync_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/start_sync" />
+
+        <Button
+            android:id="@+id/stop_sync_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="48dp"
+            android:text="@string/stop_sync" />
+    </LinearLayout>
+</ScrollView>

@@ -206,6 +206,112 @@ public final class ManifestSourceTest {
         assertFalse(sourcePermissions.contains("android.permission.INTERNET"));
         assertTrue(mergedPermissions.contains("android.permission.INTERNET"));
     }
+
+    // Mutation caught: retain a dangling activity, omit launcher shape, or drift app presentation.
+    @Test
+    public void sourceAndMergedManifestsHaveOneExactLauncherActivity() throws Exception {
+        String source = new String(Files.readAllBytes(
+                Paths.get("app/src/main/AndroidManifest.xml")), StandardCharsets.UTF_8);
+        String merged = new String(Files.readAllBytes(Paths.get(
+                "app/build/intermediates/merged_manifests/debug/"
+                        + "processDebugManifest/AndroidManifest.xml")),
+                StandardCharsets.UTF_8);
+        assertLauncherApplication(source, ".ui.MainActivity");
+        assertLauncherApplication(merged,
+                "net.jethachan.factory_badges.ui.MainActivity");
+    }
+
+    // Mutation caught: malformed launcher filters/components or icon/theme variants are accepted.
+    @Test
+    public void launcherAuditRejectsEveryMalformedShape() {
+        String goodFilter = "<intent-filter>"
+                + "<action android:name=\"android.intent.action.MAIN\" />"
+                + "<category android:name=\"android.intent.category.LAUNCHER\" />"
+                + "</intent-filter>";
+        String[] bad = {
+                launcherFixture(".MainActivity", "true", "@drawable/ic_stat_badge_sync",
+                        goodFilter, ""),
+                launcherFixture(".ui.MainActivity", "false", "@drawable/ic_stat_badge_sync",
+                        goodFilter, ""),
+                launcherFixture(".ui.MainActivity", "true", "", goodFilter, ""),
+                launcherFixture(".ui.MainActivity", "true", "@drawable/wrong",
+                        goodFilter, ""),
+                launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
+                        "<intent-filter><action android:name=\"android.intent.action.MAIN\" />"
+                                + "</intent-filter>", ""),
+                launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
+                        goodFilter.replace("</intent-filter>", "<data android:scheme=\"x\" />"
+                                + "</intent-filter>"), ""),
+                launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
+                        goodFilter, "<activity android:name=\".MaintenanceActivity\" />"),
+                launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
+                        goodFilter, "<activity-alias android:name=\".Alias\" />")
+        };
+        for (String xml : bad) {
+            assertThrows(AssertionError.class,
+                    () -> assertLauncherApplication(xml, ".ui.MainActivity"));
+        }
+    }
+
+    private static void assertLauncherApplication(String xml, String expectedName)
+            throws Exception {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(true);
+        Element manifest = factory.newDocumentBuilder().parse(
+                new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)))
+                .getDocumentElement();
+        NodeList applications = manifest.getElementsByTagName("application");
+        assertEquals("one application", 1, applications.getLength());
+        Element application = (Element) applications.item(0);
+        assertEquals("app label", "@string/app_name",
+                application.getAttributeNS(ANDROID_NAMESPACE, "label"));
+        assertEquals("app theme", "@style/Theme.FactoryBadges",
+                application.getAttributeNS(ANDROID_NAMESPACE, "theme"));
+        assertEquals("app icon", "@drawable/ic_stat_badge_sync",
+                application.getAttributeNS(ANDROID_NAMESPACE, "icon"));
+        assertEquals("one activity", 1,
+                application.getElementsByTagName("activity").getLength());
+        assertEquals("no activity alias", 0,
+                application.getElementsByTagName("activity-alias").getLength());
+        Element activity = (Element) application.getElementsByTagName("activity").item(0);
+        assertEquals("launcher name", expectedName,
+                activity.getAttributeNS(ANDROID_NAMESPACE, "name"));
+        assertEquals("launcher exported", "true",
+                activity.getAttributeNS(ANDROID_NAMESPACE, "exported"));
+        NodeList filters = activity.getElementsByTagName("intent-filter");
+        assertEquals("one launcher filter", 1, filters.getLength());
+        Element filter = (Element) filters.item(0);
+        assertEquals("one action", 1, filter.getElementsByTagName("action").getLength());
+        assertEquals("MAIN action", "android.intent.action.MAIN",
+                ((Element) filter.getElementsByTagName("action").item(0))
+                        .getAttributeNS(ANDROID_NAMESPACE, "name"));
+        assertEquals("one category", 1,
+                filter.getElementsByTagName("category").getLength());
+        assertEquals("LAUNCHER category", "android.intent.category.LAUNCHER",
+                ((Element) filter.getElementsByTagName("category").item(0))
+                        .getAttributeNS(ANDROID_NAMESPACE, "name"));
+        assertEquals("no data", 0, filter.getElementsByTagName("data").getLength());
+        assertEquals("no receiver", 0,
+                application.getElementsByTagName("receiver").getLength());
+        assertEquals("no provider", 0,
+                application.getElementsByTagName("provider").getLength());
+    }
+
+    private static String launcherFixture(String activityName, String exported,
+            String icon, String filter, String extra) {
+        String iconAttribute = icon.isEmpty() ? "" : " android:icon=\"" + icon + "\"";
+        return "<manifest xmlns:android=\"" + ANDROID_NAMESPACE + "\">"
+                + "<application android:label=\"@string/app_name\""
+                + " android:theme=\"@style/Theme.FactoryBadges\"" + iconAttribute + ">"
+                + "<activity android:name=\"" + activityName + "\""
+                + " android:exported=\"" + exported + "\">" + filter + "</activity>"
+                + extra
+                + "<service android:name=\".sync.BadgeSyncService\""
+                + " android:exported=\"false\""
+                + " android:foregroundServiceType=\"connectedDevice\" />"
+                + "</application></manifest>";
+    }
+
     private static void assertBadgeSyncService(String xml, String expectedName)
             throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();

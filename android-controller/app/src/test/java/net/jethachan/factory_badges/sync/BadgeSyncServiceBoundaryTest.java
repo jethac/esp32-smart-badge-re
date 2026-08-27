@@ -19,13 +19,17 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
+import javax.xml.parsers.DocumentBuilderFactory;
 import net.jethachan.factory_badges.model.BadgeState;
 import net.jethachan.factory_badges.model.ConnectionSnapshot;
 import org.junit.Test;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
 
 public final class BadgeSyncServiceBoundaryTest {
     private static final String SOURCE_PATH =
@@ -571,27 +575,8 @@ public final class BadgeSyncServiceBoundaryTest {
     // Mutation caught: notification resource names or bytes drift from the contract.
     @Test
     public void foregroundResourcesAreExact() throws Exception {
-        String strings = readNormalized(
+        assertNotificationStrings(
                 "app/src/main/res/values/strings.xml");
-        assertEquals(
-                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
-                + "<resources>\n"
-                + "    <string name=\"badge_sync_channel_name\">"
-                + "Badge sync</string>\n"
-                + "    <string name=\"badge_sync_notification_title\">"
-                + "Badge sync active</string>\n"
-                + "    <string name=\"badge_sync_notification_waiting\">"
-                + "Waiting for a badge</string>\n"
-                + "    <string name=\"badge_sync_notification_connecting\">"
-                + "Connecting to badge</string>\n"
-                + "    <string name=\"badge_sync_notification_ready\">"
-                + "Badge connected</string>\n"
-                + "    <string name=\"badge_sync_notification_retry\">"
-                + "Reconnecting to badge</string>\n"
-                + "    <string name=\"badge_sync_notification_error\">"
-                + "Badge sync needs attention</string>\n"
-                + "</resources>\n",
-                strings);
 
         String drawable = readNormalized(
                 "app/src/main/res/drawable/ic_stat_badge_sync.xml");
@@ -611,6 +596,50 @@ public final class BadgeSyncServiceBoundaryTest {
                 + "c-3.31,0 -6,-2.69 -6,-6 0,-1.01 0.25,-1.97 0.7,-2.8z\" />\n"
                 + "</vector>\n",
                 drawable);
+    }
+
+    private static void assertNotificationStrings(String path) throws Exception {
+        String[] names = {
+                "badge_sync_channel_name",
+                "badge_sync_notification_title",
+                "badge_sync_notification_waiting",
+                "badge_sync_notification_connecting",
+                "badge_sync_notification_ready",
+                "badge_sync_notification_retry",
+                "badge_sync_notification_error"
+        };
+        String[] values = {
+                "Badge sync",
+                "Badge sync active",
+                "Waiting for a badge",
+                "Connecting to badge",
+                "Badge connected",
+                "Reconnecting to badge",
+                "Badge sync needs attention"
+        };
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(true);
+        NodeList strings = factory.newDocumentBuilder()
+                .parse(Paths.get(path).toFile())
+                .getElementsByTagName("string");
+
+        for (String name : names) {
+            int count = 0;
+            for (int index = 0; index < strings.getLength(); index++) {
+                Element element = (Element) strings.item(index);
+                if (name.equals(element.getAttribute("name"))) count++;
+            }
+            assertEquals(name, 1, count);
+        }
+
+        Map<String, String> actual = new LinkedHashMap<String, String>();
+        for (int index = 0; index < strings.getLength(); index++) {
+            Element element = (Element) strings.item(index);
+            actual.put(element.getAttribute("name"), element.getTextContent());
+        }
+        for (int index = 0; index < names.length; index++) {
+            assertEquals(names[index], values[index], actual.get(names[index]));
+        }
     }
 
     private static void assertCallback(
