@@ -2,7 +2,8 @@
   "schemaVersion": 1,
   "includeDirectories": [
     "firmware/host",
-    "firmware/overlay/SDK/apps/watch/include"
+    "firmware/overlay/SDK/apps/watch/include",
+    "firmware/generated"
   ],
   "suites": {
     "button": [
@@ -24,6 +25,16 @@
         "name": "recovery-policy",
         "test": "firmware/host/test_recovery.c",
         "sources": ["firmware/overlay/SDK/apps/watch/e87/e87_recovery.c"]
+      }
+    ],
+    "renderer": [
+      {
+        "name": "normal-face",
+        "test": "firmware/host/test_renderer.c",
+        "sources": [
+          "firmware/overlay/SDK/apps/watch/e87/e87_renderer.c",
+          "firmware/generated/e87_assets.c"
+        ]
       }
     ],
     "state": [

@@ -1,0 +1,181 @@
+{
+  "assets": {
+    "credit_1727": {
+      "alphaSha256": "04318759044a95b2fa4608e7835a5ee585a7baa8f20fbd42968bc3b9732deead",
+      "byteCount": 2576,
+      "height": 28,
+      "nonzeroBounds": [
+        0,
+        0,
+        91,
+        27
+      ],
+      "symbol": "e87_asset_credit_1727",
+      "width": 92
+    },
+    "date_range": {
+      "alphaSha256": "116b209262bc4a27924c1676e1ddcccb49b975243a07fe7c7a15e62089f4f489",
+      "byteCount": 324,
+      "height": 18,
+      "nonzeroBounds": [
+        2,
+        1,
+        15,
+        16
+      ],
+      "symbol": "e87_asset_date_range",
+      "width": 18
+    },
+    "devin": {
+      "alphaSha256": "78192204b1c4dd6d8f7ff151d43767b03c8dfdf15ab41892781652a98dc35566",
+      "byteCount": 9216,
+      "height": 96,
+      "nonzeroBounds": [
+        0,
+        0,
+        83,
+        95
+      ],
+      "symbol": "e87_asset_devin",
+      "width": 96
+    },
+    "today": {
+      "alphaSha256": "84c97458173da570403da3805f21ada6545728ac8f95f4939d54667825ef3041",
+      "byteCount": 324,
+      "height": 18,
+      "nonzeroBounds": [
+        2,
+        1,
+        15,
+        16
+      ],
+      "symbol": "e87_asset_today",
+      "width": 18
+    }
+  },
+  "endpoints": {
+    "cardinals": {
+      "0": [
+        65536,
+        0
+      ],
+      "100": [
+        65536,
+        0
+      ],
+      "25": [
+        0,
+        65536
+      ],
+      "50": [
+        -65536,
+        0
+      ],
+      "75": [
+        0,
+        -65536
+      ]
+    },
+    "count": 101,
+    "format": "cos-then-sin-signed-le32-q16",
+    "sha256": "7ecb1c6da7063e52ba854231c8162da1b4ad45a9ac6cec3cafd93cd571883bb9"
+  },
+  "generation": {
+    "creditPreCropBox": [
+      1,
+      0,
+      93,
+      28
+    ],
+    "filter": "BOX",
+    "fontAxes": {
+      "wdth": 100,
+      "wght": 500
+    },
+    "fontPixelSize": 240,
+    "glyphs": [
+      "$",
+      ".",
+      "1",
+      "2",
+      "7"
+    ],
+    "scale": 8
+  },
+  "generatorSha256": "6096fb02d6a0455d539de01cb925d66c20b3b974ae32f8622ac181320794d3fd",
+  "lockSha256": "7832996bc29c95c2a4374280cc4014af322d840b98b97fb29006399a6a774b2b",
+  "outputs": {
+    "c": {
+      "sha256": "8c7ca8fc4b0d0db260e109d31b218d08c7ecc480bfe7fa202701344d3f34c664"
+    },
+    "header": {
+      "sha256": "3932c79d65a78c8bfea74427d3f92e535d2bef55876a990f6aa136e674039979"
+    }
+  },
+  "requirementsSha256": "964dba45fb1b91a0591c4fecf0295b9e203d817d6c88388654c19a8972c66efb",
+  "schemaVersion": 1,
+  "sources": {
+    "date_range": {
+      "byteLength": 694,
+      "destination": "firmware/assets/sources/date_range.svg",
+      "repository": "google/material-design-icons",
+      "sha256": "342ef493b1d94132215ab4f25d90cbab34b448a39f50db1e929317ce8f28ab04",
+      "upstreamCommit": "e083cc60a0828fdd3b404cea0cb8a5b900e9c23e",
+      "upstreamPath": "symbols/web/date_range/materialsymbolsrounded/date_range_24px.svg"
+    },
+    "devin": {
+      "byteLength": 9266,
+      "canonicalSource": "assets/icons/devin.svg",
+      "destination": "firmware/assets/sources/devin.svg",
+      "gitBlob": "0a11af513a7d208c2c49f33ab2d2d38fd4aefe90",
+      "permissionStatus": "unverified",
+      "repository": "jethac/factory-smartscreen",
+      "sha256": "0b77af4a730199892f15d99e9b812a39452554089811e46d925e62c09e09a4a9",
+      "tracedFrom": "jethac/factory@2720aaf58a9d86a5142fd86dfb05ecb39d31364d",
+      "upstreamCommit": "3feec00b8a9aa8c6874ca92477e4ed43098e3b84",
+      "upstreamPath": "assets/icons/devin.svg"
+    },
+    "material_license": {
+      "byteLength": 11357,
+      "destination": "firmware/assets/licenses/material-design-icons-LICENSE",
+      "license": "Apache-2.0",
+      "repository": "google/material-design-icons",
+      "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd",
+      "upstreamCommit": "e083cc60a0828fdd3b404cea0cb8a5b900e9c23e",
+      "upstreamPath": "LICENSE"
+    },
+    "roboto": {
+      "byteLength": 488584,
+      "destination": "firmware/assets/sources/Roboto[wdth,wght].ttf",
+      "repository": "google/fonts",
+      "sha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134",
+      "upstreamCommit": "6a003b5eb672dc8bf5bff5937cf5863f8b175445",
+      "upstreamPath": "ofl/roboto/Roboto[wdth,wght].ttf"
+    },
+    "roboto_license": {
+      "byteLength": 4394,
+      "destination": "firmware/assets/licenses/Roboto-OFL.txt",
+      "license": "OFL-1.1",
+      "repository": "google/fonts",
+      "sha256": "061402327a96aadb0bfb694a960ed289ecd38d383e396243831ab81feb109c41",
+      "upstreamCommit": "6a003b5eb672dc8bf5bff5937cf5863f8b175445",
+      "upstreamPath": "ofl/roboto/OFL.txt"
+    },
+    "today": {
+      "byteLength": 472,
+      "destination": "firmware/assets/sources/today.svg",
+      "repository": "google/material-design-icons",
+      "sha256": "c2aa056cc2353ce349bea6657053370dfbbd38dd96c0e52217615aaf02a1fa04",
+      "upstreamCommit": "e083cc60a0828fdd3b404cea0cb8a5b900e9c23e",
+      "upstreamPath": "symbols/web/today/materialsymbolsrounded/today_24px.svg"
+    }
+  },
+  "tools": {
+    "compilerSha256": "75e997ec62297a6484f491bae28ab0ccb489daba23e398fd10fe68e9e6f0def8",
+    "linkerSha256": "f6d71a1bcd45764550a42dfaa179bc43b63ee879ec6f875bfd39fca013515da7",
+    "nativeClosureTreeSha256": "31562f9b0287db247aba1c46186cc9aea8272d06dd5e2370f51c38527e19e6de",
+    "pythonSha256": "22e747b1e8a04719d4af2094133a0479b33728d2e4d03ab01539064dc6f45cfb",
+    "runtimeReference": "127.0.0.1:5001/e87/asset-runtime@sha256:859689ef25f6940e22a5ea2427471596b42bb628bc8d308b5d3334721784d0ea",
+    "wheelhouseTreeSha256": "63ec949440b97db33b2c22e6f29b86bd8e2bd6fcbdbf6b11f3adbc1d3e32dc89"
+  }
+}

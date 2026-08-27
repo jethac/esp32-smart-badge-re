@@ -353,6 +353,8 @@ class HostRunnerIntegrationTest(unittest.TestCase):
                 "firmware/host",
                 "-I",
                 "firmware/overlay/SDK/apps/watch/include",
+                "-I",
+                "firmware/generated",
                 "firmware/host/test_main.c",
                 "firmware/host/test_harness.c",
                 "-o",
