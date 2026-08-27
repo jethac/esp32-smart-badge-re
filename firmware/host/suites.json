@@ -11,6 +11,16 @@
         "test": "firmware/host/test_harness.c",
         "sources": []
       }
+    ],
+    "state": [
+      {
+        "name": "semantic-state-build-info",
+        "test": "firmware/host/test_state.c",
+        "sources": [
+          "firmware/overlay/SDK/apps/watch/e87/e87_state.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_build_info.c"
+        ]
+      }
     ]
   }
 }
