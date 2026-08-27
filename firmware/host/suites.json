@@ -5,11 +5,25 @@
     "firmware/overlay/SDK/apps/watch/include"
   ],
   "suites": {
+    "button": [
+      {
+        "name": "button-fsm",
+        "test": "firmware/host/test_button_fsm.c",
+        "sources": ["firmware/overlay/SDK/apps/watch/e87/e87_button_fsm.c"]
+      }
+    ],
     "harness": [
       {
         "name": "buffer-budget",
         "test": "firmware/host/test_harness.c",
         "sources": []
+      }
+    ],
+    "recovery": [
+      {
+        "name": "recovery-policy",
+        "test": "firmware/host/test_recovery.c",
+        "sources": ["firmware/overlay/SDK/apps/watch/e87/e87_recovery.c"]
       }
     ],
     "state": [
