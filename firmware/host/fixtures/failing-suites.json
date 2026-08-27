@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "includeDirectories": [
+    "firmware/host"
+  ],
+  "suites": {
+    "harness-failure": [
+      {
+        "name": "expected-failure",
+        "test": "firmware/host/fixtures/test_expected_failure.c",
+        "sources": []
+      }
+    ]
+  }
+}

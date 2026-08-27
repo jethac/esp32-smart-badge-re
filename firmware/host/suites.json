@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "includeDirectories": [
+    "firmware/host",
+    "firmware/overlay/SDK/apps/watch/include"
+  ],
+  "suites": {
+    "harness": [
+      {
+        "name": "buffer-budget",
+        "test": "firmware/host/test_harness.c",
+        "sources": []
+      }
+    ]
+  }
+}

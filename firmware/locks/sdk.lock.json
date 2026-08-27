@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "sdk": {
+    "kind": "git",
+    "url": "https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200.git",
+    "commit": "d0167685d032d745d88fe50233302edd46941622",
+    "tree": "854734595be49510aca5afb89f5885e8bce6a00f",
+    "submodules": []
+  },
+  "target": {
+    "chip": "AC707N",
+    "family": "BR35",
+    "architecture": "pi32v2",
+    "cpu": "r3",
+    "entryAddress": "0x0C000100"
+  }
+}
