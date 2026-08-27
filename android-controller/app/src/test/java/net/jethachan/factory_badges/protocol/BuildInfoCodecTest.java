@@ -53,6 +53,13 @@ public final class BuildInfoCodecTest {
     }
 
     @Test
+    public void capabilityNamesMapToTheirProtocolBits() {
+        assertEquals(0x01, BuildInfoCodec.CAPABILITY_SEMANTIC_METRICS);
+        assertEquals(0x02, BuildInfoCodec.CAPABILITY_BATTERY_SERVICE);
+        assertEquals(0x04, BuildInfoCodec.CAPABILITY_PHYSICALLY_GATED_RCSP);
+    }
+
+    @Test
     public void decodeAcceptsEveryAllowedCapabilityCombination() {
         for (int capabilities = 0; capabilities <= 7; capabilities++) {
             byte[] record = validRecord();
