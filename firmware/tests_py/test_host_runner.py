@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import stat
@@ -19,6 +20,7 @@ RUNNER = REPO_ROOT / "firmware" / "tools" / "test-host.py"
 HOST_CC = os.environ.get("E87_HOST_CC", "/usr/bin/gcc-11")
 TEST_ROOT = REPO_ROOT / "firmware" / ".host-build" / "python-tests"
 COMPILER_SHA256 = "821af3c74506283c179ca413bb33e6b528805a4dd8a5c09df125e5ad560a9e89"
+LOCAL_INCLUDE_RE = re.compile(r'^\s*#\s*include\s*"([^"]+)"')
 
 
 class HostRunnerIntegrationTest(unittest.TestCase):
@@ -106,17 +108,54 @@ class HostRunnerIntegrationTest(unittest.TestCase):
         compiler.chmod(compiler.stat().st_mode | stat.S_IXUSR)
         return str(compiler), marker
 
-    def make_sandbox(self, name: str = "sandbox") -> Path:
-        sandbox = self.root / name
-        inputs = (
+    def sandbox_inputs(self) -> tuple[list[str], list[str]]:
+        manifest_spelling = "firmware/host/suites.json"
+        manifest = json.loads(
+            (REPO_ROOT / manifest_spelling).read_text(encoding="utf-8")
+        )
+        include_spellings = list(manifest["includeDirectories"])
+        include_roots = [REPO_ROOT / spelling for spelling in include_spellings]
+        pending = {
             "firmware/tools/test-host.py",
             "firmware/locks/sdk.lock.json",
-            "firmware/host/suites.json",
-            "firmware/host/test_support.h",
+            manifest_spelling,
             "firmware/host/test_main.c",
-            "firmware/host/test_harness.c",
-            "firmware/overlay/SDK/apps/watch/include/e87/e87_types.h",
-        )
+        }
+        for cases in manifest["suites"].values():
+            for case in cases:
+                pending.add(case["test"])
+                pending.update(case["sources"])
+
+        discovered: set[str] = set()
+        while pending:
+            spelling = min(pending)
+            pending.remove(spelling)
+            if spelling in discovered:
+                continue
+            discovered.add(spelling)
+            path = REPO_ROOT / spelling
+            if path.suffix not in {".c", ".h"}:
+                continue
+            for line in path.read_text(encoding="utf-8").splitlines():
+                match = LOCAL_INCLUDE_RE.match(line)
+                if match is None:
+                    continue
+                name = match.group(1)
+                candidates = [path.parent / name]
+                candidates.extend(root / name for root in include_roots)
+                header = next((item for item in candidates if item.is_file()), None)
+                if header is None:
+                    raise AssertionError(
+                        f"sandbox input {spelling} has unresolved header {name}"
+                    )
+                pending.add(header.relative_to(REPO_ROOT).as_posix())
+        return sorted(discovered), include_spellings
+
+    def make_sandbox(self, name: str = "sandbox") -> Path:
+        sandbox = self.root / name
+        inputs, include_directories = self.sandbox_inputs()
+        for spelling in include_directories:
+            (sandbox / spelling).mkdir(parents=True, exist_ok=True)
         for spelling in inputs:
             destination = sandbox / spelling
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -367,7 +406,12 @@ class HostRunnerIntegrationTest(unittest.TestCase):
         )
 
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-        self.assertEqual("harness\n", result.stdout)
+        manifest = json.loads(
+            (REPO_ROOT / "firmware" / "host" / "suites.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(list(manifest["suites"]), result.stdout.splitlines())
         self.assertEqual("", result.stderr)
         self.assertFalse(marker.exists())
         self.assertEqual([], list(self.build_root.rglob("receipt.json")))
