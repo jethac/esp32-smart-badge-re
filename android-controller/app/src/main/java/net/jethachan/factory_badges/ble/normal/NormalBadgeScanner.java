@@ -231,11 +231,19 @@ public final class NormalBadgeScanner implements AutoCloseable {
                 ? null : Arrays.copyOf(scanRecord, scanRecord.length);
         Runnable delivery = new Runnable() {
             @Override public void run() {
-                Core.Candidate candidate;
+                Core.Candidate candidate = null;
+                Cleanup cleanup = null;
                 synchronized (guard) {
-                    if (!armedMatchesLocked(token, callback)) return;
-                    candidate = core.accept(token, address, bonded, copied);
+                    if (!matchesLocked(token, callback) || !core.isCurrent(token)) return;
+                    if (state == SessionState.STARTING) {
+                        cleanup = invalidateLocked(SessionState.IDLE, false);
+                    } else if (state == SessionState.ARMED) {
+                        candidate = core.accept(token, address, bonded, copied);
+                    } else {
+                        return;
+                    }
                 }
+                performCleanup(cleanup);
                 if (candidate != null) output.onCandidate(result, candidate);
             }
         };
@@ -251,7 +259,22 @@ public final class NormalBadgeScanner implements AutoCloseable {
         if (failure == null || !activeMatches(token, callback)) return;
         Runnable delivery = new Runnable() {
             @Override public void run() {
-                if (cleanupArmed(token, callback)) output.onFailure(failure);
+                Cleanup cleanup;
+                boolean report;
+                synchronized (guard) {
+                    if (!matchesLocked(token, callback) || !core.isCurrent(token)) return;
+                    if (state == SessionState.STARTING) {
+                        cleanup = invalidateLocked(SessionState.IDLE, false);
+                        report = false;
+                    } else if (state == SessionState.ARMED) {
+                        cleanup = invalidateLocked(SessionState.IDLE, false);
+                        report = true;
+                    } else {
+                        return;
+                    }
+                }
+                performCleanup(cleanup);
+                if (report) output.onFailure(failure);
             }
         };
         try {
@@ -278,16 +301,6 @@ public final class NormalBadgeScanner implements AutoCloseable {
         }
         performCleanup(cleanup);
         if (result != null && result.eligible()) output.onFinished(result.foundAny());
-    }
-
-    private boolean cleanupArmed(long token, Runtime.CallbackHandle callback) {
-        Cleanup cleanup;
-        synchronized (guard) {
-            if (!armedMatchesLocked(token, callback)) return false;
-            cleanup = invalidateLocked(SessionState.IDLE, false);
-        }
-        performCleanup(cleanup);
-        return true;
     }
 
     private boolean cleanupCurrent(long token, Runtime.CallbackHandle callback,
@@ -628,16 +641,29 @@ public final class NormalBadgeScanner implements AutoCloseable {
 
         Candidate accept(long sessionToken, String address, boolean bonded,
                 byte[] scanRecord) {
-            if (!isCurrent(sessionToken) || !canonicalAddress(address)
-                    || addresses.size() >= MAX_CANDIDATES || addresses.contains(address)) {
+            if (!isCurrent(sessionToken) || !canonicalAddress(address)) {
+                return null;
+            }
+            String addressKey = addressKey(address);
+            if (addresses.size() >= MAX_CANDIDATES || addresses.contains(addressKey)) {
                 return null;
             }
             NormalAdvertisementParser.Match match =
                     NormalAdvertisementParser.parse(scanRecord).orElse(null);
             if (match == null) return null;
-            addresses.add(address);
+            addresses.add(addressKey);
             foundAny = true;
             return new Candidate(match.localName(), address, bonded);
+        }
+
+        private static String addressKey(String address) {
+            char[] key = address.toCharArray();
+            for (int index = 0; index < key.length; index++) {
+                if (key[index] >= 'a' && key[index] <= 'f') {
+                    key[index] = (char) (key[index] - ('a' - 'A'));
+                }
+            }
+            return new String(key);
         }
 
         FinishResult finish(long sessionToken) {

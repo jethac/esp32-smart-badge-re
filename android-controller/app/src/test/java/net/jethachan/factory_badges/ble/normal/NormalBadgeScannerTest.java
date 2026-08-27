@@ -50,6 +50,19 @@ public final class NormalBadgeScannerTest {
         assertTrue(finish.foundAny());
     }
 
+    // Mutation: treat differently cased spellings of one canonical MAC as distinct devices.
+    @Test public void caseVariantAddressIsDuplicateAndFirstLiteralIsRetained() {
+        NormalBadgeScanner.Core core = new NormalBadgeScanner.Core();
+        long token = core.begin();
+        String firstLiteral = "aA:bB:Cc:dD:eE:Ff";
+        NormalBadgeScanner.Core.Candidate first = core.accept(
+                token, firstLiteral, false, NORMAL);
+        assertNotNull(first);
+        assertEquals(firstLiteral, first.address());
+        assertNull(core.accept(token, "Aa:Bb:cC:Dd:Ee:fF", true, NORMAL));
+        assertTrue(core.finish(token).foundAny());
+    }
+
     // Mutation: admit a seventeenth new address or evict an earlier candidate.
     @Test public void candidateCapIsExactlySixteen() {
         NormalBadgeScanner.Core core = new NormalBadgeScanner.Core();
@@ -210,6 +223,16 @@ public final class NormalBadgeScannerTest {
         assertFalse(scanner.isScanning());
         assertSame(runtime.started.get(0), runtime.stopped.get(0));
         assertSame(runtime.lastTimeout, runtime.removed.get(0));
+    }
+
+    // Mutation: let accepted inline result delivery during STARTING arm the session.
+    @Test public void inlineAcceptedResultDuringStartingCleansUpSilently() {
+        assertInlineStartingIngressCleansUp(false);
+    }
+
+    // Mutation: let accepted inline failure delivery during STARTING arm the session.
+    @Test public void inlineAcceptedFailureDuringStartingCleansUpSilently() {
+        assertInlineStartingIngressCleansUp(true);
     }
 
     // Mutation: resurrect after a synchronous callback post rejection during STARTING.
@@ -565,6 +588,31 @@ public final class NormalBadgeScannerTest {
         assertThrows(IllegalStateException.class, scanner::close);
     }
 
+    private static void assertInlineStartingIngressCleansUp(boolean failureIngress) {
+        FakeRuntime runtime = new FakeRuntime();
+        RecordingOutput output = new RecordingOutput(runtime);
+        runtime.inlinePost = true;
+        runtime.startHook = () -> {
+            FakeCallback callback = runtime.started.get(0);
+            if (failureIngress) {
+                runtime.fireFailure(callback, NormalBadgeScanner.Failure.SCAN_FAILED);
+            } else {
+                runtime.fireResult(callback, address(0), NORMAL);
+            }
+        };
+        NormalBadgeScanner scanner = new NormalBadgeScanner(runtime, output);
+        scanner.start();
+        assertFalse(scanner.isScanning());
+        assertEquals(0, runtime.delayCalls);
+        assertEquals(0, runtime.delayed.size());
+        assertEquals(0, runtime.posts.size());
+        assertEquals(0, output.events.size());
+        assertEquals(1, runtime.removed.size());
+        assertNotNull(runtime.removed.get(0));
+        assertEquals(1, runtime.stopped.size());
+        assertSame(runtime.started.get(0), runtime.stopped.get(0));
+    }
+
     private static void assertStartFailure(boolean permission, boolean bluetooth,
             NormalBadgeScanner.Failure expected) {
         FakeRuntime runtime = new FakeRuntime();
@@ -646,8 +694,12 @@ public final class NormalBadgeScannerTest {
         assertFalse(source.contains("connectGatt("));
         assertFalse(source.contains("selectDevice("));
         assertEquals(1, occurrences(source, "currentCallback == callback"));
-        assertEquals(1, occurrences(source,
-                "if (!armedMatchesLocked(token, callback)) return;"));
+        assertEquals(2, occurrences(source,
+                "if (!matchesLocked(token, callback) || !core.isCurrent(token)) return;"));
+        assertEquals(2, occurrences(source,
+                "                    if (state == SessionState.STARTING) {"));
+        assertEquals(2, occurrences(source,
+                "                    } else if (state == SessionState.ARMED) {"));
         assertEquals(1, occurrences(source,
                 "NormalAdvertisementParser.parse(scanRecord)"));
     }
