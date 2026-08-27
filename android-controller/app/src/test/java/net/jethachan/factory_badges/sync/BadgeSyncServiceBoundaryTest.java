@@ -112,6 +112,39 @@ public final class BadgeSyncServiceBoundaryTest {
                         "postBinderMutation(java.lang.Runnable):void",
                         "removeSnapshotListener(java.lang.Object):void")),
                 nonPrivateDeclaredMethods(BadgeSyncServiceRuntime.class));
+
+        Set<String> runtimeFields = new TreeSet<String>();
+        for (Field field : BadgeSyncServiceRuntime.class.getDeclaredFields()) {
+            runtimeFields.add(
+                    Modifier.toString(field.getModifiers())
+                            + ":" + field.getType().getTypeName()
+                            + ":" + field.getName());
+        }
+        assertEquals(new TreeSet<String>(Arrays.asList(
+                        "private static final:java.lang.String:ACTION_DISABLE",
+                        "private static final:java.lang.String:ACTION_ENABLE",
+                        "static final:int:START_NOT_STICKY_RESULT",
+                        "private final:java.lang.Object:lock",
+                        "private final:java.util.List:listeners",
+                        "private final:net.jethachan.factory_badges.sync."
+                                + "BadgeSyncServiceRuntime$BlePoster:blePoster",
+                        "private final:net.jethachan.factory_badges.sync."
+                                + "BadgeSyncServiceRuntime$ForegroundPort:"
+                                + "foregroundPort",
+                        "private final:net.jethachan.factory_badges.sync."
+                                + "BadgeSyncServiceRuntime$MainPoster:mainPoster",
+                        "private volatile:net.jethachan.factory_badges.model."
+                                + "ConnectionSnapshot:latestSnapshot",
+                        "private:long:foregroundGeneration",
+                        "private:long:lifecycleToken",
+                        "private:long:listenerToken",
+                        "private:boolean:destroyed",
+                        "private:boolean:exhaustionStopPending",
+                        "private:boolean:foregroundDesired",
+                        "private:boolean:foregroundPromoted",
+                        "private:boolean:generationExhausted",
+                        "private:boolean:workerUnavailable")),
+                runtimeFields);
     }
 
     // Mutation caught: service policy storage or a listener registry escapes runtime.
@@ -511,6 +544,28 @@ public final class BadgeSyncServiceBoundaryTest {
         assertTrue(create.contains("runtime.onControllerForegroundStart()"));
         assertTrue(create.contains("runtime.onControllerForegroundStop()"));
         assertTrue(create.contains("runtime.onSnapshot(snapshot)"));
+    }
+
+    // Mutation caught: a rejected delayed post returns null or an active handle.
+    @Test
+    public void bleSchedulerAlwaysReturnsAnInertHandleWhenRejected()
+            throws Exception {
+        String scheduler = typeBody(
+                source(), "private final class BleScheduler");
+        String schedule = methodBody(
+                scheduler, "public Handle schedule(");
+        assertEquals(1, occurrences(
+                schedule, "bleHandler.postDelayed(callback, delayMs)"));
+        assertTrue(schedule.contains("final boolean accepted ="));
+        assertFalse(schedule.contains("return null"));
+        assertTrue(schedule.contains("return new Handle()"));
+        assertTrue(schedule.contains(
+                "private boolean cancelled = !accepted;"));
+
+        String cancel = methodBody(schedule, "public void cancel()");
+        assertTrue(cancel.contains("if (cancelled)"));
+        assertEquals(1, occurrences(
+                cancel, "bleHandler.removeCallbacks(callback)"));
     }
 
     // Mutation caught: notification resource names or bytes drift from the contract.

@@ -164,6 +164,26 @@ public final class ManifestSourceTest {
         assertOnlyAllowedPermissions(effectivePermissions(xml, false));
     }
 
+    // Mutation caught: a set-only oracle hides duplicate permission declarations.
+    @Test
+    public void permissionAuditRejectsDuplicateAllowedDeclaration()
+            throws Exception {
+        String xml = "<manifest xmlns:android=\"" + ANDROID_NAMESPACE + "\">"
+                + "<uses-permission android:name=\"android.permission.BLUETOOTH_SCAN\" />"
+                + "<uses-permission android:name=\"android.permission.BLUETOOTH_CONNECT\" />"
+                + "<uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\" />"
+                + "<uses-permission android:name="
+                + "\"android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE\" />"
+                + "<uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />"
+                + "<uses-permission android:name=\"android.permission.BLUETOOTH_CONNECT\" />"
+                + "</manifest>";
+        List<String> permissions = effectivePermissions(xml, false);
+        assertEquals("fixture has one duplicate", 6, permissions.size());
+
+        assertThrows(AssertionError.class,
+                () -> assertOnlyAllowedPermissions(permissions));
+    }
+
     @Test(expected = AssertionError.class)
     public void bluetoothScanWithoutNeverForLocationIsRejected() throws Exception {
         String xml = "<manifest xmlns:android=\"" + ANDROID_NAMESPACE + "\">"
@@ -355,7 +375,11 @@ public final class ManifestSourceTest {
         for (String forbidden : FORBIDDEN) {
             assertFalse(forbidden, permissions.contains(forbidden));
         }
-        assertTrue("only allowed permissions: " + permissions,
-                ALLOWED.containsAll(permissions) && permissions.containsAll(ALLOWED));
+        assertEquals("exactly five effective permissions: " + permissions,
+                5, permissions.size());
+        Set<String> unique = new HashSet<String>(permissions);
+        assertEquals("effective permissions must be unique: " + permissions,
+                permissions.size(), unique.size());
+        assertEquals("exact allowed permissions", ALLOWED, unique);
     }
 }

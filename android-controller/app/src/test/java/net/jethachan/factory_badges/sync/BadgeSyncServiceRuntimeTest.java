@@ -1,6 +1,7 @@
 package net.jethachan.factory_badges.sync;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -234,6 +235,85 @@ public final class BadgeSyncServiceRuntimeTest {
 
         assertTrue(harness.foreground.events.isEmpty());
         assertTrue(harness.main.tasks.isEmpty());
+    }
+
+    // Mutation caught: an accepted promote callback runs before post returns and drops.
+    @Test
+    public void acceptedEarlyPromoteWaitsForPostResultThenRunsOnExecutor() {
+        EarlyMainPoster main = new EarlyMainPoster(false, true);
+        BleQueue ble = new BleQueue();
+        Foreground foreground = new Foreground();
+        BadgeSyncServiceRuntime runtime = new BadgeSyncServiceRuntime(
+                disabledSnapshot(), ble, main, foreground);
+
+        runtime.onControllerForegroundStart();
+        main.awaitAll();
+
+        assertEquals(java.util.Arrays.asList("promote:WAITING"),
+                foreground.events);
+        assertTrue(main.ranOnlyOnExecutor);
+    }
+
+    // Mutation caught: accepted early update/stop callbacks are silently dropped.
+    @Test
+    public void acceptedEarlyUpdateAndStopBothRunOnExecutor() {
+        EarlyMainPoster main = new EarlyMainPoster(false, true);
+        BleQueue ble = new BleQueue();
+        Foreground foreground = new Foreground();
+        BadgeSyncServiceRuntime runtime = new BadgeSyncServiceRuntime(
+                disabledSnapshot(), ble, main, foreground);
+        runtime.onStartCommand(
+                "net.jethachan.factory_badges.action.ENABLE_BADGE_SYNC",
+                new Counter(),
+                new Counter());
+        foreground.events.clear();
+
+        runtime.onSnapshot(snapshot(ConnectionSnapshot.Phase.READY));
+        main.awaitAll();
+        runtime.onControllerForegroundStop();
+        main.awaitAll();
+
+        assertEquals(java.util.Arrays.asList("update:READY", "stop"),
+                foreground.events);
+        assertTrue(main.ranOnlyOnExecutor);
+    }
+
+    // Mutation caught: an accepted early listener delivery is silently dropped.
+    @Test
+    public void acceptedEarlyListenerDeliveryRunsOnExecutor() {
+        EarlyMainPoster main = new EarlyMainPoster(true, true);
+        Delivery delivery = new Delivery();
+        BadgeSyncServiceRuntime runtime = new BadgeSyncServiceRuntime(
+                disabledSnapshot(), new BleQueue(), main, new Foreground());
+
+        runtime.addSnapshotListener(new Object(), delivery);
+        main.awaitAll();
+
+        assertEquals(java.util.Arrays.asList(disabledSnapshot()),
+                delivery.snapshots);
+        assertTrue(main.ranOnlyOnExecutor);
+    }
+
+    // Mutation caught: an accepted early exhaustion-stop callback is dropped.
+    @Test
+    public void acceptedEarlyExhaustionStopRunsOnExecutor() throws Exception {
+        EarlyMainPoster main = new EarlyMainPoster(false, true);
+        BleQueue ble = new BleQueue();
+        Foreground foreground = new Foreground();
+        BadgeSyncServiceRuntime runtime = new BadgeSyncServiceRuntime(
+                disabledSnapshot(), ble, main, foreground);
+        runtime.onStartCommand(
+                "net.jethachan.factory_badges.action.ENABLE_BADGE_SYNC",
+                new Counter(),
+                new Counter());
+        foreground.events.clear();
+        seedCounter(runtime, "foregroundGeneration", Long.MAX_VALUE);
+
+        runtime.onControllerForegroundStop();
+        main.awaitAll();
+
+        assertEquals(java.util.Arrays.asList("stop"), foreground.events);
+        assertTrue(main.ranOnlyOnExecutor);
     }
 
     // Mutation caught: a rejected controller-start post leaves desire stuck true.
@@ -539,6 +619,69 @@ public final class BadgeSyncServiceRuntimeTest {
                         new RecordingDestroy(harness.ble, false)));
         assertTrue(harness.ble.tasks.isEmpty());
     }
+    // Mutation caught: direct destroy at MAX bypasses shared exhaustion state.
+    @Test
+    public void destroyAtMaxLifecycleFailsClosedAndStillCleansOnce()
+            throws Exception {
+        Harness harness = new Harness();
+        seedCounter(harness.runtime, "lifecycleToken", Long.MAX_VALUE);
+        RecordingDestroy destroy = new RecordingDestroy(harness.ble, false);
+
+        harness.runtime.destroy(destroy);
+
+        IllegalStateException failure = assertThrows(
+                IllegalStateException.class,
+                () -> harness.runtime.postBinderMutation(new Counter()));
+        assertEquals("service generation exhausted", failure.getMessage());
+        assertEquals(Long.MAX_VALUE,
+                readCounter(harness.runtime, "lifecycleToken"));
+        assertEquals(1, harness.ble.tasks.size());
+        harness.ble.runNext();
+        assertEquals(java.util.Arrays.asList("close", "quit"),
+                destroy.events);
+
+        harness.runtime.destroy(destroy);
+        assertTrue(harness.ble.tasks.isEmpty());
+        assertEquals(java.util.Arrays.asList("close", "quit"),
+                destroy.events);
+    }
+
+    // Mutation caught: foreground MAX destroy bypasses exhaustion or double-stops.
+    @Test
+    public void destroyAtMaxForegroundFailsClosedStopsAndCleansOnce()
+            throws Exception {
+        Harness harness = new Harness();
+        harness.runtime.onStartCommand(
+                "net.jethachan.factory_badges.action.ENABLE_BADGE_SYNC",
+                new Counter(),
+                new Counter());
+        harness.ble.runNext();
+        harness.foreground.events.clear();
+        seedCounter(
+                harness.runtime, "foregroundGeneration", Long.MAX_VALUE);
+        RecordingDestroy destroy = new RecordingDestroy(harness.ble, false);
+
+        harness.runtime.destroy(destroy);
+
+        assertEquals(java.util.Arrays.asList("stop"),
+                harness.foreground.events);
+        IllegalStateException failure = assertThrows(
+                IllegalStateException.class,
+                () -> harness.runtime.postBinderMutation(new Counter()));
+        assertEquals("service generation exhausted", failure.getMessage());
+        assertEquals(Long.MAX_VALUE,
+                readCounter(harness.runtime, "foregroundGeneration"));
+        assertEquals(1, harness.ble.tasks.size());
+        harness.ble.runNext();
+        assertEquals(java.util.Arrays.asList("close", "quit"),
+                destroy.events);
+
+        harness.runtime.destroy(destroy);
+        assertEquals(java.util.Arrays.asList("stop"),
+                harness.foreground.events);
+        assertTrue(harness.ble.tasks.isEmpty());
+    }
+
     // Mutation caught: a queued BLE callback omits captured-token equality.
     @Test
     public void queuedMutationWithChangedLifecycleTokenIsIneligible()
@@ -916,6 +1059,64 @@ public final class BadgeSyncServiceRuntimeTest {
                 currentRunnable.run();
             } finally {
                 currentRunnable = null;
+            }
+        }
+    }
+
+    private static final class EarlyMainPoster
+            implements BadgeSyncServiceRuntime.MainPoster {
+        final boolean mainThread;
+        final boolean accepted;
+        final List<Thread> threads = new ArrayList<Thread>();
+        volatile boolean ranOnlyOnExecutor = true;
+
+        EarlyMainPoster(boolean mainThread, boolean accepted) {
+            this.mainThread = mainThread;
+            this.accepted = accepted;
+        }
+
+        @Override
+        public boolean isMainThread() {
+            return mainThread;
+        }
+
+        @Override
+        public boolean post(final Runnable task) {
+            final Thread caller = Thread.currentThread();
+            Thread executor = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    if (Thread.currentThread() == caller) {
+                        ranOnlyOnExecutor = false;
+                    }
+                    task.run();
+                }
+            }, "fake-main");
+            threads.add(executor);
+            executor.start();
+            long deadline = System.nanoTime() + 2_000_000_000L;
+            while (executor.getState() != Thread.State.WAITING
+                    && executor.getState() != Thread.State.TIMED_WAITING
+                    && executor.getState() != Thread.State.TERMINATED) {
+                if (System.nanoTime() >= deadline) {
+                    throw new AssertionError(
+                            "early main callback did not start");
+                }
+                Thread.yield();
+            }
+            return accepted;
+        }
+
+        void awaitAll() {
+            for (Thread thread : threads) {
+                try {
+                    thread.join(2000L);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(interrupted);
+                }
+                assertFalse("early main callback remained blocked",
+                        thread.isAlive());
             }
         }
     }

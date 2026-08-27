@@ -24,9 +24,9 @@ import net.jethachan.factory_badges.model.ConnectionSnapshot;
 
 final class BadgeSyncServiceRuntime {
     static final int START_NOT_STICKY_RESULT = 2;
-    static final String ACTION_ENABLE =
+    private static final String ACTION_ENABLE =
             "net.jethachan.factory_badges.action.ENABLE_BADGE_SYNC";
-    static final String ACTION_DISABLE =
+    private static final String ACTION_DISABLE =
             "net.jethachan.factory_badges.action.DISABLE_BADGE_SYNC";
 
     enum NotificationKind {
@@ -80,7 +80,29 @@ final class BadgeSyncServiceRuntime {
             new ArrayList<Registration>();
 
     private static final class MainAttempt {
-        volatile boolean accepted;
+        private boolean completed;
+        private boolean accepted;
+
+        synchronized void complete(boolean result) {
+            accepted = result;
+            completed = true;
+            notifyAll();
+        }
+
+        synchronized boolean awaitAccepted() {
+            boolean interrupted = false;
+            while (!completed) {
+                try {
+                    wait();
+                } catch (InterruptedException exception) {
+                    interrupted = true;
+                }
+            }
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            return accepted;
+        }
     }
 
     private static final class Registration {
@@ -183,13 +205,9 @@ final class BadgeSyncServiceRuntime {
         }
         final long capturedGeneration = generation;
         final NotificationKind capturedKind = kind;
-        final MainAttempt attempt = new MainAttempt();
-        boolean accepted = mainPoster.post(new Runnable() {
+        boolean accepted = postCheckedMain(new Runnable() {
             @Override
             public void run() {
-                if (!attempt.accepted) {
-                    return;
-                }
                 synchronized (lock) {
                     if (destroyed
                             || workerUnavailable
@@ -204,7 +222,6 @@ final class BadgeSyncServiceRuntime {
                 }
             }
         });
-        attempt.accepted = accepted;
         if (!accepted) {
             invalidateRejectedForegroundPost(capturedGeneration, true);
         }
@@ -234,13 +251,9 @@ final class BadgeSyncServiceRuntime {
             return;
         }
         final long capturedGeneration = generation;
-        final MainAttempt attempt = new MainAttempt();
-        boolean accepted = mainPoster.post(new Runnable() {
+        boolean accepted = postCheckedMain(new Runnable() {
             @Override
             public void run() {
-                if (!attempt.accepted) {
-                    return;
-                }
                 synchronized (lock) {
                     if (destroyed
                             || generationExhausted
@@ -254,7 +267,6 @@ final class BadgeSyncServiceRuntime {
                 }
             }
         });
-        attempt.accepted = accepted;
         if (!accepted) {
             invalidateRejectedForegroundPost(capturedGeneration, false);
         }
@@ -280,13 +292,9 @@ final class BadgeSyncServiceRuntime {
                     : new ArrayList<Registration>(listeners);
         }
         if (updateForeground) {
-            final MainAttempt attempt = new MainAttempt();
-            boolean accepted = mainPoster.post(new Runnable() {
+            boolean accepted = postCheckedMain(new Runnable() {
                 @Override
                 public void run() {
-                    if (!attempt.accepted) {
-                        return;
-                    }
                     synchronized (lock) {
                         if (destroyed
                                 || generationExhausted
@@ -299,7 +307,6 @@ final class BadgeSyncServiceRuntime {
                     }
                 }
             });
-            attempt.accepted = accepted;
             if (!accepted) {
                 invalidateRejectedForegroundPost(generation, false);
             }
@@ -380,14 +387,18 @@ final class BadgeSyncServiceRuntime {
             if (destroyed) {
                 return;
             }
+            long advancedLifecycleToken =
+                    advanceGenerationLocked(lifecycleToken);
+            if (advancedLifecycleToken >= 0L) {
+                lifecycleToken = advancedLifecycleToken;
+            }
+            long advancedForegroundGeneration =
+                    advanceGenerationLocked(foregroundGeneration);
+            if (advancedForegroundGeneration >= 0L) {
+                foregroundGeneration = advancedForegroundGeneration;
+            }
             destroyed = true;
             workerUnavailable = true;
-            if (lifecycleToken < Long.MAX_VALUE) {
-                lifecycleToken++;
-            }
-            if (foregroundGeneration < Long.MAX_VALUE) {
-                foregroundGeneration++;
-            }
             foregroundDesired = false;
             stopForeground = foregroundPromoted;
             foregroundPromoted = false;
@@ -566,13 +577,9 @@ final class BadgeSyncServiceRuntime {
     private boolean postDelivery(
             final Registration registration,
             final ConnectionSnapshot snapshot) {
-        final MainAttempt attempt = new MainAttempt();
-        boolean accepted = mainPoster.post(new Runnable() {
+        boolean accepted = postCheckedMain(new Runnable() {
             @Override
             public void run() {
-                if (!attempt.accepted) {
-                    return;
-                }
                 SnapshotDelivery delivery = null;
                 synchronized (lock) {
                     Registration current =
@@ -589,8 +596,25 @@ final class BadgeSyncServiceRuntime {
                 }
             }
         });
-        attempt.accepted = accepted;
         return accepted;
+    }
+
+    private boolean postCheckedMain(final Runnable task) {
+        final MainAttempt attempt = new MainAttempt();
+        boolean accepted = false;
+        try {
+            accepted = mainPoster.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (attempt.awaitAccepted()) {
+                        task.run();
+                    }
+                }
+            });
+            return accepted;
+        } finally {
+            attempt.complete(accepted);
+        }
     }
 
     private long advanceGenerationLocked(long current) {
@@ -629,16 +653,12 @@ final class BadgeSyncServiceRuntime {
         if (!shouldPost) {
             return;
         }
-        final MainAttempt attempt = new MainAttempt();
-        boolean accepted = mainPoster.post(new Runnable() {
+        postCheckedMain(new Runnable() {
             @Override
             public void run() {
-                if (attempt.accepted) {
-                    stopForegroundAfterExhaustion();
-                }
+                stopForegroundAfterExhaustion();
             }
         });
-        attempt.accepted = accepted;
     }
 
     private void invalidateRejectedForegroundPost(
@@ -1031,11 +1051,10 @@ public final class BadgeSyncService extends Service {
             implements BadgeSyncController.Scheduler {
         @Override
         public Handle schedule(long delayMs, final Runnable callback) {
-            if (!bleHandler.postDelayed(callback, delayMs)) {
-                return null;
-            }
+            final boolean accepted =
+                    bleHandler.postDelayed(callback, delayMs);
             return new Handle() {
-                private boolean cancelled;
+                private boolean cancelled = !accepted;
 
                 @Override
                 public void cancel() {
