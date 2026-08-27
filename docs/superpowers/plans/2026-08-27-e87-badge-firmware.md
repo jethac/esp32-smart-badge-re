@@ -138,11 +138,21 @@ static void exact_vector(void) {
 }
 ```
 
-For every invalid length, version, percentage, flag, and credit byte, initialize `out` with `0xA5` and assert it remains byte-identical.
+V1 accepts only `credit_cents == 1727`, encoded as
+`0xBF 0x06 0x00 0x00`. Dynamic credit requires a protocol-version change.
+For every invalid length, version, percentage, flag, and credit encoding other
+than `0xBF 0x06 0x00 0x00`, initialize `out` with `0xA5`, and assert it
+remains byte-identical.
 
 - [ ] **Step 2: Implement decode-then-copy and commit semantics**
 
-Decode into a local temporary; copy to `out` only after all checks. `e87_state_commit` returns false for an identical state, true for a changed state, and uses the target spinlock adapter for commit/snapshot.
+Decode into a local temporary; copy to `out` only after all checks, including
+the fixed v1 credit. `e87_state_commit` returns false for an identical state,
+true for a changed state, and uses the target spinlock adapter for
+commit/snapshot.
+A packet with any other credit value is rejected without copying to `out` or
+committing visible state; only a fully valid `1727`-cent packet commits
+atomically.
 
 - [ ] **Step 3: Write 40-byte record tests**
 
@@ -283,13 +293,21 @@ Pin these exact inputs:
 
 | Asset | Repository commit/path | SHA-256 |
 |---|---|---|
-| Devin | `jethac/factory-smartscreen` `3feec00b8a9aa8c6874ca92477e4ed43098e3b84`, `assets/icons/devin.svg` | `D2914B171EEFC8A95C56D0E3A33497D31BC508DFF09729F5DC835E42715B304C` |
+| Devin | See source lock below | See source lock below |
 | Roboto variable | `google/fonts` `6a003b5eb672dc8bf5bff5937cf5863f8b175445`, `ofl/roboto/Roboto[wdth,wght].ttf` | `D7598E12C5DBEF095FF8272CFC55DA0250BD07FBDECBAC8A530B9B277872A134` |
 | today rounded | `google/material-design-icons` `e083cc60a0828fdd3b404cea0cb8a5b900e9c23e`, `symbols/web/today/materialsymbolsrounded/today_24px.svg` | `C2AA056CC2353CE349BEA6657053370DFBBD38DD96C0E52217615AAF02A1FA04` |
 | date_range rounded | same commit, `symbols/web/date_range/materialsymbolsrounded/date_range_24px.svg` | `342EF493B1D94132215AB4F25D90CBAB34B448A39F50DB1E929317CE8F28AB04` |
 | bolt rounded | same commit, `symbols/web/bolt/materialsymbolsrounded/bolt_24px.svg` | `13195A03D22906CA3C7A78FC6E104CB269B98DDAC7DCA96C424FADC623C33F3C` |
 
-Test explicitly rejects the old cog hash `0B77AF4A730199892F15D99E9B812A39452554089811E46D925E62C09E09A4A9`.
+The Devin source is `jethac/factory-smartscreen` commit
+`3feec00b8a9aa8c6874ca92477e4ed43098e3b84`, path
+`assets/icons/devin.svg`. It is traced to the `app.devin.ai` PWA icon in
+`jethac/factory` commit `2720aaf58a9d86a5142fd86dfb05ecb39d31364d`.
+
+Its SHA-256 is `0B77AF4A730199892F15D99E9B812A39452554089811E46D925E62C09E09A4A9`.
+Its Git blob is `0a11af513a7d208c2c49f33ab2d2d38fd4aefe90`.
+
+Test requires that SHA-256 and Git blob; no alternate Devin mark is accepted.
 
 - [ ] **Step 2: Implement deterministic fetching**
 
@@ -312,7 +330,8 @@ py -3.11 -m pytest firmware/tests_py/test_assets.py -q
 py -3.11 firmware/tools/gen-assets.py --check-reproducible
 ```
 
-Expected: PASS and no reference to the repository's old `assets/icons/devin.svg` remains in firmware locks.
+Expected: PASS and firmware locks record this repository's
+`assets/icons/devin.svg` with the listed source hash and blob.
 
 - [ ] **Step 6: Commit**
 
@@ -426,15 +445,29 @@ git commit -m "feat(firmware): add recovered JD9855 DBI path"
 
 **Interfaces:**
 - Consumes: JieLi multi-handle `app_ble_*` API, state/store/build/battery modules, 60-second physical pairing state.
-- Produces: exact normal profile, one-owner encrypted writes, and safe asynchronous profile switching.
+- Produces: exact normal profile, one-owner encrypted non-MITM state writes,
+  and safe asynchronous profile switching.
 
 - [ ] **Step 1: Define and test the exact normal profile**
 
-Handles 1-12 are GAP name, 128-bit service, state write, build-info read, Battery Service, Battery Level read/notify, and Battery CCCD. Test the exact 26-byte advertisement containing flags, service UUID, and `E87` name. Wrong handle/UUID/property/terminator fails.
+Handles 1-12 are GAP name, 128-bit service, state write, build-info read,
+Battery Service, Battery Level read/notify, and Battery CCCD. The state
+characteristic is encrypted, non-MITM write-with-response under `Just Works`;
+build-info is encrypted read.
+
+Test the exact 26-byte advertisement containing flags, service UUID, and `E87`
+name. A successful encrypted build-info read is the Android gate before it
+enables a state write. Wrong handle/UUID/property/security/terminator fails.
 
 - [ ] **Step 2: Implement ATT read/write callbacks**
 
-Support chunked reads. Reject nonzero write offset `0x07`, wrong length `0x0D`, unencrypted `0x0F`, non-owner `0x08`, invalid semantic packet `0x80`. Commit valid state atomically; duplicates ACK without redraw.
+Support chunked reads. Require link encryption for build-info reads and state
+writes; reject either unencrypted request with `0x0F`.
+
+For state writes, reject nonzero write offset `0x07`, wrong length `0x0D`,
+non-owner `0x08`, and an invalid semantic packet, including any non-`1727`
+credit, with `0x80`. Commit a valid state atomically; duplicates ACK without
+redraw.
 
 - [ ] **Step 3: Implement crash-safe owner replacement**
 

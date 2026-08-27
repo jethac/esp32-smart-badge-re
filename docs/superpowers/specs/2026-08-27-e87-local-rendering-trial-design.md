@@ -241,8 +241,9 @@ ordinary BLE disconnect. A cold boot or non-retentive sleep discards it.
 The normal application advertises the local name `E87` and only its normal
 custom service. Its service UUID is
 `e87d0001-7a1b-4c62-9f0b-5d9c01a70735`; the semantic-state characteristic UUID
-is `e87d0002-7a1b-4c62-9f0b-5d9c01a70735` and permits an authenticated write
-with response.
+is `e87d0002-7a1b-4c62-9f0b-5d9c01a70735` and permits an encrypted,
+non-MITM write-with-response under Just Works bonding. The badge accepts
+state writes only after link encryption is established for its remembered peer.
 
 The v1 state packet is exactly eight bytes:
 
@@ -252,24 +253,33 @@ The v1 state packet is exactly eight bytes:
 | 1 | Day integer, `0..100` |
 | 2 | Week integer, `0..100` |
 | 3 | flags, exactly `0` in v1 |
-| 4..7 | credit in cents, unsigned 32-bit little-endian; trial value `1727` |
+| 4..7 | credit in cents, unsigned 32-bit little-endian; must be exactly `1727` in v1 |
 
-The badge rejects every other length, version, out-of-range percentage, or v1
-flags value without changing visible state. A valid packet is copied into a
+Android always encodes the little-endian v1 credit value as `1727`
+(`0xBF 0x06 0x00 0x00`); it has no dynamic-credit path in v1.
+
+The badge rejects every other length, version, out-of-range percentage, v1
+flags value, or v1 credit value other than `1727` without changing visible
+state. A valid packet is copied into a
 temporary structure and committed atomically before redraw. There is no normal
 packet sequence number: the packet is a complete idempotent snapshot, GATT
 writes are acknowledged, and stale intermediate state is not meaningful.
+
+Future dynamic credit requires a new protocol version; v1 must never
+reinterpret a non-1727 credit value.
 
 The badge also exposes the standard Battery Service (`0x180F`) and Battery Level
 characteristic (`0x2A19`) for optional read/notification. Battery reporting does
 not alter the eight-byte provider packet.
 
 A read-only build-info characteristic at
-`e87d0003-7a1b-4c62-9f0b-5d9c01a70735` returns exactly 40 bytes: schema byte
-`1`; one capability byte; the NUL-padded 16-byte ASCII profile
+`e87d0003-7a1b-4c62-9f0b-5d9c01a70735` requires an encrypted read and returns exactly 40 bytes:
+schema byte `1`; one capability byte; the NUL-padded 16-byte ASCII profile
 `E87-JD9855-R1`; semantic-version major, minor, and patch bytes; one reserved
-zero byte; a 16-byte raw build ID; and two reserved zero bytes. Android checks
-this value after every normal connection and after an update reboot.
+zero byte; a 16-byte raw build ID; and two reserved zero bytes.
+Android checks this value after every normal connection and after an update
+reboot. A successful encrypted build-info read is the Android gate before it
+enables or attempts an encrypted semantic-state write.
 Capability bit 0 means semantic metrics, bit 1 means Battery Service, and bit 2
 means physically gated RCSP rewrite; all remaining bits are zero in v1.
 
@@ -278,6 +288,9 @@ ordinary persistent application state. A replacement peer is accepted only
 during the physical pairing window; the previous bond is removed only after the
 new bond succeeds. Normal advertising does not permit an unknown peer to claim
 the badge.
+
+Just Works establishes link encryption but deliberately provides no MITM
+protection.
 
 ## 7. Button, pairing, sleep, and recovery behavior
 
