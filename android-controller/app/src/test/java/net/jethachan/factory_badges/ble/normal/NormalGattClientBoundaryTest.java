@@ -75,6 +75,24 @@ public final class NormalGattClientBoundaryTest {
     }
 
     @Test
+    public void everyPublicFacadeMethodStartsWithBleThreadGuard() throws Exception {
+        String source = new String(Files.readAllBytes(Paths.get(
+                "app/src/main/java/net/jethachan/factory_badges/ble/normal/"
+                        + "NormalGattClient.java")), StandardCharsets.UTF_8);
+
+        for (String signature : Arrays.asList(
+                "public void connect(BluetoothDevice device)",
+                "public boolean writeState(BadgeState state)",
+                "public void disconnect()",
+                "public boolean isReady()",
+                "public void close()")) {
+            String body = methodBody(source, signature);
+            assertTrue(signature, body.matches(
+                    "(?s)^\\s*requireBleThread\\s*\\(\\s*\\)\\s*;.*"));
+        }
+    }
+
+    @Test
     public void api33And34BondReceiverFlagsAllowPrivilegedBluetoothSender() {
         assertEquals(0, NormalGattClient.receiverFlagsForApi(31));
         assertEquals(0, NormalGattClient.receiverFlagsForApi(32));
@@ -200,6 +218,26 @@ public final class NormalGattClientBoundaryTest {
             assertFalse(NormalGattClient.writeAcknowledgedForApi(
                     sdk, new byte[] {1}, rejectedModern));
         }
+    }
+
+    private static String methodBody(String source, String signature) {
+        int signatureStart = source.indexOf(signature);
+        assertTrue(signature, signatureStart >= 0);
+        int openingBrace = source.indexOf('{', signatureStart);
+        assertTrue(signature, openingBrace >= 0);
+        int depth = 0;
+        for (int index = openingBrace; index < source.length(); index++) {
+            char current = source.charAt(index);
+            if (current == '{') {
+                depth++;
+            } else if (current == '}') {
+                depth--;
+                if (depth == 0) {
+                    return source.substring(openingBrace + 1, index);
+                }
+            }
+        }
+        throw new AssertionError("unterminated method: " + signature);
     }
 
     private static int occurrences(String text, String needle) {

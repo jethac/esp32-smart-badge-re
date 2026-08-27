@@ -527,6 +527,29 @@ public final class NormalGattClientTest {
     }
 
     @Test
+    public void coreCloseIsIdempotentAndRejectsConnectAndWriteAfterward() {
+        Harness h = new Harness(BondState.BONDED);
+        FakeDriver driver = h.addDriver();
+        h.ready(driver);
+
+        h.core.close();
+        h.core.close();
+        h.core.disconnect();
+
+        assertFalse(h.core.isReady());
+        assertEquals(1, driver.disconnectCalls);
+        assertEquals(1, driver.closeCalls);
+        assertThrows(IllegalStateException.class, () -> h.core.connect());
+        assertThrows(
+                IllegalStateException.class,
+                () -> h.core.writeState(new BadgeState(4, 5, 1727)));
+        assertEquals(1, h.connector.calls);
+        assertEquals(0, h.listener.disconnects.size());
+        assertEquals(0, h.listener.errors.size());
+        assertEquals(0, h.listener.acknowledged.size());
+    }
+
+    @Test
     public void wrongKindAndUuidCallbacksPreserveActiveQueueToken() {
         Harness h = new Harness(BondState.BONDED);
         FakeDriver driver = h.addDriver();
@@ -656,6 +679,37 @@ public final class NormalGattClientTest {
         assertEquals(
                 UserVisibleError.Code.BLUETOOTH_PERMISSION_MISSING,
                 h.listener.onlyError().code());
+    }
+
+    @Test
+    public void readyCallbackCanReentrantlyWriteAndReceiveAcknowledgement() {
+        Harness h = new Harness(BondState.BONDED);
+        FakeDriver driver = h.addDriver();
+        BadgeState state = new BadgeState(17, 42, 1727);
+        boolean[] accepted = new boolean[] {false};
+        h.clock.now = 2468L;
+        h.listener.onConnectedAction =
+                () -> accepted[0] = h.core.writeState(state);
+        long generation = h.toBuild(driver);
+
+        h.build(generation, driver, VALID_BUILD, 0);
+
+        assertTrue(accepted[0]);
+        assertTrue(h.core.isReady());
+        assertEquals(1, driver.writes.size());
+        assertEquals(
+                Key.of(NormalUuids.SERVICE, NormalUuids.SEMANTIC_STATE),
+                driver.writes.get(0).key);
+        h.core.onCharacteristicWrite(
+                generation,
+                driver,
+                NormalUuids.SERVICE,
+                NormalUuids.SEMANTIC_STATE,
+                0);
+        assertEquals(Arrays.asList(state), h.listener.acknowledged);
+        assertEquals(Arrays.asList(Long.valueOf(2468L)),
+                h.listener.acknowledgedTimes);
+        assertEquals(1, h.clock.calls);
     }
 
     @Test
