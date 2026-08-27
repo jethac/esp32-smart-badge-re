@@ -103,6 +103,17 @@ public final class NormalAdvertisementParserTest {
     }
 
     @Test
+    public void rejectsEverySingleBytePerturbationOfNormalUuid() {
+        for (int index = 0; index < NORMAL_UUID_LE.length; index++) {
+            byte[] perturbed = Arrays.copyOf(NORMAL_UUID_LE, NORMAL_UUID_LE.length);
+            perturbed[index] ^= 0x01;
+            assertNoMatch(record(
+                    name(0x09, "E87"),
+                    ad(0x07, perturbed)));
+        }
+    }
+
+    @Test
     public void rejectsNullEmptyTruncatedAndOverlongStructures() {
         assertNoMatch(null);
         assertNoMatch(new byte[0]);
@@ -112,6 +123,20 @@ public final class NormalAdvertisementParserTest {
                 Arrays.copyOf(NORMAL_UUID_LE, 15)));
         assertNoMatch(concat(name(0x09, "E87"), bytes(0x12, 0x07),
                 NORMAL_UUID_LE));
+    }
+
+    @Test
+    public void rejectsConflictingOrMalformedTailAfterValidIdentityPrefix() {
+        byte[] validIdentity = record(
+                name(0x09, "E87"),
+                ad(0x07, NORMAL_UUID_LE));
+
+        assertNoMatch(concat(
+                validIdentity,
+                name(0x08, "E88")));
+        assertNoMatch(concat(
+                validIdentity,
+                bytes(0x04, 0xFF, 0x01)));
     }
 
     @Test

@@ -197,6 +197,9 @@ public final class GattOperationQueue {
         } catch (RuntimeException failure) {
             failCurrent(entry, entry.generation, failure);
             return;
+        } catch (Error failure) {
+            failCurrent(entry, entry.generation, failure);
+            throw failure;
         }
 
         if (!started) {

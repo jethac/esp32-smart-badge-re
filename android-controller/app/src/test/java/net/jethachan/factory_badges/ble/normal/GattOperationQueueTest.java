@@ -184,6 +184,35 @@ public final class GattOperationQueueTest {
     }
 
     @Test
+    public void startErrorRethrowsAfterFailingOnceAndStartingNext() {
+        final Fixture fixture = new Fixture();
+        final RecordingOperation next = fixture.operation("next", 35);
+        final AssertionError startError = new AssertionError("fatal start");
+        RecordingOperation crashing = fixture.operation("crashing", 36)
+                .startingWith(new Runnable() {
+                    @Override public void run() {
+                        fixture.queue.enqueue(next);
+                    }
+                })
+                .throwingErrorOnStart(startError);
+
+        AssertionError caught = null;
+        try {
+            fixture.queue.enqueue(crashing);
+        } catch (AssertionError failure) {
+            caught = failure;
+        }
+
+        assertSame(startError, caught);
+        assertEquals(Arrays.asList(
+                "start:crashing", "failure:crashing", "start:next"), fixture.events);
+        assertEquals(1, crashing.failureCauses.size());
+        assertSame(startError, crashing.failureCauses.get(0));
+        assertEquals(35L, fixture.queue.activeToken());
+        assertEquals(0, fixture.queue.pendingCount());
+    }
+
+    @Test
     public void failAllCancelsActiveThenFailsActiveAndQueuedInFifoOrder() {
         Fixture fixture = new Fixture();
         RecordingOperation active = fixture.operation("active", 41);
@@ -399,6 +428,7 @@ public final class GattOperationQueueTest {
         final List<Throwable> failureCauses = new ArrayList<Throwable>();
         boolean startResult = true;
         RuntimeException startFailure;
+        Error startError;
         Runnable startHook;
         Runnable completionHook;
         Runnable failureHook;
@@ -423,6 +453,11 @@ public final class GattOperationQueueTest {
 
         RecordingOperation throwingOnStart(RuntimeException failure) {
             startFailure = failure;
+            return this;
+        }
+
+        RecordingOperation throwingErrorOnStart(Error failure) {
+            startError = failure;
             return this;
         }
 
@@ -451,6 +486,9 @@ public final class GattOperationQueueTest {
             }
             if (startHook != null) {
                 startHook.run();
+            }
+            if (startError != null) {
+                throw startError;
             }
             return startResult;
         }
