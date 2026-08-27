@@ -1,5 +1,6 @@
 package net.jethachan.factory_badges.architecture;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -40,8 +41,9 @@ public final class ManifestSourceTest {
         String xml = new String(Files.readAllBytes(Paths.get("app/src/main/AndroidManifest.xml")),
                 StandardCharsets.UTF_8);
         assertFalse("usesCleartextTraffic", xml.contains("usesCleartextTraffic"));
-        List<String> permissions = effectivePermissions(xml);
+        List<String> permissions = effectivePermissions(xml, true);
         assertOnlyAllowedPermissions(permissions);
+        assertBluetoothScanUsesNeverForLocation(xml, true);
     }
 
     @Test
@@ -50,11 +52,52 @@ public final class ManifestSourceTest {
                 "app/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml");
         String xml = new String(Files.readAllBytes(mergedManifest), StandardCharsets.UTF_8);
         assertFalse("usesCleartextTraffic", xml.contains("usesCleartextTraffic"));
-        List<String> permissions = effectivePermissions(xml);
+        List<String> permissions = effectivePermissions(xml, false);
         assertOnlyAllowedPermissions(permissions);
+        assertBluetoothScanUsesNeverForLocation(xml, false);
     }
 
-    private static List<String> effectivePermissions(String xml) throws Exception {
+    @Test(expected = AssertionError.class)
+    public void sdkQualifiedForbiddenPermissionIsRejected() throws Exception {
+        String xml = "<manifest xmlns:android=\"" + ANDROID_NAMESPACE + "\">"
+                + "<uses-permission android:name=\"android.permission.BLUETOOTH_SCAN\" />"
+                + "<uses-permission android:name=\"android.permission.BLUETOOTH_CONNECT\" />"
+                + "<uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\" />"
+                + "<uses-permission android:name="
+                + "\"android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE\" />"
+                + "<uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />"
+                + "<uses-permission-sdk-23 "
+                + "android:name=\"android.permission.INTERNET\" />"
+                + "</manifest>";
+
+        assertOnlyAllowedPermissions(effectivePermissions(xml, false));
+    }
+
+    @Test(expected = AssertionError.class)
+    public void bluetoothScanWithoutNeverForLocationIsRejected() throws Exception {
+        String xml = "<manifest xmlns:android=\"" + ANDROID_NAMESPACE + "\">"
+                + "<uses-permission-sdk-23 "
+                + "android:name=\"android.permission.BLUETOOTH_SCAN\" />"
+                + "</manifest>";
+
+        assertBluetoothScanUsesNeverForLocation(xml, false);
+    }
+
+    @Test
+    public void removalNodesAreExcludedOnlyFromSourceManifestChecks() throws Exception {
+        String xml = "<manifest xmlns:android=\"" + ANDROID_NAMESPACE + "\""
+                + " xmlns:tools=\"" + TOOLS_NAMESPACE + "\">"
+                + "<uses-permission-sdk-23 android:name=\"android.permission.INTERNET\""
+                + " tools:node=\"remove\" /></manifest>";
+
+        List<String> sourcePermissions = effectivePermissions(xml, true);
+        List<String> mergedPermissions = effectivePermissions(xml, false);
+        assertFalse(sourcePermissions.contains("android.permission.INTERNET"));
+        assertTrue(mergedPermissions.contains("android.permission.INTERNET"));
+    }
+
+    private static List<String> effectivePermissions(
+            String xml, boolean excludeSourceRemovalNodes) throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(true);
         NodeList nodes = factory.newDocumentBuilder().parse(
@@ -63,15 +106,53 @@ public final class ManifestSourceTest {
         java.util.ArrayList<String> permissions = new java.util.ArrayList<String>();
         for (int index = 0; index < nodes.getLength(); index++) {
             Node node = nodes.item(index);
-            if (node.getNodeType() == Node.ELEMENT_NODE
-                    && "uses-permission".equals(node.getNodeName())) {
+            if (isPermissionDeclaration(node)) {
                 Element permission = (Element) node;
-                if (!"remove".equals(permission.getAttributeNS(TOOLS_NAMESPACE, "node"))) {
+                if (!excludeSourceRemovalNodes || !isRemovalNode(permission)) {
                     permissions.add(permission.getAttributeNS(ANDROID_NAMESPACE, "name"));
                 }
             }
         }
         return permissions;
+    }
+
+    private static void assertBluetoothScanUsesNeverForLocation(
+            String xml, boolean excludeSourceRemovalNodes) throws Exception {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(true);
+        NodeList nodes = factory.newDocumentBuilder().parse(
+                new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8))).getDocumentElement()
+                .getChildNodes();
+        boolean foundBluetoothScan = false;
+        for (int index = 0; index < nodes.getLength(); index++) {
+            Node node = nodes.item(index);
+            if (!isPermissionDeclaration(node)) {
+                continue;
+            }
+            Element permission = (Element) node;
+            if (excludeSourceRemovalNodes && isRemovalNode(permission)) {
+                continue;
+            }
+            if ("android.permission.BLUETOOTH_SCAN".equals(
+                    permission.getAttributeNS(ANDROID_NAMESPACE, "name"))) {
+                foundBluetoothScan = true;
+                assertEquals("BLUETOOTH_SCAN must declare neverForLocation",
+                        "neverForLocation",
+                        permission.getAttributeNS(ANDROID_NAMESPACE, "usesPermissionFlags"));
+            }
+        }
+        assertTrue("BLUETOOTH_SCAN declaration missing", foundBluetoothScan);
+    }
+
+    private static boolean isPermissionDeclaration(Node node) {
+        String localName = node.getLocalName();
+        return node.getNodeType() == Node.ELEMENT_NODE
+                && localName != null
+                && localName.startsWith("uses-permission");
+    }
+
+    private static boolean isRemovalNode(Element permission) {
+        return "remove".equals(permission.getAttributeNS(TOOLS_NAMESPACE, "node"));
     }
 
     private static void assertOnlyAllowedPermissions(List<String> permissions) {
