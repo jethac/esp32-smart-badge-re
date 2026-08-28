@@ -339,6 +339,7 @@ class Stage0StaticTests(unittest.TestCase):
             OVERLAY / "board/br35/board_e87_1542/board_e87_1542_cfg.h"
         )
         combined = board + "\n" + config
+        self.assertIn("#define WDT_APP_INIT_TIME WDT_16S", config)
         self.assertIn("#define WDT_APP_RUN_TIME WDT_LRC_4S", config)
         self.assertIn("#define TCFG_UPDATE_ENABLE 0", config)
         self.assertNotIn("#define CONFIG_UPDATE_ENABLE", config)
