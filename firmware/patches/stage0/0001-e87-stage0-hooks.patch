@@ -191,10 +191,10 @@ index 920e7bd..5c8fa1a 100644
 +
  #include "ui_app_def.h"
 diff --git a/SDK/build/Makefile.mk b/SDK/build/Makefile.mk
-index 8b6e87e..a584222 100644
+index 8b6e87e..e6624bf 100644
 --- a/SDK/build/Makefile.mk
 +++ b/SDK/build/Makefile.mk
-@@ -859,201 +859,326 @@
+@@ -859,201 +859,328 @@
  include build/fileList.mk
 -
 +
@@ -676,8 +676,10 @@ index 8b6e87e..a584222 100644
 +	cpu/br35/liba/cbuf.a \
 +	cpu/br35/liba/cfg_tool.a \
 +	cpu/br35/liba/crypto_toolbox_Osize.a \
++	cpu/br35/liba/device.a \
 +	cpu/br35/liba/fs.a \
 +	cpu/br35/liba/lib_ccm_cipher.a \
++	cpu/br35/liba/printf.a \
 +	cpu/br35/liba/vm.a
 +
 +LFLAGS := \
