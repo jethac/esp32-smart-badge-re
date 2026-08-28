@@ -13,17 +13,17 @@ public final class StockHostIdentityTest {
         assertEquals(0x00, StockHostIdentity.derive("zh", true, fields()).settings());
     }
 
-    @Test public void hostIdUsesAllFourteenBuildFieldLengthsWithoutHardcodingDevice() {
+    @Test public void hostIdUsesAllThirteenCapturedBuildFieldLengthsWithoutHardcodingDevice() {
         StockHostIdentity identity = StockHostIdentity.derive("en", false, fields());
 
-        assertEquals(1136684095, identity.hostId());
+        assertEquals(1976329877, identity.hostId());
     }
 
     @Test public void malformedIdentityInputsAreRejected() {
         assertThrows(IllegalArgumentException.class,
                 () -> StockHostIdentity.derive(null, false, fields()));
         assertThrows(IllegalArgumentException.class,
-                () -> StockHostIdentity.derive("en", false, new String[13]));
+                () -> StockHostIdentity.derive("en", false, new String[12]));
         String[] withNull = fields();
         withNull[7] = null;
         assertThrows(IllegalArgumentException.class,
@@ -34,7 +34,7 @@ public final class StockHostIdentityTest {
         return new String[] {
                 "1", "22", "333", "4444", "55555", "666666", "7777777",
                 "88888888", "999999999", "0000000000", "11111111111",
-                "222222222222", "3333333333333", "44444444444444"
+                "222222222222", "3333333333333"
         };
     }
 }
