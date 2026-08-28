@@ -15,6 +15,7 @@ try:
         _audit_snapshot,
         _canonical,
         _regular_absolute,
+        _sealed_command,
         _snapshot_apk,
         write_receipt,
     )
@@ -24,6 +25,7 @@ except ImportError:
         _audit_snapshot,
         _canonical,
         _regular_absolute,
+        _sealed_command,
         _snapshot_apk,
         write_receipt,
     )
@@ -42,14 +44,26 @@ def _validate_serial(value: str) -> str:
 
 
 def _run_adb(adb: Path, serial: str, arguments: list[str], label: str,
-             *, timeout: int = 180) -> str:
+             *, timeout: int = 180, snapshot=None) -> str:
+    command = [os.fspath(adb), "-s", serial, *arguments]
+    options: dict[str, object] = {}
+    if snapshot is not None:
+        if os.name != "posix":
+            raise ValidationError("adb cannot inherit the sealed APK snapshot")
+        command, pass_fds = _sealed_command(
+            adb,
+            ["-s", serial, *arguments],
+            snapshot,
+        )
+        options["pass_fds"] = pass_fds
     try:
         completed = subprocess.run(
-            [os.fspath(adb), "-s", serial, *arguments],
+            command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
             timeout=timeout,
+            **options,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise ValidationError(f"adb {label} failed to execute") from error
@@ -82,6 +96,7 @@ def install(arguments: argparse.Namespace) -> dict[str, object]:
             serial,
             ["install", "-r", os.fspath(snapshot.path)],
             "install",
+            snapshot=snapshot,
         )
         snapshot.verify_projection()
         if "Success" not in output.splitlines():

@@ -10,6 +10,7 @@ import os
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 import zipfile
 from contextlib import contextmanager
@@ -84,21 +85,74 @@ SURFACE_RECEIPT = Path(__file__).resolve().with_name(SURFACE_RECEIPT_NAME)
 BUILD_RECEIPT = Path(__file__).resolve().with_name(BUILD_RECEIPT_NAME)
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "app/src/main/java"
 MAX_APK_SNAPSHOT = 512 * 1024 * 1024
+SEALED_EXEC = Path(__file__).resolve().with_name("e87_sealed_exec.py")
+UNSHARE = Path("/usr/bin/unshare")
 
 
 @dataclass(frozen=True)
 class _ApkSnapshot:
     data: bytes
     path: Path
+    pass_fds: tuple[int, ...]
+    sealed_path: Path
     sha256: str
 
     def verify_projection(self) -> None:
         try:
-            projected = self.path.read_bytes()
+            projected = self.sealed_path.read_bytes()
         except OSError as error:
-            raise ValidationError("immutable APK projection is unavailable") from error
+            raise ValidationError("sealed APK snapshot is unavailable") from error
         if projected != self.data:
-            raise ValidationError("immutable APK projection changed during audit")
+            raise ValidationError("sealed APK projection changed during audit")
+
+
+@contextmanager
+def _sealed_linux_projection(data: bytes) -> Iterator[_ApkSnapshot]:
+    if not sys.platform.startswith("linux") or not hasattr(os, "memfd_create"):
+        raise ValidationError("kernel-sealed APK snapshots require a Linux host")
+    try:
+        import fcntl
+        add_seals = fcntl.F_ADD_SEALS
+        seals = (
+            fcntl.F_SEAL_SEAL
+            | fcntl.F_SEAL_SHRINK
+            | fcntl.F_SEAL_GROW
+            | fcntl.F_SEAL_WRITE
+        )
+        flags = os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING
+    except (AttributeError, ImportError) as error:
+        raise ValidationError("Linux sealed-memory support is unavailable") from error
+    try:
+        descriptor = os.memfd_create("e87-controller.apk", flags=flags)
+    except OSError as error:
+        raise ValidationError("sealed APK snapshot creation failed") from error
+    try:
+        try:
+            remaining = memoryview(data)
+            while remaining:
+                written = os.write(descriptor, remaining)
+                if written <= 0:
+                    raise OSError("short APK snapshot write")
+                remaining = remaining[written:]
+            os.fsync(descriptor)
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            fcntl.fcntl(descriptor, add_seals, seals)
+        except OSError as error:
+            raise ValidationError("sealed APK snapshot initialization failed") from error
+        with tempfile.TemporaryDirectory(prefix="e87-sealed-apk-") as temporary:
+            projection = Path(temporary) / "controller-snapshot.apk"
+            snapshot = _ApkSnapshot(
+                data=data,
+                path=projection,
+                pass_fds=(descriptor,),
+                sealed_path=Path(f"/proc/self/fd/{descriptor}"),
+                sha256=_sha(data),
+            )
+            snapshot.verify_projection()
+            yield snapshot
+            snapshot.verify_projection()
+    finally:
+        os.close(descriptor)
 
 
 @contextmanager
@@ -112,18 +166,7 @@ def _snapshot_apk(apk: Path) -> Iterator[_ApkSnapshot]:
         raise ValidationError("APK snapshot read failed") from error
     if not data or len(data) > MAX_APK_SNAPSHOT:
         raise ValidationError("APK snapshot is empty or exceeds cap")
-    with tempfile.TemporaryDirectory(prefix="e87-apk-snapshot-") as temporary:
-        projection = Path(temporary) / "controller-snapshot.apk"
-        try:
-            with projection.open("xb") as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
-            projection.chmod(0o400)
-        except OSError as error:
-            raise ValidationError("APK snapshot projection failed") from error
-        snapshot = _ApkSnapshot(data, projection, _sha(data))
-        snapshot.verify_projection()
+    with _sealed_linux_projection(data) as snapshot:
         yield snapshot
 
 
@@ -147,14 +190,60 @@ def _regular_absolute(path: Path, label: str, *, executable: bool = False) -> Pa
     return candidate
 
 
-def _run(tool: Path, arguments: list[str], label: str) -> str:
+def _sealed_command(
+        executable: Path,
+        arguments: list[str],
+        snapshot: _ApkSnapshot,
+) -> tuple[list[str], tuple[int, ...]]:
+    unshare = _regular_absolute(UNSHARE, "unshare", executable=True)
+    interpreter = _regular_absolute(Path(sys.executable), "Python", executable=True)
+    runner = _regular_absolute(SEALED_EXEC, "sealed exec helper")
+    if len(snapshot.pass_fds) != 1:
+        raise ValidationError("sealed APK snapshot has an invalid descriptor set")
+    projection = os.fspath(snapshot.path)
+    if projection not in arguments:
+        raise ValidationError("subprocess does not consume the sealed APK projection")
+    descriptor = snapshot.pass_fds[0]
+    return ([
+        os.fspath(unshare),
+        "--user",
+        "--map-root-user",
+        "--mount",
+        "--",
+        os.fspath(interpreter),
+        os.fspath(runner),
+        str(descriptor),
+        projection,
+        str(len(snapshot.data)),
+        snapshot.sha256,
+        "--",
+        os.fspath(executable),
+        *arguments,
+    ], snapshot.pass_fds)
+
+
+def _run(
+        tool: Path,
+        arguments: list[str],
+        label: str,
+        *,
+        snapshot: _ApkSnapshot | None = None,
+) -> str:
+    command = [os.fspath(tool), *arguments]
+    options: dict[str, object] = {}
+    if snapshot is not None:
+        if os.name != "posix":
+            raise ValidationError(f"{label} cannot inherit the sealed APK snapshot")
+        command, pass_fds = _sealed_command(tool, arguments, snapshot)
+        options["pass_fds"] = pass_fds
     try:
         completed = subprocess.run(
-            [os.fspath(tool), *arguments],
+            command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
             timeout=90,
+            **options,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise ValidationError(f"{label} execution failed") from error
@@ -330,7 +419,7 @@ def _run_apk_tool(
         label: str,
 ) -> str:
     snapshot.verify_projection()
-    output = _run(tool, arguments, label)
+    output = _run(tool, arguments, label, snapshot=snapshot)
     snapshot.verify_projection()
     return output
 

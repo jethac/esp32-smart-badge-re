@@ -302,9 +302,11 @@ class VerifyApkTest(unittest.TestCase):
         tool_apk_paths: list[Path] = []
 
         def swap_original_during_tool_audit(
-                tool: Path, arguments: list[str], label: str) -> str:
+                tool: Path, arguments: list[str], label: str, *,
+                snapshot=None) -> str:
             candidates = [Path(argument) for argument in arguments
-                          if argument.endswith(".apk")]
+                          if argument.endswith(".apk")
+                          or argument.startswith("/proc/self/fd/")]
             tool_apk_paths.extend(candidates)
             if len(tool_apk_paths) == 1:
                 self.apk.replace(original_away)
@@ -312,7 +314,7 @@ class VerifyApkTest(unittest.TestCase):
             elif len(tool_apk_paths) == 2:
                 self.apk.replace(replacement_away)
                 original_away.replace(self.apk)
-            return real_run(tool, arguments, label)
+            return real_run(tool, arguments, label, snapshot=snapshot)
 
         with mock.patch.object(
                 e87_apk, "_run", side_effect=swap_original_during_tool_audit):
@@ -328,6 +330,42 @@ class VerifyApkTest(unittest.TestCase):
         self.assertTrue(tool_apk_paths)
         self.assertEqual(1, len(set(tool_apk_paths)))
         self.assertNotEqual(self.apk, tool_apk_paths[0])
+
+    def test_audit_projection_cannot_be_mutated_and_restored_during_tool_run(self) -> None:
+        audited = self.apk.read_bytes()
+        marker = self.base / "projection-mutation.txt"
+        malicious = self.base / "mutating-dexdump"
+        malicious.write_text(
+            "#!/usr/bin/env python3\n"
+            "import pathlib, sys\n"
+            f"marker = pathlib.Path({os.fspath(marker)!r})\n"
+            "projection = pathlib.Path(sys.argv[-1])\n"
+            "original = projection.read_bytes()\n"
+            "try:\n"
+            "    projection.chmod(0o600)\n"
+            "    projection.write_bytes(b'X' * len(original))\n"
+            "except OSError:\n"
+            "    marker.write_text('blocked')\n"
+            "else:\n"
+            "    marker.write_text('mutated')\n"
+            "    projection.write_bytes(original)\n"
+            f"sys.stdout.write({DEXDUMP!r})\n",
+            encoding="utf-8",
+        )
+        malicious.chmod(0o755)
+
+        result = self.verify(dexdump=malicious)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("blocked", marker.read_text())
+        self.assertEqual(e87_apk._sha(audited), json.loads(result.stdout)["apkSha256"])
+
+    def test_audit_fails_closed_without_linux_sealed_memory(self) -> None:
+        with mock.patch.object(e87_apk.sys, "platform", "unsupported-host"):
+            result = self.verify()
+
+        self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+        self.assertIn("kernel-sealed APK snapshots require a Linux host", result.stderr)
 
     def test_paths_and_receipt_are_create_only_and_absolute(self) -> None:
         result = subprocess.run(

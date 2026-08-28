@@ -25,6 +25,8 @@ class HostScriptTest(VerifyApkTest):
         super().setUp()
         self.adb_log = self.base / "adb.log"
         self.adb_install_capture = self.base / "adb-install-capture.apk"
+        self.adb_mutation_result = self.base / "adb-mutation-result.txt"
+        self.fake_adb_projection_aba = False
         self.fake_installed_apk = self.apk
         self.adb = self.base / "adb"
         self.adb.write_text(
@@ -40,7 +42,22 @@ class HostScriptTest(VerifyApkTest):
             "if command == ['get-state']:\n"
             "    print('device')\n"
             "elif command[:2] == ['install', '-r']:\n"
-            "    shutil.copyfile(command[2], os.environ['FAKE_ADB_INSTALL_CAPTURE'])\n"
+            "    source = pathlib.Path(command[2])\n"
+            "    if os.environ['FAKE_ADB_PROJECTION_ABA'] == '1':\n"
+            "        original = source.read_bytes()\n"
+            "        try:\n"
+            "            source.chmod(0o600)\n"
+            "            source.write_bytes(b'X' * len(original))\n"
+            "        except OSError:\n"
+            "            pathlib.Path(os.environ['FAKE_ADB_MUTATION_RESULT']).write_text('blocked')\n"
+            "            shutil.copyfile(source, os.environ['FAKE_ADB_INSTALL_CAPTURE'])\n"
+            "        else:\n"
+            "            pathlib.Path(os.environ['FAKE_ADB_MUTATION_RESULT']).write_text('mutated')\n"
+            "            shutil.copyfile(source, os.environ['FAKE_ADB_INSTALL_CAPTURE'])\n"
+            "            source.write_bytes(original)\n"
+            "            source.chmod(0o400)\n"
+            "    else:\n"
+            "        shutil.copyfile(source, os.environ['FAKE_ADB_INSTALL_CAPTURE'])\n"
             "    print('Success')\n"
             "elif command == ['shell', 'pm', 'path', 'net.jethachan.factory_badges']:\n"
             "    print('package:/data/app/qualified/base.apk')\n"
@@ -57,6 +74,9 @@ class HostScriptTest(VerifyApkTest):
         environment = os.environ.copy()
         environment["FAKE_ADB_LOG"] = os.fspath(self.adb_log)
         environment["FAKE_ADB_INSTALL_CAPTURE"] = os.fspath(self.adb_install_capture)
+        environment["FAKE_ADB_MUTATION_RESULT"] = os.fspath(self.adb_mutation_result)
+        environment["FAKE_ADB_PROJECTION_ABA"] = (
+            "1" if self.fake_adb_projection_aba else "0")
         environment["FAKE_INSTALLED_APK"] = os.fspath(self.fake_installed_apk)
         return environment
 
@@ -138,6 +158,21 @@ class HostScriptTest(VerifyApkTest):
         receipt = json.loads(result.stdout)
         self.assertEqual(
             e87_apk._sha(audited),
+            receipt["apkAudit"]["apkSha256"],
+        )
+
+    def test_install_projection_cannot_be_mutated_and_restored_inside_adb(self) -> None:
+        audited = self.apk.read_bytes()
+        self.fake_adb_projection_aba = True
+
+        result = self.run_script(INSTALL, self.common())
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("blocked", self.adb_mutation_result.read_text())
+        self.assertEqual(audited, self.adb_install_capture.read_bytes())
+        receipt = json.loads(result.stdout)
+        self.assertEqual(
+            e87_apk._sha(self.adb_install_capture.read_bytes()),
             receipt["apkAudit"]["apkSha256"],
         )
 
