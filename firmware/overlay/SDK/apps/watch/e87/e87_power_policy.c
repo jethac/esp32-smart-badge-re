@@ -16,13 +16,14 @@ static bool valid_state(enum e87_power_state state)
     }
 }
 
-static bool valid_charger_phase(enum e87_charger_phase phase)
+static bool valid_charge_phase(enum e87_charge_phase phase)
 {
     switch (phase) {
-    case E87_CHARGER_PHASE_UNKNOWN:
-    case E87_CHARGER_PHASE_START:
-    case E87_CHARGER_PHASE_FULL:
-    case E87_CHARGER_PHASE_CLOSE:
+    case E87_CHARGE_PHASE_UNKNOWN:
+    case E87_CHARGE_PHASE_CHARGING:
+    case E87_CHARGE_PHASE_FULL:
+    case E87_CHARGE_PHASE_CLOSED:
+    case E87_CHARGE_PHASE_FAULT:
         return true;
     default:
         return false;
@@ -32,10 +33,7 @@ static bool valid_charger_phase(enum e87_charger_phase phase)
 static bool valid_event_type(enum e87_power_event_type type)
 {
     switch (type) {
-    case E87_POWER_EVENT_EXTERNAL_POWER_CHANGED:
-    case E87_POWER_EVENT_CHARGER_START:
-    case E87_POWER_EVENT_CHARGER_FULL:
-    case E87_POWER_EVENT_CHARGER_CLOSE:
+    case E87_POWER_EVENT_CHARGE_SNAPSHOT:
     case E87_POWER_EVENT_MANUAL_SLEEP:
     case E87_POWER_EVENT_LCD_IDLE:
     case E87_POWER_EVENT_GPIO_WAKE:
@@ -58,21 +56,6 @@ static bool valid_wake_classification(
         return true;
     default:
         return false;
-    }
-}
-
-static enum e87_charger_phase charger_phase_for_event(
-    enum e87_power_event_type type)
-{
-    switch (type) {
-    case E87_POWER_EVENT_CHARGER_START:
-        return E87_CHARGER_PHASE_START;
-    case E87_POWER_EVENT_CHARGER_FULL:
-        return E87_CHARGER_PHASE_FULL;
-    case E87_POWER_EVENT_CHARGER_CLOSE:
-        return E87_CHARGER_PHASE_CLOSE;
-    default:
-        return E87_CHARGER_PHASE_UNKNOWN;
     }
 }
 
@@ -182,19 +165,39 @@ static enum e87_power_result wait_classification_step(
         E87_POWER_STATE_ASLEEP, E87_POWER_RESULT_ASLEEP);
 }
 
+static bool valid_charge_snapshot(
+    const struct e87_charge_snapshot *snapshot)
+{
+    uint8_t online_byte;
+
+    if (snapshot == 0) {
+        return false;
+    }
+    online_byte = *((const uint8_t *)&snapshot->external_power_online);
+    return online_byte <= UINT8_C(1) && valid_charge_phase(snapshot->phase);
+}
+
+static bool equal_charge_snapshot(
+    const struct e87_charge_snapshot *left,
+    const struct e87_charge_snapshot *right)
+{
+    return left->external_power_online == right->external_power_online &&
+           left->phase == right->phase;
+}
+
 bool e87_power_policy_init(struct e87_power_policy *policy,
                            const struct e87_power_port *port,
-                           bool external_power_online)
+                           const struct e87_charge_snapshot *initial_snapshot)
 {
     struct e87_power_policy initialized = {0};
 
-    if (policy == 0 || port == 0 || port->emit == 0) {
+    if (policy == 0 || port == 0 || port->emit == 0 ||
+        !valid_charge_snapshot(initial_snapshot)) {
         return false;
     }
     initialized.private_port = *port;
     initialized.private_state = E87_POWER_STATE_ACTIVE;
-    initialized.private_charger_phase = E87_CHARGER_PHASE_UNKNOWN;
-    initialized.private_external_power_online = external_power_online;
+    initialized.private_charge_snapshot = *initial_snapshot;
     initialized.private_initialized = true;
     *policy = initialized;
     return true;
@@ -209,7 +212,7 @@ e87_power_policy_step(struct e87_power_policy *policy,
     if (policy == 0 || event == 0 || !policy->private_initialized ||
         policy->private_port.emit == 0 ||
         !valid_state(policy->private_state) ||
-        !valid_charger_phase(policy->private_charger_phase) ||
+        !valid_charge_snapshot(&policy->private_charge_snapshot) ||
         !valid_event_type(event->type) ||
         (event->type == E87_POWER_EVENT_WAKE_CLASSIFIED &&
          !valid_wake_classification(event->wake_classification))) {
@@ -221,25 +224,16 @@ e87_power_policy_step(struct e87_power_policy *policy,
     }
 
     policy->private_in_step = true;
-    if (event->type == E87_POWER_EVENT_EXTERNAL_POWER_CHANGED) {
-        if (policy->private_external_power_online ==
-            event->external_power_online) {
-            result = E87_POWER_RESULT_NO_CHANGE;
-        } else {
-            policy->private_external_power_online =
-                event->external_power_online;
-            result = E87_POWER_RESULT_STATUS_UPDATED;
+    if (event->type == E87_POWER_EVENT_CHARGE_SNAPSHOT) {
+        if (!valid_charge_snapshot(&event->charge_snapshot)) {
+            policy->private_in_step = false;
+            return E87_POWER_RESULT_ERROR;
         }
-    } else if (event->type == E87_POWER_EVENT_CHARGER_START ||
-               event->type == E87_POWER_EVENT_CHARGER_FULL ||
-               event->type == E87_POWER_EVENT_CHARGER_CLOSE) {
-        const enum e87_charger_phase next =
-            charger_phase_for_event(event->type);
-
-        if (policy->private_charger_phase == next) {
+        if (equal_charge_snapshot(&policy->private_charge_snapshot,
+                                  &event->charge_snapshot)) {
             result = E87_POWER_RESULT_NO_CHANGE;
         } else {
-            policy->private_charger_phase = next;
+            policy->private_charge_snapshot = event->charge_snapshot;
             result = E87_POWER_RESULT_STATUS_UPDATED;
         }
     } else {
@@ -273,13 +267,11 @@ bool e87_power_policy_get_view(const struct e87_power_policy *policy,
 
     if (policy == 0 || out == 0 || !policy->private_initialized ||
         !valid_state(policy->private_state) ||
-        !valid_charger_phase(policy->private_charger_phase)) {
+        !valid_charge_snapshot(&policy->private_charge_snapshot)) {
         return false;
     }
     view.state = policy->private_state;
-    view.external_power_online =
-        policy->private_external_power_online;
-    view.charger_phase = policy->private_charger_phase;
+    view.charge_snapshot = policy->private_charge_snapshot;
     *out = view;
     return true;
 }
