@@ -11,6 +11,9 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROFILE = REPO_ROOT / "firmware/board-profiles/E87-1542-STAGE0-H.json"
+BTSTACK_RUNTIME_EVIDENCE = REPO_ROOT / (
+    "firmware/evidence/stage0/btstack-runtime-gate.json"
+)
 SUITES = REPO_ROOT / "firmware/host/suites.json"
 ADV_HEADER = REPO_ROOT / (
     "firmware/overlay/SDK/apps/watch/include/e87/e87_stage0_adv.h"
@@ -109,6 +112,84 @@ class Stage0TargetTests(unittest.TestCase):
                     "btstack.a btstack_task.c.o calls "
                     "update_bt_current_status(NULL,3,50)"
                 ),
+                "linkedProfilePolicy": "PINNED_BTSTACK_RUNTIME_GATED",
+                "btstackRuntimeEvidence": (
+                    "firmware/evidence/stage0/btstack-runtime-gate.json"
+                ),
+            },
+        )
+
+    def test_btstack_runtime_gate_evidence_is_exact_and_hash_pinned(self) -> None:
+        self.assertTrue(BTSTACK_RUNTIME_EVIDENCE.is_file())
+        self.assertEqual(
+            read_json(BTSTACK_RUNTIME_EVIDENCE),
+            {
+                "schemaVersion": 1,
+                "evidenceId": "E87-S0-BTSTACK-RUNTIME-GATE",
+                "sdkCommit": "d0167685d032d745d88fe50233302edd46941622",
+                "archive": {
+                    "path": "cpu/br35/liba/btstack.a",
+                    "sha256": (
+                        "4a5c48ba0658647ecde1a59c7032448eeda1bdfe4a3899dd14903b5d75e8347d"
+                    ),
+                },
+                "objects": [
+                    {
+                        "member": "btstack_task.c.o",
+                        "sha256": (
+                            "f952e6b27244ed6fa30bf7a1f631d1d9662cc08dcae49534facfea7610f07e40"
+                        ),
+                    },
+                    {
+                        "member": "btstack_main.c.o",
+                        "sha256": (
+                            "f52df33662e1880ecd5de3e55d0b6d054695547a89d9759c9849470a34bc0452"
+                        ),
+                    },
+                ],
+                "ir": {
+                    "command": "clang -x ir -S -emit-llvm <object> -o <output>",
+                    "clangVersion": "4.0.1",
+                    "btstackTaskSha256": (
+                        "e2af252fe6ddbc62570ebdbe14747ea293fcfea92d313e8f2666cb77433405f7"
+                    ),
+                    "btstackMainSha256": (
+                        "85ef0e15a512cadbb7c42429cedb28f8073ad0fa85ac1785f0f2544712f6624c"
+                    ),
+                },
+                "entry": {
+                    "symbol": "btstack_init",
+                    "transport": "hci_transport_h4_controller_instance",
+                    "controllerInit": "btctrler_task_init",
+                    "controllerReady": "btctrler_task_ready",
+                    "hostTask": "btstack",
+                    "readyTuple": "(NULL,0x434F4E00,3,50)",
+                },
+                "runtime": {
+                    "configStackModules": 2,
+                    "controllerModules": "BT_MODULE_LE",
+                    "l2cap": "RETAINED",
+                    "classicGateMask": 1,
+                    "classicGateTaken": False,
+                    "leAdvGateMask": 6,
+                    "leAdvGateTaken": True,
+                    "fullLeGateMask": 4,
+                    "fullLeGateTaken": False,
+                    "runtimeSkippedCalls": [
+                        "btstack_v21_main",
+                        "att_global_info_init",
+                        "ble_profile_init",
+                        "ancs_client_btstack_init_for_check",
+                        "sm_check_pair_config",
+                    ],
+                },
+                "policy": {
+                    "linkedProfileObjects": (
+                        "ALLOWED_ONLY_FROM_PINNED_BTSTACK_ARCHIVE"
+                    ),
+                    "applicationProfileRegistration": "FORBIDDEN",
+                    "sourceTuPolicy": "NO_STOCK_APP_OR_PROFILE_TUS",
+                },
             },
         )
 
