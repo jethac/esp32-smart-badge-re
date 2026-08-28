@@ -69,7 +69,11 @@
     <string name="artifact_not_packaged">No reviewed transition firmware is embedded in this build.</string>
     <string name="artifact_validator_unavailable">A firmware index is present, but authoritative validators are not integrated. Transfer is disabled.</string>
     <string name="artifact_invalid">The embedded firmware inventory is unavailable or invalid. Transfer is disabled.</string>
-    <string name="artifact_ready">Reviewed artifact: %1$d bytes • expected build %2$s</string>
+    <string name="artifact_ready_label">Reviewed transition artifact</string>
+    <plurals name="artifact_identity">
+        <item quantity="one">%1$d byte • expected build %2$s</item>
+        <item quantity="other">%1$d bytes • expected build %2$s</item>
+    </plurals>
     <string name="stock_receiving_warning">This writes firmware and can leave this badge unusable. It does not detect the stock receiving screen automatically.</string>
     <string name="confirm_stock_receiving">I put the badge in its stock receiving screen</string>
     <string name="start_stock_transition">Scan for receiving badge</string>
@@ -79,7 +83,10 @@
     <string name="transition_starting">Preparing the confirmed transition.</string>
     <string name="transition_scanning">Scanning; tap the correct receiving badge below.</string>
     <string name="transition_connecting">Connecting to the selected stock badge.</string>
-    <string name="transition_progress_format">Transferring: %1$d%% • %2$d / %3$d bytes acknowledged.</string>
+    <plurals name="transition_progress_format">
+        <item quantity="one">Transferring: %1$d%% • %2$d / %3$d byte acknowledged.</item>
+        <item quantity="other">Transferring: %1$d%% • %2$d / %3$d bytes acknowledged.</item>
+    </plurals>
     <string name="transition_waiting_custom">Waiting for custom firmware to boot and identify itself.</string>
     <string name="transition_failed_format">Transition stopped: %1$s</string>
     <string name="transition_closed">Transition screen closed.</string>

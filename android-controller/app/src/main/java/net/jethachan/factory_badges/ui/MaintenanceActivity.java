@@ -9,14 +9,11 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.format.DateFormat;
 import android.view.View;
-import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
-import android.widget.ListView;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Executor;
@@ -38,11 +35,8 @@ public final class MaintenanceActivity extends Activity {
     private CheckBox receiveModeConfirmation;
     private Button startTransitionButton;
     private Button cancelTransitionButton;
-    private ListView candidateList;
+    private LinearLayout candidateList;
     private ProgressBar transitionProgress;
-    private ArrayAdapter<String> candidateAdapter;
-    private List<StockGattDriver.Peer> renderedCandidates =
-            new ArrayList<StockGattDriver.Peer>();
     private Handler mainHandler;
     private MaintenanceUiPresenter presenter;
     private boolean rendering;
@@ -71,9 +65,6 @@ public final class MaintenanceActivity extends Activity {
         cancelTransitionButton = findViewById(R.id.cancel_transition_button);
         candidateList = findViewById(R.id.candidate_list);
         transitionProgress = findViewById(R.id.transition_progress);
-        candidateAdapter = new ArrayAdapter<String>(
-                this, android.R.layout.simple_list_item_1, new ArrayList<String>());
-        candidateList.setAdapter(candidateAdapter);
         mainHandler = new Handler(Looper.getMainLooper());
 
         receiveModeConfirmation.setOnCheckedChangeListener(
@@ -84,16 +75,6 @@ public final class MaintenanceActivity extends Activity {
                 view -> onStartTransitionClicked());
         cancelTransitionButton.setOnClickListener(
                 view -> presenter.onCancelPressed());
-        candidateList.setOnItemClickListener(
-                new AdapterView.OnItemClickListener() {
-                    @Override public void onItemClick(
-                            AdapterView<?> parent, View view, int position, long id) {
-                        if (position >= 0 && position < renderedCandidates.size()) {
-                            presenter.onCandidateSelected(renderedCandidates.get(position));
-                        }
-                    }
-                });
-
         presenter = new MaintenanceUiPresenter(
                 new EmbeddedFirmwareRepository(getApplicationContext()), host);
     }
@@ -171,7 +152,7 @@ public final class MaintenanceActivity extends Activity {
             startTransitionButton.setEnabled(state.startEnabled());
             cancelTransitionButton.setEnabled(state.cancelEnabled());
             transitionProgress.setProgress(state.progressPercent());
-            renderCandidates(state.candidates());
+            renderCandidates(state);
             transitionStatus.setText(statusText(state));
         } finally {
             rendering = false;
@@ -181,8 +162,10 @@ public final class MaintenanceActivity extends Activity {
     private void renderArtifact(MaintenanceUiPresenter.ViewState state) {
         switch (state.artifactStatus()) {
             case READY:
-                artifactStatus.setText(R.string.artifact_ready);
-                artifactIdentity.setText(getString(R.string.artifact_ready,
+                artifactStatus.setText(R.string.artifact_ready_label);
+                artifactIdentity.setText(getResources().getQuantityString(
+                        R.plurals.artifact_identity,
+                        (int) state.qixByteLength(),
                         state.qixByteLength(), state.expectedBuildIdHex()));
                 artifactIdentity.setVisibility(View.VISIBLE);
                 return;
@@ -201,15 +184,22 @@ public final class MaintenanceActivity extends Activity {
         artifactIdentity.setVisibility(View.GONE);
     }
 
-    private void renderCandidates(List<StockGattDriver.Peer> candidates) {
-        renderedCandidates = new ArrayList<StockGattDriver.Peer>(candidates);
-        candidateAdapter.clear();
-        for (StockGattDriver.Peer peer : renderedCandidates) {
-            candidateAdapter.add(getString(R.string.stock_candidate_format,
+    private void renderCandidates(MaintenanceUiPresenter.ViewState state) {
+        List<StockGattDriver.Peer> candidates = state.candidates();
+        candidateList.removeAllViews();
+        for (final StockGattDriver.Peer peer : candidates) {
+            Button candidateButton = new Button(this);
+            candidateButton.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            candidateButton.setText(getString(R.string.stock_candidate_format,
                     displayName(peer), finalTwoOctets(peer.address()), peer.rssi()));
+            candidateButton.setEnabled(state.phase() == MaintenanceUiPresenter.Phase.CANDIDATES);
+            candidateButton.setOnClickListener(
+                    view -> presenter.onCandidateSelected(peer));
+            candidateList.addView(candidateButton);
         }
-        candidateAdapter.notifyDataSetChanged();
-        int visibility = renderedCandidates.isEmpty() ? View.GONE : View.VISIBLE;
+        int visibility = candidates.isEmpty() ? View.GONE : View.VISIBLE;
         candidateLabel.setVisibility(visibility);
         candidateList.setVisibility(visibility);
     }
@@ -227,7 +217,9 @@ public final class MaintenanceActivity extends Activity {
             case CONNECTING:
                 return getText(R.string.transition_connecting);
             case TRANSFERRING:
-                return getString(R.string.transition_progress_format,
+                return getResources().getQuantityString(
+                        R.plurals.transition_progress_format,
+                        (int) state.totalBytes(),
                         state.progressPercent(), state.acknowledgedBytes(), state.totalBytes());
             case WAITING_FOR_CUSTOM_FIRMWARE:
                 return getText(R.string.transition_waiting_custom);

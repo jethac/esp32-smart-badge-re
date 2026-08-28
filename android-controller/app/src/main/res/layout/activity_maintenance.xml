@@ -65,11 +65,11 @@
             android:text="@string/stock_candidates"
             android:visibility="gone" />
 
-        <ListView
+        <LinearLayout
             android:id="@+id/candidate_list"
             android:layout_width="match_parent"
-            android:layout_height="160dp"
-            android:choiceMode="singleChoice"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
             android:visibility="gone" />
 
         <ProgressBar
