@@ -234,32 +234,188 @@ git commit -m 'feat(android): pace acknowledged stock Qix transfer'
 
 ### Task 3: Add the isolated Android FD00 transport and controller
 
+**Execution prerequisite:** Do not implement this task until this amended Task 3 plan has an independent review and a regenerated Task 3 brief. It remains isolated from the normal/sync/UI path, the JieLi AAR, firmware embedding, and all physical-device work.
+
 **Files:**
-- Modify: `android-controller/app/src/main/java/net/jethachan/factory_badges/transition/StockQixUuids.java` (add the standard CCCD UUID).
-- Create: `android-controller/app/src/main/java/net/jethachan/factory_badges/transition/StockGattDriver.java`
-- Create: `android-controller/app/src/main/java/net/jethachan/factory_badges/transition/StockQixGattTransport.java`
-- Create: `android-controller/app/src/main/java/net/jethachan/factory_badges/transition/StockTransitionController.java`
-- Modify: `android-controller/app/src/test/java/net/jethachan/factory_badges/transition/StockQixUuidsTest.java` (pin the standard CCCD UUID).
-- Test: matching tests under `android-controller/app/src/test/java/net/jethachan/factory_badges/transition/`
+- Modify: `android-controller/app/src/main/java/net/jethachan/factory_badges/transition/StockQixUuids.java` — add `CCCD` with the standard UUID.
+- Create: `android-controller/app/src/main/java/net/jethachan/factory_badges/transition/StockGattDriver.java` — fakeable asynchronous FD00 GATT boundary.
+- Create: `android-controller/app/src/main/java/net/jethachan/factory_badges/transition/StockQixGattTransport.java` — the sole Android Bluetooth framework adapter.
+- Create: `android-controller/app/src/main/java/net/jethachan/factory_badges/transition/StockTransitionController.java` — FIFO-confined stateful driver of `StockQixTransferMachine` actions.
+- Modify: `android-controller/app/src/test/java/net/jethachan/factory_badges/transition/StockQixUuidsTest.java` — pin `CCCD`.
+- Create: `android-controller/app/src/test/java/net/jethachan/factory_badges/transition/FakeStockGattDriver.java` — deterministic command log and generation/token-tagged callback injector.
+- Create: `android-controller/app/src/test/java/net/jethachan/factory_badges/transition/FakeScheduler.java` — deterministic positive-deadline scheduler with cancellable handles.
+- Create: `android-controller/app/src/test/java/net/jethachan/factory_badges/transition/FifoExecutor.java` — manually drained FIFO `Executor` that proves confinement and asynchronous callback dispatch.
+- Create: `android-controller/app/src/test/java/net/jethachan/factory_badges/transition/StockGattDriverTest.java` — closed constants, immutable value objects, defensive copies, and listener signature coverage.
+- Create: `android-controller/app/src/test/java/net/jethachan/factory_badges/transition/StockTransitionControllerTest.java` — controller/reducer ordering, lifetime, and rejection coverage.
+- Create: `android-controller/app/src/test/java/net/jethachan/factory_badges/transition/StockQixGattTransportTest.java` — Android adapter source-branch, callback-copy, and listener-asynchrony coverage.
 
 **Interfaces:**
-- Consumes: Android GATT callbacks through generation/token-tagged adapter methods and actions from Task 2.
-- Produces: normalized connection, subscription, MTU, write, receive, progress, failure, and completion callbacks.
-- Constructs the Task 2 machine from a validated immutable artifact before connection. When a per-channel `QixFrameAssembler` synchronously rejects wrong magic at a frame start or a complete-frame codec/decode failure (including checksum after the frame is complete), the controller calls `onProtocolFailed(MALFORMED_PAYLOAD)`. An incomplete or truncated otherwise-valid notification fragment remains pending reassembly: it is neither rejected nor allowed to refresh the response timeout. Complete-frame exact-length/codec rejection remains a protocol failure wherever it is detectable. If the expected response does not complete before its deadline, response-timeout expiry calls `onTransportFailed(TRANSPORT_TIMEOUT)`. Scan, connect, discovery, service/characteristic/property validation, CCCD subscription, and MTU setup failures call `onTransportFailed(TRANSPORT_SETUP_FAILED)`; the controller preserves the same artifact identity and immutable snapshot metadata across those setup failures.
 
-- [ ] **Step 1: Write fake-driver ordering tests**
+- Consumes: a validated immutable `TransitionArtifact`, the Task 2 `StockQixTransferMachine`, one fakeable `StockGattDriver`, one explicitly serial FIFO `Executor`, deterministic `Scheduler`, positive-millisecond `Timeouts`, and an immutable-snapshot controller `Listener`.
+- Produces: one strictly sequenced stock-FD00 session whose controller state is exactly `IDLE → SCANNING → CONNECTING → DISCOVERING → SUB_FD01 → SUB_FD03 → REQUESTING_MTU → DRIVING → TERMINAL`. The controller constructs and owns the Task 2 machine before it starts a connection, so every setup/transport failure retains the artifact identity and snapshot metadata.
+- `StockGattDriver` is the following closed Java 8 API. `Peer`, `Service`, and `Characteristic` reject null constructor inputs; `Service` stores an unmodifiable defensive copy of its characteristic list; `Characteristic` stores a defensive descriptor-UUID set/list and exposes membership only through `hasDescriptor`.
 
-Pin `StockQixUuids.CCCD` as `00002902-0000-1000-8000-00805f9b34fb`, service/characteristic discovery, FD01 CCCD then FD03 CCCD with `02 00`, MTU 512 after both descriptors acknowledge, FD02 `WRITE_TYPE_DEFAULT`, `max(20, mtu-6)` fragmentation, exactly one write callback outstanding, and per-channel assembler behavior: wrong magic at a frame start plus complete-frame checksum/codec failure route `onProtocolFailed(MALFORMED_PAYLOAD)`; incomplete/truncated valid fragments remain pending and do not refresh the response deadline; deadline expiry routes `onTransportFailed(TRANSPORT_TIMEOUT)`; complete-frame exact-length rejection is tested only where detectable. Also pin stale GATT generation rejection, setup failure routing, disconnect failure, timeout failure, and direct-final-C5.
+```java
+public interface StockGattDriver {
+    int STATUS_SUCCESS = 0;
+    int PROPERTY_WRITE = 0x08;
+    int NOTIFY = 0x10;
+    int INDICATE = 0x20;
+    int WRITE_TYPE_DEFAULT = 2;
 
-- [ ] **Step 2: Record RED and implement the fakeable driver/controller boundary**
+    final class Peer {
+        public Peer(String address, String displayName, int rssi);
+        public String address();
+        public String displayName();
+        public int rssi();
+    }
+    final class Service {
+        public Service(UUID uuid, List<Characteristic> characteristics);
+        public UUID uuid();
+        public List<Characteristic> characteristics();
+    }
+    final class Characteristic {
+        public Characteristic(UUID uuid, int properties, List<UUID> descriptorUuids);
+        public UUID uuid();
+        public int properties();
+        public boolean hasDescriptor(UUID descriptorUuid);
+    }
+    interface Listener {
+        void onScanResult(long generation, long token, Peer peer);
+        void onScanFailed(long generation, long token, int status);
+        void onConnectionResult(long generation, long token, int status);
+        void onDisconnected(long generation, int status);
+        void onServicesResult(long generation, long token, List<Service> services, int status);
+        void onSubscriptionResult(long generation, long token, Characteristic characteristic,
+                                  UUID descriptorUuid, int status);
+        void onMtuResult(long generation, long token, int mtu, int status);
+        void onCharacteristicWrite(long generation, long token,
+                                   Characteristic characteristic, int status);
+        void onNotification(long generation, Characteristic characteristic, byte[] value);
+    }
 
-Only `StockQixGattTransport` imports `android.bluetooth.*`. `StockTransitionController` composes the pure machine, validates callback tokens/generations, sequences fragments, and exposes immutable UI snapshots. It must not import `ble.normal`, `sync`, or `BluetoothOTAManager`.
+    void setListener(Listener listener);
+    boolean startScan(long generation, long token);
+    void stopScan(long generation);
+    boolean connect(long generation, long token, Peer peer);
+    boolean discoverServices(long generation, long token);
+    boolean subscribe(long generation, long token, Characteristic characteristic,
+                      UUID descriptorUuid, byte[] value);
+    boolean requestMtu(long generation, long token, int mtu);
+    boolean writeCharacteristic(long generation, long token, Characteristic characteristic,
+                                byte[] value, int writeType);
+    void disconnect(long generation);
+    void close();
+}
+```
 
-- [ ] **Step 3: Add lifecycle and cancellation tests**
+- All `StockGattDriver.Listener` callbacks are asynchronous: no command invokes a listener inline. Scan, scan-fail, connection, services, subscription, MTU, and characteristic-write callbacks carry `generation` and the unique async-command `token`; disconnect and notification callbacks carry `generation` only. Every async command has a unique token and an exact expected callback kind. A callback must match the current generation, token, and kind before it can mutate state; stale callbacks and stale timers are no-ops. Notifications have no token and are accepted only for the current generation.
+- `StockTransitionController` nests the following complete Java 8 API. `Timeouts` rejects zero/negative durations, all values are milliseconds, and every reference argument shown rejects null synchronously. The controller is the public lifecycle boundary; it owns a private no-op driver listener for detach instead of ever passing null to `setListener`.
 
-Cancellation is allowed until C0 is acknowledged by a valid C1. After C1, expose `mayCancel=false`; a disconnect becomes `FAILED_RECONNECT_REQUIRED`, preserving artifact identity and acknowledged offset in the snapshot. Never report transfer-complete as installed-custom-firmware success.
+```java
+public final class StockTransitionController {
+    public interface Scheduler {
+        interface Handle { void cancel(); }
+        Handle schedule(long delayMillis, Runnable runnable);
+    }
+    public static final class Timeouts {
+        public Timeouts(long setupMillis, long writeMillis, long responseMillis);
+        public long setupMillis();
+        public long writeMillis();
+        public long responseMillis();
+    }
+    public interface Listener {
+        void onCandidate(StockGattDriver.Peer candidate);
+        void onSnapshot(StockQixTransferMachine.Snapshot snapshot);
+        void onComplete(StockQixTransferMachine.Snapshot snapshot);
+        void onFailed(StockQixTransferMachine.FailureCode failureCode,
+                      StockQixTransferMachine.Snapshot snapshot);
+    }
 
-- [ ] **Step 4: Run focused/full gates and commit**
+    public StockTransitionController(TransitionArtifact artifact, StockGattDriver driver,
+                                     Executor fifoExecutor, Scheduler scheduler,
+                                     Timeouts timeouts, Listener listener);
+    public void startScan();
+    public void connect(StockGattDriver.Peer peer, int settings, int hostId);
+    public void cancel();
+    public void close();
+    public StockQixTransferMachine.Snapshot snapshot();
+}
+```
+
+- `StockQixGattTransport` is `public final class StockQixGattTransport implements StockGattDriver` with constructor `public StockQixGattTransport(Context applicationContext, Handler bleHandler, Executor callbackExecutor)`. It is the sole production importer of `android.bluetooth.*`. The caller supplies the same explicitly serial FIFO executor as `callbackExecutor` and the controller’s `fifoExecutor`; transport callback delivery and every controller mutation use that one executor.
+- `StockTransitionController` owns a closed internal state enum with exactly `IDLE`, `SCANNING`, `CONNECTING`, `DISCOVERING`, `SUB_FD01`, `SUB_FD03`, `REQUESTING_MTU`, `DRIVING`, and `TERMINAL`; no public transition bypasses this sequence.
+
+**Connection, setup, and validation contract:**
+
+- Scanning is unfiltered and only surfaces candidates. It never claims that a candidate is in stock receive mode and never auto-connects; a user-confirmed `connect(peer, settings, hostId)` begins the session.
+- Add `StockQixUuids.CCCD = 00002902-0000-1000-8000-00805f9b34fb`. Discovery requires exactly one stock FD00 service and exactly one each of FD01, FD02, and FD03 with the exact captured masks `FD01 = 0x10`, `FD02 = 0x0C`, and `FD03 = 0x1A`. Reject a missing/duplicate service or characteristic, any property subset/superset/wrong mask, and specifically an indication-only FD01/FD03. FD02 is still emitted only with `WRITE_TYPE_DEFAULT`; its captured `0x0C` mask is not permission to use write-without-response.
+- Require `FD01.hasDescriptor(CCCD)` and `FD03.hasDescriptor(CCCD)`, then subscribe FD01 first and FD03 second with exact bytes `02 00`. This is a capture-pinned vendor quirk: accepted `ProbeActivity.java:420-449` deliberately uses `BluetoothGattDescriptor.ENABLE_INDICATION_VALUE` even though FD01/FD03 advertise notify masks. Never replace it with `01 00`/`ENABLE_NOTIFICATION_VALUE` and do not relax the captured masks because of that write.
+- On `bleHandler`, each subscribe operation is exactly `setCharacteristicNotification(characteristic, true)` → CCCD lookup → descriptor write. A false local-enable result, null descriptor, `SecurityException`, false legacy write start, or non-`BluetoothStatusCodes.SUCCESS` modern write start is a tagged setup failure. A successful request remains pending until its matching `onDescriptorWrite` callback; only then issue the next FD03 subscription or MTU request.
+- Request MTU 512 only after both descriptor callbacks succeed; accept only a successful negotiated MTU of at least 23. A lower/failed MTU or any scan/connect/discover/subscription/MTU setup error calls `onTransportFailed(TRANSPORT_SETUP_FAILED)`.
+- A matching non-success `onDescriptorWrite` callback, or any matching non-success scan/connect/services/MTU callback, is also `TRANSPORT_SETUP_FAILED`; a matching non-success `onCharacteristicWrite` callback is `TRANSPORT_WRITE_FAILED`. The current callback kind must match before either result is acted on.
+- Increment the generation for each new session and terminal teardown. Clear current-generation candidate identities/lists on every generation change. Detach the driver listener with the private no-op listener before best-effort `disconnect`/`close`; teardown callbacks and timers from the old generation are ignored.
+
+**Threading and lifecycle contract:**
+
+- The one explicitly serial FIFO event executor is shared by transport callback delivery and controller processing. After synchronous null/primitive argument validation, every public controller command (`startScan`, `connect`, `cancel`, `close`) first enqueues onto that FIFO before any state, generation, token, or candidate check; each driver callback also first enqueues before those checks. `snapshot()` is the sole read-only exception: it returns the volatile safely-published immutable latest `StockQixTransferMachine.Snapshot` without mutating state.
+- `startScan()` is legal exactly once from `IDLE`. A repeated or out-of-state `startScan()` or `connect(...)`, including `connect` with a peer not surfaced in the current generation, transitions the nonterminal session once to sticky `INVALID_STATE`; the controller applies `machine.onProtocolFailed(INVALID_STATE)`, publishes the resulting failed snapshot once, and tears down. `connect(peer, settings, hostId)` is legal only in `SCANNING` and only when `peer` is one of the current-generation candidates already delivered to `Listener.onCandidate`.
+- All constructor inputs, `setListener` inputs, public reference arguments, callback reference arguments, and byte arrays reject null synchronously at their own boundary; inbound/outbound byte arrays and returned lists are defensive. The controller does not use `setListener(null)` for teardown.
+- Before valid C1 acceptance, `cancel()` enters `TERMINAL` through `onTransportFailed(CANCELLED)`. After valid C1, `cancel()` is a no-op with no controller/reducer snapshot mutation and `mayCancel` remains false. `close()` is idempotent and always tears down: before C1 it publishes terminal `CANCELLED`, after C1 it publishes terminal `FAILED_RECONNECT_REQUIRED` while retaining artifact identity and acknowledged offset, and once terminal it makes no new state/listener mutation. All later public calls after terminal are no-ops.
+- Disconnect during `SCANNING`, `CONNECTING`, `DISCOVERING`, `SUB_FD01`, `SUB_FD03`, or `REQUESTING_MTU` calls `onTransportFailed(TRANSPORT_SETUP_FAILED)`. In `DRIVING` before valid C1 it calls `onTransportFailed(TRANSPORT_DISCONNECTED)`; after valid C1 it calls `onTransportFailed(FAILED_RECONNECT_REQUIRED)`, retaining the artifact identity and acknowledged offset in the terminal snapshot.
+
+**Reducer/action, write, notification, and timeout contract:**
+
+- `applyAction` is exact and single-threaded: `SendFd02` starts FD02 fragmentation; `AwaitFd01` and `AwaitFd03` arm the corresponding response deadline; `Complete` and `Failed` publish the immutable snapshot and perform terminal teardown. The controller never creates a second logical C2 while the prior C2 is pending.
+- Fragment every logical frame to `max(20, negotiatedMtu - 6)` bytes and issue `writeCharacteristic` with `WRITE_TYPE_DEFAULT`. Permit exactly one physical characteristic-write callback to be outstanding. Only the final successful physical-fragment callback invokes exactly one `machine.onFd02WriteAcknowledged()`; never invoke it for a nonfinal fragment or a duplicate callback. A failed physical write or write deadline calls `onTransportFailed(TRANSPORT_WRITE_FAILED)`.
+- Keep independent `QixFrameAssembler` instances for FD01 and FD03. A notification from an unknown current UUID calls `onProtocolFailed(WRONG_CHANNEL)`. A notification during any reducer `WRITE_*` phase reaches the reducer and therefore fails closed. Route synchronous wrong magic at a frame start and a complete-frame codec/decode/checksum failure to `onProtocolFailed(MALFORMED_PAYLOAD)`.
+- Incomplete or truncated otherwise-valid notification fragments remain pending in their channel assembler. They are neither rejected nor allowed to cancel or refresh the response deadline. Only a complete accepted frame consumes the response deadline. Response timeout calls `onTransportFailed(TRANSPORT_TIMEOUT)`; detectable complete-frame exact-length/codec rejection is protocol failure.
+- Each active setup command owns the setup deadline; a setup timeout calls `onTransportFailed(TRANSPORT_SETUP_FAILED)`. Each logical write owns the write deadline; a write timeout calls `onTransportFailed(TRANSPORT_WRITE_FAILED)`. Each `AwaitFd01`/`AwaitFd03` action owns the response deadline; expiry calls `onTransportFailed(TRANSPORT_TIMEOUT)`. A generation/token mismatch or cancelled handle is a no-op.
+- A direct final C5 is passed through the Task 2 machine exactly as a current FD03 completion; controller completion means only that stock transport accepted the payload, never that custom firmware booted.
+
+**Android transport branch contract:**
+
+- `StockQixGattTransport` alone imports `android.bluetooth.*`; `StockGattDriver`, `StockTransitionController`, and all fakes remain Android-free and must not import `ble.normal`, `sync`, `BluetoothOTAManager`, or any JieLi AAR type.
+- Use exactly `connectGatt(..., TRANSPORT_LE, PHY_LE_1M_MASK, bleHandler)` and empty/unfiltered scanner filters. All platform work runs on `bleHandler`; listener callbacks are copied and posted to the shared FIFO `callbackExecutor`, never delivered inline.
+- For descriptor subscription on API 31/32, perform the already-required local-enable/CCCD-lookup order, then defensively copy `02 00`, call `descriptor.setValue(copy)`, and require `gatt.writeDescriptor(descriptor)` to return true. On API 33+, route through a private `@TargetApi` thunk and require `gatt.writeDescriptor(descriptor, copy) == BluetoothStatusCodes.SUCCESS`. In both branches, wait for the matching `onDescriptorWrite` before emitting the tagged `onSubscriptionResult`; do not advance FD01 → FD03 → MTU on the immediate start result alone.
+- For physical FD02 writes on API 31/32, defensively copy each fragment, set `WRITE_TYPE_DEFAULT`, call `characteristic.setValue(copy)`, and require `gatt.writeCharacteristic(characteristic)` to return true. On API 33+, use a private `@TargetApi` thunk and require `gatt.writeCharacteristic(characteristic, copy, WRITE_TYPE_DEFAULT) == BluetoothStatusCodes.SUCCESS`. In both branches, only matching `onCharacteristicWrite` callbacks complete physical fragments. Support both Android characteristic-notification callback shapes and defensively copy their values before FIFO delivery.
+- Every immediate false/null/non-`BluetoothStatusCodes.SUCCESS` result is translated synchronously into the shared controller FIFO before any later event: `startScan`, null/failed `connectGatt`, `discoverServices`, local notification enable/CCCD lookup/descriptor write, `requestMtu`, and all physical writes map to `TRANSPORT_SETUP_FAILED` or `TRANSPORT_WRITE_FAILED` as applicable. A `SecurityException` at scan/connect/discover/subscribe/MTU/write takes the same immediate tagged path; it never escapes the controller boundary.
+
+- [ ] **Step 1: Write the fake boundary and exact profile/order tests before production classes**
+
+Create `FakeStockGattDriver`, `FakeScheduler`, and `FifoExecutor` first. Make the driver record command order, supplied generation/token, subscription characteristic/descriptor/value, MTU, write type, and individual copied fragments; make the scheduler expose only explicit due callbacks and cancellable handles; make the FIFO executor prove that neither driver nor controller listener delivery is inline. Add failing API/ordering tests that pin all of the following:
+
+- The complete closed Java 8 signatures above compile; `Peer(address, displayName, rssi)` accessors are immutable, `Service.uuid()/characteristics()` returns an unmodifiable defensive list, and `Characteristic.uuid()/properties()/hasDescriptor(UUID)` is immutable. Null construction/public/callback data rejects synchronously and array/list mutation cannot alter stored values.
+- `StockQixUuids.CCCD` equals `00002902-0000-1000-8000-00805f9b34fb`; discovery accepts only exact FD01 `0x10`, FD02 `0x0C`, and FD03 `0x1A`. Reject indication-only, missing, duplicate, subset, superset, and all other wrong masks.
+- The only valid profile order is unfiltered scan candidate → user `connect` → exactly-one FD00/FD01/FD02/FD03 validation → FD01 local-notification enable then CCCD `02 00` → matching FD01 descriptor callback → FD03 local-notification enable then CCCD `02 00` → matching FD03 descriptor callback → MTU request 512 → `machine.start`/bind write. Pin the vendor `02 00` indication value despite FD01/FD03 notify masks; never accept `01 00` as the planned default.
+- Local notification enable happens before CCCD lookup and descriptor write. A false enable, null CCCD, false/non-success descriptor start, descriptor status failure, or descriptor callback with stale generation/token/characteristic/descriptor prevents the next setup command and fails setup.
+- Each immediate start failure is covered: scan false/`SecurityException`, null/failed `connectGatt`, discover false/`SecurityException`, subscribe false/null/`SecurityException`, MTU false/`SecurityException`, and physical-write false/non-success/`SecurityException`. Verify it is queued through FIFO as `TRANSPORT_SETUP_FAILED` or `TRANSPORT_WRITE_FAILED`, never applied inline.
+- MTU 256 yields 250-byte physical fragments and MTU 23 yields 20-byte fragments. No physical write overlaps another; no logical acknowledgement occurs until the final fragment callback; a duplicate callback cannot create a second C2.
+- FD01 and FD03 fragment and concatenate independently. Wrong starting magic and complete checksum/codec/length rejection are `MALFORMED_PAYLOAD`; incomplete/truncated valid bytes stay pending and do not refresh the response timer; only a complete valid response consumes it.
+
+- [ ] **Step 2: Run and record intended RED**
+
+Run the new focused `StockQixUuidsTest`, `StockGattDriverTest`, `StockTransitionControllerTest`, and `StockQixGattTransportTest` with the pinned offline JDK/SDK command. Record the expected compile failure solely for absent Task 3 types/API and test fakes; do not alter Task 1/Task 2 production behavior to make the tests compile.
+
+- [ ] **Step 3: Implement the Android-free driver contract and FIFO controller**
+
+Implement immutable `StockGattDriver.Peer`, `.Service`, and `.Characteristic`; the closed constants; non-null listener registration; and the controller constructor/public methods exactly as listed above. Create the Task 2 machine before connection. Confine all controller state, action application, snapshot publication, timers, generation/token checks, expected callback kind, candidate identity/list, and terminal teardown to the shared FIFO executor. Ignore stale callbacks/timers with no state or listener mutation. Safely publish the immutable latest reducer snapshot through one `volatile` field for cross-thread `snapshot()` reads.
+
+Add lifecycle tests: `startScan` is legal once only in `IDLE`; repeated/out-of-state `startScan` or `connect` sticks `INVALID_STATE`; `connect` rejects a peer not surfaced in the current generation; generation changes clear candidates; pre-C1 `cancel` is `CANCELLED`; post-C1 cancel is a no-op; pre-C1/after-C1 disconnect has the required split; `close` is idempotent with `CANCELLED` pre-C1 and `FAILED_RECONNECT_REQUIRED` post-C1; terminal calls add no mutation/callback. Exercise a reader thread observing `snapshot()` while FIFO work publishes snapshots and prove it sees a valid immutable snapshot without cross-thread mutation.
+
+- [ ] **Step 4: Implement exact write, receive, and timeout pacing**
+
+Implement `applyAction`, one-physical-write-at-a-time fragmentation, `WRITE_TYPE_DEFAULT`, final-fragment-only logical acknowledgement, independent FD01/FD03 assemblers, complete-frame failure ingress, and setup/write/response timer routing exactly as specified above. Test every timeout category, cancelled/stale timer, stale generation/token/kind callback, wrong/stale notification UUID, notification during `WRITE_*`, direct final C5, aligned/partial response reassembly, and the no-overlap/no-second-C2 invariant. Verify partial notification bytes neither cancel nor refresh a response deadline and that only a complete accepted frame consumes it.
+
+- [ ] **Step 5: Implement the Android transport adapter and source-branch tests**
+
+Implement only `StockQixGattTransport` with the exact `bleHandler` local-enable → CCCD lookup → descriptor-write order, API 31/32 legacy descriptor `setValue(copy)`/`writeDescriptor` branch, API 33+ private `@TargetApi` `writeDescriptor(descriptor, copy)` branch requiring `BluetoothStatusCodes.SUCCESS`, and matching `onDescriptorWrite` completion ordering. Implement equivalent legacy/API33 physical-characteristic write branches and matching `onCharacteristicWrite` completion. Use exact LE/1M/handler `connectGatt`, empty scanner filters, copied notification callback payloads for both Android callback shapes, asynchronous FIFO listener posting, and immediate failure conversion.
+
+Add source/adapter tests for both descriptor branches, descriptor callback ordering, both characteristic-write branches, both notification callback shapes, local enable/CCCD failure, copied values, serial FIFO confinement, every false/null/non-success path, and sole `android.bluetooth.*` import ownership. Assert Task 3 code has no normal/sync/JieLi-AAR imports.
+
+- [ ] **Step 6: Run focused/full gates and commit**
+
+Run all Task 3-focused tests, then the complete offline `testDebugUnitTest lintDebug` gate with the pinned JDK/SDK. Self-review the captured masks/vendor CCCD quirk, generation/token no-ops, FIFO-only state mutation, volatile snapshot publication, timer cancellation, immutable copies, lifecycle terminal rules, state/phase boundaries, and the exact source-import boundary before committing only Task 3 files:
 
 ```sh
 git add android-controller/app/src/main/java/net/jethachan/factory_badges/transition \
