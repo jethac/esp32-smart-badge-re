@@ -61,6 +61,13 @@
         ]
       }
     ],
+    "stage0": [
+      {
+        "name": "stage0-adv",
+        "test": "firmware/host/test_stage0_adv.c",
+        "sources": ["firmware/overlay/SDK/apps/watch/e87/e87_stage0_adv.c"]
+      }
+    ],
     "state": [
       {
         "name": "semantic-state-build-info",

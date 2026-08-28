@@ -1,0 +1,51 @@
+{
+  "ble": {
+    "addressSource": "TZFLASH_UUID_FNV1A64_V1",
+    "advertisementType": "ADV_NONCONN_IND",
+    "channelMap": 7,
+    "intervalUnits": 1600,
+    "l2capPresence": "RETAINED_BY_PINNED_BTSTACK",
+    "inheritedMacroLevel": 5,
+    "ownAddressType": 1,
+    "scanResponseLength": 0,
+    "stackModules": 2,
+    "txPowerControl": "NOT_APPLIED",
+    "txPowerEvidence": "UNMEASURED"
+  },
+  "disabled": [
+    "classic",
+    "emitted-connectable-advertising",
+    "att",
+    "gatt",
+    "sm",
+    "profile",
+    "pairing",
+    "bonding",
+    "scan-response",
+    "display",
+    "touch",
+    "key",
+    "pin-reset",
+    "adc",
+    "filesystem-app-route",
+    "data-storage",
+    "audio",
+    "update",
+    "rcsp"
+  ],
+  "evidence": {
+    "controllerRoleQualification": "controller library gates remain vendor-owned; externally exposed behavior is non-connectable advertising only",
+    "immutableBootSeam": "setup_arch retains sdfile_init and syscfg_tools_init before app_main",
+    "readyTupleEvidence": "btstack.a btstack_task.c.o calls update_bt_current_status(NULL,3,50)",
+    "sdkCommit": "d0167685d032d745d88fe50233302edd46941622"
+  },
+  "profileId": "E87-1542-STAGE0-H",
+  "schemaVersion": 1,
+  "target": {
+    "buttons": "UNMEASURED_DISABLED",
+    "chip": "AC707N",
+    "family": "BR35",
+    "gpioAssignments": [],
+    "panel": "UNMEASURED_DISABLED"
+  }
+}

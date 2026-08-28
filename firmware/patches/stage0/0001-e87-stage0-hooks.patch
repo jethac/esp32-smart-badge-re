@@ -1,0 +1,682 @@
+diff --git a/SDK/apps/watch/app_main.c b/SDK/apps/watch/app_main.c
+index eb881b5..11a1c66 100644
+--- a/SDK/apps/watch/app_main.c
++++ b/SDK/apps/watch/app_main.c
+@@ -1 +1,68 @@
++#include "app_config.h"
++
++#ifdef CONFIG_BOARD_E87_1542_STAGE0_H
++#define E87_STAGE0_APP_MAIN_BEGIN 1
++
++#include "system/includes.h"
++#include "app_main.h"
++#include "e87/e87_stage0_app.h"
++
++#include <string.h>
++
++#define TASK_PRIO_BASE 20
++
++const struct task_info task_info_table[] = {
++    {"app_core", 0 + TASK_PRIO_BASE, 0, 768, 768},
++    {"btctrler", 4 + TASK_PRIO_BASE, 0, 512, 512},
++    {"btstack", 3 + TASK_PRIO_BASE, 0, 768, 256},
++    {0, 0},
++};
++
++APP_VAR app_var;
++
++int *__errno(void)
++{
++    static int error;
++
++    return &error;
++}
++
++void app_var_init(void)
++{
++    memset(&app_var, 0, sizeof(app_var));
++}
++
++extern void board_init(void);
++
++static void e87_stage0_fail_closed(void)
++{
++    for (;;) {
++        wdt_clear();
++        os_time_dly(1);
++    }
++}
++
++static void e87_stage0_app_task(void *private_data)
++{
++    (void)private_data;
++    app_var_init();
++    board_init();
++    wdt_init(WDT_APP_RUN_TIME);
++    if (!e87_stage0_app_start()) {
++        e87_stage0_fail_closed();
++    }
++    e87_stage0_app_dispatch_forever();
++}
++
++void app_main(void)
++{
++    task_create(e87_stage0_app_task, NULL, "app_core");
++    os_start();
++    for (;;) {
++        asm("idle");
++    }
++}
++
++#define E87_STAGE0_APP_MAIN_END 1
++#else
+ #ifdef SUPPORT_MS_EXTENSIONS
+@@ -799,2 +866,3 @@ void app_main()
+ }
+-
++
++#endif
+diff --git a/SDK/apps/watch/board/br35/board_config.h b/SDK/apps/watch/board/br35/board_config.h
+index 4a392fc..d956987 100644
+--- a/SDK/apps/watch/board/br35/board_config.h
++++ b/SDK/apps/watch/board/br35/board_config.h
+@@ -14,15 +14,7 @@
+  */
+-
+-#define CONFIG_BOARD_JL707N_DEMO
+-// #define CONFIG_BOARD_JL7074_DEMO
+-// #define CONFIG_BOARD_JL707N_CSC_DEMO    //彩屏仓配置
+-
+-#include "media/audio_def.h"
+-#include "board_ac707n_demo/board_ac707n_demo_cfg.h"
+-#include "board_ac7074_demo/board_ac7074_demo_cfg.h"
+-#include "board_ac707n_csc_demo/board_ac707n_csc_demo_cfg.h"
+-
+-
+-#define  DUT_AUDIO_DAC_LDO_VOLT                 DACVDD_LDO_1_35V
+-
++
++#define CONFIG_BOARD_E87_1542_STAGE0_H
++
++#include "board_e87_1542/board_e87_1542_cfg.h"
++
+ #endif
+diff --git a/SDK/apps/watch/include/app_config.h b/SDK/apps/watch/include/app_config.h
+index 920e7bd..5c8fa1a 100644
+--- a/SDK/apps/watch/include/app_config.h
++++ b/SDK/apps/watch/include/app_config.h
+@@ -6,7 +6,9 @@
+ #include "btcontroller_mode.h"
+ #include "rcsp_define.h"
+ #include "board_config.h"
++#if TCFG_UI_ENABLE
+ #include "lcd/lcd_conf.h"
++#endif
+-
+-
++
++
+ #define ENABLE_THIS_MOUDLE					1
+@@ -1035,2 +1037,67 @@
+ //*********************************************************************************//
++#ifdef CONFIG_BOARD_E87_1542_STAGE0_H
++#undef TCFG_APP_BT_EN
++#define TCFG_APP_BT_EN 1
++#undef TCFG_USER_BLE_ENABLE
++#define TCFG_USER_BLE_ENABLE 1
++#undef TCFG_USER_BT_CLASSIC_ENABLE
++#define TCFG_USER_BT_CLASSIC_ENABLE 0
++#undef TCFG_USER_TWS_ENABLE
++#define TCFG_USER_TWS_ENABLE 0
++#undef TCFG_BT_AI_ENABLE
++#define TCFG_BT_AI_ENABLE 0
++#undef BT_AI_SEL_PROTOCOL
++#define BT_AI_SEL_PROTOCOL 0
++#undef RCSP_MODE
++#define RCSP_MODE RCSP_MODE_OFF
++#undef TCFG_BT_BLE_ADV_ENABLE
++#define TCFG_BT_BLE_ADV_ENABLE 1
++#undef TCFG_UI_ENABLE
++#define TCFG_UI_ENABLE 0
++#undef CONFIG_JL_UI_ENABLE
++#define CONFIG_JL_UI_ENABLE 0
++#undef CONFIG_LVGL_UI_ENABLE
++#define CONFIG_LVGL_UI_ENABLE 0
++#undef TCFG_TOUCH_PANEL_ENABLE
++#define TCFG_TOUCH_PANEL_ENABLE 0
++#undef TCFG_ADKEY_ENABLE
++#define TCFG_ADKEY_ENABLE 0
++#undef TCFG_IOKEY_ENABLE
++#define TCFG_IOKEY_ENABLE 0
++#undef TCFG_RDEC_KEY_ENABLE
++#define TCFG_RDEC_KEY_ENABLE 0
++#undef TCFG_DATA_STORAGE_ENABLE
++#define TCFG_DATA_STORAGE_ENABLE 0
++#undef TCFG_SPORT_HEALTH_ENABLE
++#define TCFG_SPORT_HEALTH_ENABLE 0
++#undef TCFG_DEV_MANAGER_ENABLE
++#define TCFG_DEV_MANAGER_ENABLE 0
++#undef CONFIG_FATFS_ENABLE
++#define CONFIG_FATFS_ENABLE 0
++#undef TCFG_UPDATE_ENABLE
++#define TCFG_UPDATE_ENABLE 0
++#undef TCFG_CFG_TOOL_ENABLE
++#define TCFG_CFG_TOOL_ENABLE 0
++#undef PRODUCT_TEST_ENABLE
++#define PRODUCT_TEST_ENABLE 0
++#undef TCFG_CHARGE_ENABLE
++#define TCFG_CHARGE_ENABLE 0
++#undef TCFG_APP_RTC_EN
++#define TCFG_APP_RTC_EN 0
++#undef TCFG_APP_MUSIC_EN
++#define TCFG_APP_MUSIC_EN 0
++#undef TCFG_APP_PC_EN
++#define TCFG_APP_PC_EN 0
++#undef TCFG_APP_FM_EN
++#define TCFG_APP_FM_EN 0
++#undef TCFG_APP_LINEIN_EN
++#define TCFG_APP_LINEIN_EN 0
++#undef TCFG_APP_RECORD_EN
++#define TCFG_APP_RECORD_EN 0
++#undef TCFG_AUDIO_DAC_ENABLE
++#define TCFG_AUDIO_DAC_ENABLE 0
++#undef TCFG_AUDIO_ADC_ENABLE
++#define TCFG_AUDIO_ADC_ENABLE 0
++#endif
++
+ #include "ui_app_def.h"
+diff --git a/SDK/build/Makefile.mk b/SDK/build/Makefile.mk
+index 8b6e87e..829a7de 100644
+--- a/SDK/build/Makefile.mk
++++ b/SDK/build/Makefile.mk
+@@ -859,201 +859,266 @@
+ include build/fileList.mk
+-
++
++ifeq ($(strip $(E87_STAGE0_BUILD_TAG)),)
++$(error E87_STAGE0_BUILD_TAG must be 8 uppercase hex digits)
++endif
++E87_STAGE0_BUILD_TAG_CANON := $(strip $(E87_STAGE0_BUILD_TAG))
++E87_STAGE0_BUILD_TAG_INVALID := $(E87_STAGE0_BUILD_TAG_CANON)
++E87_STAGE0_BUILD_TAG_INVALID := $(subst 0,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst 1,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst 2,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst 3,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst 4,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst 5,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst 6,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst 7,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst 8,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst 9,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst A,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst B,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst C,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst D,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst E,,$(E87_STAGE0_BUILD_TAG_INVALID))
++E87_STAGE0_BUILD_TAG_INVALID := $(subst F,,$(E87_STAGE0_BUILD_TAG_INVALID))
++ifneq ($(E87_STAGE0_BUILD_TAG_INVALID),)
++$(error E87_STAGE0_BUILD_TAG must be 8 uppercase hex digits)
++endif
++E87_STAGE0_BUILD_TAG_LENGTH := $(E87_STAGE0_BUILD_TAG_CANON)
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst 0,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst 1,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst 2,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst 3,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst 4,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst 5,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst 6,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst 7,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst 8,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst 9,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst A,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst B,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst C,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst D,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst E,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++E87_STAGE0_BUILD_TAG_LENGTH := $(subst F,x,$(E87_STAGE0_BUILD_TAG_LENGTH))
++ifneq ($(E87_STAGE0_BUILD_TAG_LENGTH),xxxxxxxx)
++$(error E87_STAGE0_BUILD_TAG must be 8 uppercase hex digits)
++endif
++DEFINES += -DE87_STAGE0_BUILD_TAG_HEX=0x$(E87_STAGE0_BUILD_TAG_CANON)u
++
++# E87_STAGE0_REQUIRED_SOURCES_BEGIN
++E87_STAGE0_REQUIRED_SOURCES := \
++	apps/watch/app_main.c \
++	apps/watch/board/br35/board_e87_1542/board_e87_1542.c \
++	apps/watch/e87/e87_stage0_adv.c \
++	apps/watch/e87/e87_stage0_app.c \
++	apps/watch/e87/e87_stage0_ble.c \
++	apps/watch/log_config/app_config.c \
++	apps/watch/log_config/lib_btctrler_config.c \
++	apps/watch/log_config/lib_btstack_config.c \
++	apps/watch/log_config/lib_driver_config.c \
++	apps/watch/log_config/lib_system_config.c
++# E87_STAGE0_REQUIRED_SOURCES_END
++c_SRC_FILES := $(E87_STAGE0_REQUIRED_SOURCES)
++S_SRC_FILES :=
++s_SRC_FILES :=
++cpp_SRC_FILES :=
++cc_SRC_FILES :=
++cxx_SRC_FILES :=
++
+ # 链接参数
+ LFLAGS := \
+-	--plugin-opt=-pi32v2-always-use-itblock=false \
+-	--plugin-opt=-enable-ipra=true \
+-	--plugin-opt=-pi32v2-merge-max-offset=4096 \
+-	--plugin-opt=-pi32v2-enable-simd=true \
+-	--plugin-opt=mcpu=r3 \
+-	--plugin-opt=-global-merge-on-const \
+-	--plugin-opt=-inline-threshold=5 \
+-	--plugin-opt=-inline-max-allocated-size=32 \
+-	--plugin-opt=-inline-normal-into-special-section=true \
+-	--plugin-opt=-dont-used-symbol-list=malloc,free,sprintf,printf,puts,putchar \
+-	--plugin-opt=save-temps \
+-	--plugin-opt=-pi32v2-enable-rep-memop \
+-	--plugin-opt=-warn-stack-size=256 \
+-	--sort-common \
+-	--plugin-opt=-used-symbol-file=apps/watch/sdk_used_list.used \
+-	--plugin-opt=-enable-movable-region=true \
+-	--plugin-opt=-movable-region-section-prefix=.movable.slot. \
+-	--plugin-opt=-movable-region-stub-section-prefix=.movable.stub. \
+-	--plugin-opt=-movable-region-prefix=.movable.region. \
+-	--plugin-opt=-movable-region-stub-prefix=__movable_stub_ \
+-	--plugin-opt=-movable-region-stub-swi-number=-2 \
+-	--plugin-opt=-movable-region-map-file-list=apps/watch/movable/funcname.txt \
+-	--plugin-opt=-movable-region-section-map-file-list=apps/watch/movable/section.txt \
+-	--plugin-opt=-movable-region-exclude-func-file-list=apps/watch/movable/exclude.txt \
+-	--plugin-opt=-pi32v2-large-program=true \
+-	--plugin-opt=-floating-point-may-trap=true \
+-	--gc-sections \
+-	--plugin-opt=-pi32v2-csync-before-rti=true \
+-	--start-group \
+-	cpu/br35/liba/cpu.a \
+-	cpu/br35/liba/system.a \
+-	cpu/br35/liba/btstack.a \
+-	cpu/br35/liba/rcsp_stack.a \
+-	cpu/br35/liba/btctrler.a \
+-	cpu/br35/liba/aec.a \
+-	cpu/br35/liba/media.a \
+-	cpu/br35/liba/alpay_iot_vendor.a \
+-	cpu/br35/liba/fmna_stack.a \
+-	cpu/br35/liba/lib_fmy_auth_br35.a \
+-	cpu/br35/liba/libepmotion.a \
+-	cpu/br35/liba/libAptFilt_pi32v2_OnChip.a \
+-	cpu/br35/liba/libEchoSuppress_pi32v2_OnChip.a \
+-	cpu/br35/liba/libNoiseSuppress_pi32v2_OnChip.a \
+-	cpu/br35/liba/libSplittingFilter_pi32v2_OnChip.a \
+-	cpu/br35/liba/libSMS_TDE_pi32v2_OnChip.a \
+-	cpu/br35/liba/libDelayEstimate_pi32v2_OnChip.a \
+-	cpu/br35/liba/libDualMicSystem_pi32v2_OnChip.a \
+-	cpu/br35/liba/libAdaptiveEchoSuppress_pi32v2_OnChip.a \
+-	cpu/br35/liba/libOpcore_maskrom_pi32v2_OnChip.a \
+-	cpu/br35/liba/lib_esco_audio_plc.a \
+-	cpu/br35/liba/noisegate.a \
+-	cpu/br35/liba/sbc_eng_lib.a \
+-	cpu/br35/liba/lib_mp3_dec.a \
+-	cpu/br35/liba/mp3_decstream_lib.a \
+-	cpu/br35/liba/lib_mty_dec.a \
+-	cpu/br35/liba/lib_wav_dec.a \
+-	cpu/br35/liba/lib_adpcm_code.a \
+-	cpu/br35/liba/lib_adpcm_ima_code.a \
+-	cpu/br35/liba/lib_mp3_encode.a \
+-	cpu/br35/liba/agreement.a \
+-	cpu/br35/liba/lc3_codec_lib.a \
+-	cpu/br35/liba/opus_enc_lib.a \
+-	cpu/br35/liba/libLHDCv4DecodeLib.a \
+-	cpu/br35/liba/lib_ldac_dec.a \
+-	cpu/br35/liba/lib_ogg_opus_dec.a \
+-	cpu/br35/liba/lib_ogg_vorbis_dec.a \
+-	cpu/br35/liba/libjlsp.a \
+-	cpu/br35/liba/libjlsp_kws.a \
+-	cpu/br35/liba/lib_advaudio_plc.a \
+-	cpu/br35/liba/drc.a \
+-	cpu/br35/liba/lib_drc_advance.a \
+-	cpu/br35/liba/DynamicEQ.a \
+-	cpu/br35/liba/lib_ape_dec.a \
+-	cpu/br35/liba/VirtualBass.a \
+-	cpu/br35/liba/lib_plateReverb_adv.a \
+-	cpu/br35/liba/lib_reverb_cal.a \
+-	cpu/br35/liba/lib_wtgv2_dec.a \
+-	cpu/br35/liba/lib_voiceChanger.a \
+-	cpu/br35/liba/lib_flac_dec.a \
+-	cpu/br35/liba/lib_pitch_speed.a \
+-	cpu/br35/liba/lib_Chorus.a \
+-	cpu/br35/liba/lib_PcmDelay.a \
+-	cpu/br35/liba/lib_wma_dec.a \
+-	cpu/br35/liba/lib_FrequencyShift.a \
+-	cpu/br35/liba/howling.a \
+-	cpu/br35/liba/SpectrumShow.a \
+-	cpu/br35/liba/lib_StereoWidener.a \
+-	cpu/br35/liba/lib_HarmonicExciter.a \
+-	cpu/br35/liba/lib_drc_detect.a \
+-	cpu/br35/liba/lib_mp2_code.a \
+-	cpu/br35/liba/lib_SurroundEffect.a \
+-	cpu/br35/liba/lib_resample_fast_cal.a \
+-	cpu/br35/liba/lib_AutoWah.a \
+-	cpu/br35/liba/lib_PingPongDelay.a \
+-	cpu/br35/liba/lib_ThreeD_effect.a \
+-	cpu/br35/liba/libllns.a \
+-	cpu/br35/liba/libkwscommon.a \
+-	cpu/br35/liba/libjlsp_kws_far_keyword.a \
+-	cpu/br35/liba/lib_msbc_codec.a \
+-	cpu/br35/liba/lib_f2a_dec.a \
+-	cpu/br35/liba/lib_ccm_cipher.a \
+-	cpu/br35/liba/lib_limiter.a \
+-	cpu/br35/liba/lib_speex_codec.a \
+-	cpu/br35/liba/qr_code.a \
+-	cpu/br35/liba/noisegate.a  \
+-	cpu/br35/liba/sensor_algorithm_jl_compass.a \
+-	cpu/br35/liba/sensor_algorithm_jl_motion.a \
+-	apps/watch/sensor_hub/driver_vc_hr_11/vc_lib_hr_v637_jieli_NA_01.a \
+-	apps/watch/sensor_hub/driver_vc_hr_11/vc_lib_spo2_lc11s_int_JieLi_NA_01.a \
+-	apps/watch/sensor_hub/driver_vc_hr_11/vc_lib_sportMotion_std_int_jieli_NA_01.a \
+-	cpu/br35/liba/lib_SW_FFT_pi32v2_OnChip.a \
+-	cpu/br35/liba/lib_wtg_dec.a \
+-	cpu/br35/liba/bfilterfun_lib.a \
+-	cpu/br35/liba/lib_wtgv2_rom_dec.a \
+-	cpu/br35/liba/lib_bt_aac_dec.a \
+-	cpu/br35/liba/crypto_toolbox_Osize.a \
+-	cpu/br35/liba/lib_dns.a \
+-	cpu/br35/liba/update.a \
+-	cpu/br35/liba/quickjs.a \
+-	cpu/br35/liba/mbedtls_3_4_0.a \
+-	cpu/br35/liba/lwip_2_1_3.a \
+-	cpu/br35/liba/websocket.a \
+-	--whole-archive \
+-	apps/common/pay/upay_t_head_v2/3rdparty/protobuf-c/lib/lib3rdparty_protobuf-c_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/3rdparty/mbedtls/lib/lib3rdparty_mbedtls_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/3rdparty/regex/lib/lib3rdparty_regex_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/3rdparty/sm3/lib/lib3rdparty_sm3_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/3rdparty/uEcc/lib/lib3rdparty_uEcc_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/3rdparty/cJSON/lib/lib3rdparty_cJSON_pi32_jl.a \
+-	--no-whole-archive \
+-	--whole-archive  \
+-	apps/common/pay/upay_t_head_v2/app/aid_code/lib/libapp_aid_code_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/app/bind_ble/lib/libapp_bind_ble_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/app/pay_code/lib/libapp_pay_code_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/app/pay_result/lib/libapp_pay_result_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/app/provision/lib/libapp_provision_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/app/scan_pay/lib/libapp_scan_pay_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/app/setting/lib/libapp_setting_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/app/trans_code/lib/libapp_trans_code_pi32_jl.a \
+-	--no-whole-archive  \
+-	--whole-archive   \
+-	apps/common/pay/upay_t_head_v2/fwk/bind_status/lib/libfwk_bind_status_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/fwk/ble_communicate/lib/libfwk_ble_communicate_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/fwk/common/lib/libfwk_common_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/fwk/crypt/lib/libfwk_crypt_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/fwk/crypt_ext/lib/libfwk_crypt_ext_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/fwk/device_certificate/lib/libfwk_device_certificate_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/fwk/js_api/lib/libfwk_js_api_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/fwk/network/lib/libfwk_network_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/fwk/quickjs_adapt/lib/libfwk_quickjs_adapt_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/fwk/secure_mode_se/lib/libfwk_secure_mode_se_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/fwk/sm2/lib/libfwk_sm2_pi32_jl.a \
+-	apps/common/pay/upay_t_head_v2/fwk/storage/lib/libfwk_storage_pi32_jl.a \
+-	--no-whole-archive   \
+-	--whole-archive    \
+-	apps/common/pay/upay_t_head_v2/hal/csi/lib/libhal_csi_pi32_jl.a \
+-	--no-whole-archive    \
+-	--whole-archive     \
+-	apps/common/pay/upay_t_head_v2/share/common/lib/libshare_common_pi32_jl.a \
+-	--no-whole-archive     \
+-	--whole-archive      \
+-	apps/common/pay/upay_t_head_v2/app/antchain/lib/libapp_antchain_JL_gcc.a \
+-	--no-whole-archive      \
+-	apps/common/c++/libstdc++/ucos/libemutls.a \
+-	apps/common/c++/libstdc++/ucos/libc++.a \
+-	apps/common/c++/libstdc++/ucos/libc++abi.a \
+-	cpu/br35/liba/common_lib.a \
+-	cpu/br35/liba/cbuf.a \
+-	cpu/br35/liba/lbuf.a \
+-	cpu/br35/liba/printf.a \
+-	cpu/br35/liba/device.a \
+-	cpu/br35/liba/fs.a \
+-	cpu/br35/liba/ascii.a \
+-	cpu/br35/liba/cfg_tool.a \
+-	cpu/br35/liba/vm.a \
+-	cpu/br35/liba/ftl.a \
+-	cpu/br35/liba/debug_record.a \
+-	cpu/br35/liba/sscanf.a \
+-	cpu/br35/liba/screen_trans.a \
+-	cpu/br35/liba/gpu.a \
+-	cpu/br35/liba/jlui.a \
+-	cpu/br35/liba/res_new.a \
+-	cpu/br35/liba/ui_expand.a \
+-	cpu/br35/liba/font_new.a \
+-	cpu/br35/liba/ui_draw_new.a \
+-	cpu/br35/liba/jlui_effect.a \
+-	cpu/br35/liba/lvgl_v8.a \
+-	cpu/br35/liba/gif.a \
+-	--end-group \
+-	cpu/br35/liba/libc.a \
+-	-Tcpu/br35/sdk.ld \
+-	-M=cpu/br35/tools/sdk.map \
+-	--plugin-opt=mcpu=r3 \
+-	--plugin-opt=-mattr=+fprev1 \
+-
+-
++	--plugin-opt=-pi32v2-always-use-itblock=false \
++	--plugin-opt=-enable-ipra=true \
++	--plugin-opt=-pi32v2-merge-max-offset=4096 \
++	--plugin-opt=-pi32v2-enable-simd=true \
++	--plugin-opt=mcpu=r3 \
++	--plugin-opt=-global-merge-on-const \
++	--plugin-opt=-inline-threshold=5 \
++	--plugin-opt=-inline-max-allocated-size=32 \
++	--plugin-opt=-inline-normal-into-special-section=true \
++	--plugin-opt=-dont-used-symbol-list=malloc,free,sprintf,printf,puts,putchar \
++	--plugin-opt=save-temps \
++	--plugin-opt=-pi32v2-enable-rep-memop \
++	--plugin-opt=-warn-stack-size=256 \
++	--sort-common \
++	--plugin-opt=-enable-movable-region=true \
++	--plugin-opt=-movable-region-section-prefix=.movable.slot. \
++	--plugin-opt=-movable-region-stub-section-prefix=.movable.stub. \
++	--plugin-opt=-movable-region-prefix=.movable.region. \
++	--plugin-opt=-movable-region-stub-prefix=__movable_stub_ \
++	--plugin-opt=-movable-region-stub-swi-number=-2 \
++	--plugin-opt=-movable-region-map-file-list=apps/watch/movable/funcname.txt \
++	--plugin-opt=-movable-region-section-map-file-list=apps/watch/movable/section.txt \
++	--plugin-opt=-movable-region-exclude-func-file-list=apps/watch/movable/exclude.txt \
++	--plugin-opt=-pi32v2-large-program=true \
++	--plugin-opt=-floating-point-may-trap=true \
++	--gc-sections \
++	--plugin-opt=-pi32v2-csync-before-rti=true \
++	--start-group \
++	cpu/br35/liba/cpu.a \
++	cpu/br35/liba/system.a \
++	cpu/br35/liba/btstack.a \
++	cpu/br35/liba/rcsp_stack.a \
++	cpu/br35/liba/btctrler.a \
++	cpu/br35/liba/aec.a \
++	cpu/br35/liba/media.a \
++	cpu/br35/liba/alpay_iot_vendor.a \
++	cpu/br35/liba/fmna_stack.a \
++	cpu/br35/liba/lib_fmy_auth_br35.a \
++	cpu/br35/liba/libepmotion.a \
++	cpu/br35/liba/libAptFilt_pi32v2_OnChip.a \
++	cpu/br35/liba/libEchoSuppress_pi32v2_OnChip.a \
++	cpu/br35/liba/libNoiseSuppress_pi32v2_OnChip.a \
++	cpu/br35/liba/libSplittingFilter_pi32v2_OnChip.a \
++	cpu/br35/liba/libSMS_TDE_pi32v2_OnChip.a \
++	cpu/br35/liba/libDelayEstimate_pi32v2_OnChip.a \
++	cpu/br35/liba/libDualMicSystem_pi32v2_OnChip.a \
++	cpu/br35/liba/libAdaptiveEchoSuppress_pi32v2_OnChip.a \
++	cpu/br35/liba/libOpcore_maskrom_pi32v2_OnChip.a \
++	cpu/br35/liba/lib_esco_audio_plc.a \
++	cpu/br35/liba/noisegate.a \
++	cpu/br35/liba/sbc_eng_lib.a \
++	cpu/br35/liba/lib_mp3_dec.a \
++	cpu/br35/liba/mp3_decstream_lib.a \
++	cpu/br35/liba/lib_mty_dec.a \
++	cpu/br35/liba/lib_wav_dec.a \
++	cpu/br35/liba/lib_adpcm_code.a \
++	cpu/br35/liba/lib_adpcm_ima_code.a \
++	cpu/br35/liba/lib_mp3_encode.a \
++	cpu/br35/liba/agreement.a \
++	cpu/br35/liba/lc3_codec_lib.a \
++	cpu/br35/liba/opus_enc_lib.a \
++	cpu/br35/liba/libLHDCv4DecodeLib.a \
++	cpu/br35/liba/lib_ldac_dec.a \
++	cpu/br35/liba/lib_ogg_opus_dec.a \
++	cpu/br35/liba/lib_ogg_vorbis_dec.a \
++	cpu/br35/liba/libjlsp.a \
++	cpu/br35/liba/libjlsp_kws.a \
++	cpu/br35/liba/lib_advaudio_plc.a \
++	cpu/br35/liba/drc.a \
++	cpu/br35/liba/lib_drc_advance.a \
++	cpu/br35/liba/DynamicEQ.a \
++	cpu/br35/liba/lib_ape_dec.a \
++	cpu/br35/liba/VirtualBass.a \
++	cpu/br35/liba/lib_plateReverb_adv.a \
++	cpu/br35/liba/lib_reverb_cal.a \
++	cpu/br35/liba/lib_wtgv2_dec.a \
++	cpu/br35/liba/lib_voiceChanger.a \
++	cpu/br35/liba/lib_flac_dec.a \
++	cpu/br35/liba/lib_pitch_speed.a \
++	cpu/br35/liba/lib_Chorus.a \
++	cpu/br35/liba/lib_PcmDelay.a \
++	cpu/br35/liba/lib_wma_dec.a \
++	cpu/br35/liba/lib_FrequencyShift.a \
++	cpu/br35/liba/howling.a \
++	cpu/br35/liba/SpectrumShow.a \
++	cpu/br35/liba/lib_StereoWidener.a \
++	cpu/br35/liba/lib_HarmonicExciter.a \
++	cpu/br35/liba/lib_drc_detect.a \
++	cpu/br35/liba/lib_mp2_code.a \
++	cpu/br35/liba/lib_SurroundEffect.a \
++	cpu/br35/liba/lib_resample_fast_cal.a \
++	cpu/br35/liba/lib_AutoWah.a \
++	cpu/br35/liba/lib_PingPongDelay.a \
++	cpu/br35/liba/lib_ThreeD_effect.a \
++	cpu/br35/liba/libllns.a \
++	cpu/br35/liba/libkwscommon.a \
++	cpu/br35/liba/libjlsp_kws_far_keyword.a \
++	cpu/br35/liba/lib_msbc_codec.a \
++	cpu/br35/liba/lib_f2a_dec.a \
++	cpu/br35/liba/lib_ccm_cipher.a \
++	cpu/br35/liba/lib_limiter.a \
++	cpu/br35/liba/lib_speex_codec.a \
++	cpu/br35/liba/qr_code.a \
++	cpu/br35/liba/noisegate.a  \
++	cpu/br35/liba/sensor_algorithm_jl_compass.a \
++	cpu/br35/liba/sensor_algorithm_jl_motion.a \
++	apps/watch/sensor_hub/driver_vc_hr_11/vc_lib_hr_v637_jieli_NA_01.a \
++	apps/watch/sensor_hub/driver_vc_hr_11/vc_lib_spo2_lc11s_int_JieLi_NA_01.a \
++	apps/watch/sensor_hub/driver_vc_hr_11/vc_lib_sportMotion_std_int_jieli_NA_01.a \
++	cpu/br35/liba/lib_SW_FFT_pi32v2_OnChip.a \
++	cpu/br35/liba/lib_wtg_dec.a \
++	cpu/br35/liba/bfilterfun_lib.a \
++	cpu/br35/liba/lib_wtgv2_rom_dec.a \
++	cpu/br35/liba/lib_bt_aac_dec.a \
++	cpu/br35/liba/crypto_toolbox_Osize.a \
++	cpu/br35/liba/lib_dns.a \
++	cpu/br35/liba/update.a \
++	cpu/br35/liba/quickjs.a \
++	cpu/br35/liba/mbedtls_3_4_0.a \
++	cpu/br35/liba/lwip_2_1_3.a \
++	cpu/br35/liba/websocket.a \
++	--whole-archive \
++	apps/common/pay/upay_t_head_v2/3rdparty/protobuf-c/lib/lib3rdparty_protobuf-c_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/3rdparty/mbedtls/lib/lib3rdparty_mbedtls_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/3rdparty/regex/lib/lib3rdparty_regex_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/3rdparty/sm3/lib/lib3rdparty_sm3_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/3rdparty/uEcc/lib/lib3rdparty_uEcc_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/3rdparty/cJSON/lib/lib3rdparty_cJSON_pi32_jl.a \
++	--no-whole-archive \
++	--whole-archive  \
++	apps/common/pay/upay_t_head_v2/app/aid_code/lib/libapp_aid_code_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/app/bind_ble/lib/libapp_bind_ble_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/app/pay_code/lib/libapp_pay_code_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/app/pay_result/lib/libapp_pay_result_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/app/provision/lib/libapp_provision_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/app/scan_pay/lib/libapp_scan_pay_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/app/setting/lib/libapp_setting_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/app/trans_code/lib/libapp_trans_code_pi32_jl.a \
++	--no-whole-archive  \
++	--whole-archive   \
++	apps/common/pay/upay_t_head_v2/fwk/bind_status/lib/libfwk_bind_status_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/fwk/ble_communicate/lib/libfwk_ble_communicate_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/fwk/common/lib/libfwk_common_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/fwk/crypt/lib/libfwk_crypt_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/fwk/crypt_ext/lib/libfwk_crypt_ext_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/fwk/device_certificate/lib/libfwk_device_certificate_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/fwk/js_api/lib/libfwk_js_api_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/fwk/network/lib/libfwk_network_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/fwk/quickjs_adapt/lib/libfwk_quickjs_adapt_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/fwk/secure_mode_se/lib/libfwk_secure_mode_se_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/fwk/sm2/lib/libfwk_sm2_pi32_jl.a \
++	apps/common/pay/upay_t_head_v2/fwk/storage/lib/libfwk_storage_pi32_jl.a \
++	--no-whole-archive   \
++	--whole-archive    \
++	apps/common/pay/upay_t_head_v2/hal/csi/lib/libhal_csi_pi32_jl.a \
++	--no-whole-archive    \
++	--whole-archive     \
++	apps/common/pay/upay_t_head_v2/share/common/lib/libshare_common_pi32_jl.a \
++	--no-whole-archive     \
++	--whole-archive      \
++	apps/common/pay/upay_t_head_v2/app/antchain/lib/libapp_antchain_JL_gcc.a \
++	--no-whole-archive      \
++	apps/common/c++/libstdc++/ucos/libemutls.a \
++	apps/common/c++/libstdc++/ucos/libc++.a \
++	apps/common/c++/libstdc++/ucos/libc++abi.a \
++	cpu/br35/liba/common_lib.a \
++	cpu/br35/liba/cbuf.a \
++	cpu/br35/liba/lbuf.a \
++	cpu/br35/liba/printf.a \
++	cpu/br35/liba/device.a \
++	cpu/br35/liba/fs.a \
++	cpu/br35/liba/ascii.a \
++	cpu/br35/liba/cfg_tool.a \
++	cpu/br35/liba/vm.a \
++	cpu/br35/liba/ftl.a \
++	cpu/br35/liba/debug_record.a \
++	cpu/br35/liba/sscanf.a \
++	cpu/br35/liba/screen_trans.a \
++	cpu/br35/liba/gpu.a \
++	cpu/br35/liba/jlui.a \
++	cpu/br35/liba/res_new.a \
++	cpu/br35/liba/ui_expand.a \
++	cpu/br35/liba/font_new.a \
++	cpu/br35/liba/ui_draw_new.a \
++	cpu/br35/liba/jlui_effect.a \
++	cpu/br35/liba/lvgl_v8.a \
++	cpu/br35/liba/gif.a \
++	--end-group \
++	cpu/br35/liba/libc.a \
++	-Tcpu/br35/sdk.ld \
++	-M=cpu/br35/tools/sdk.map \
++	--plugin-opt=mcpu=r3 \
++	--plugin-opt=-mattr=+fprev1 \
++
++
+ LIBPATHS := \
+diff --git a/SDK/build/genFileList.c b/SDK/build/genFileList.c
+index 415f592..c51058c 100644
+--- a/SDK/build/genFileList.c
++++ b/SDK/build/genFileList.c
+@@ -3,5 +3,13 @@
+ // *INDENT-OFF*
+-
+-
+-
++#ifdef CONFIG_BOARD_E87_1542_STAGE0_H
++#define E87_STAGE0_GENERATED_LIST_BEGIN 1
++c_SRC_FILES += \
++      apps/watch/e87/e87_stage0_adv.c \
++      apps/watch/e87/e87_stage0_app.c \
++      apps/watch/e87/e87_stage0_ble.c
++#define E87_STAGE0_GENERATED_LIST_END 1
++#else
++
++
++
+ c_SRC_FILES += \
+@@ -803,3 +811,3 @@
+ #endif
+-
+-
++
++#endif /* CONFIG_BOARD_E87_1542_STAGE0_H */
