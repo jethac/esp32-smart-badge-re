@@ -219,11 +219,19 @@ public final class StockQixGattTransport implements StockGattDriver {
         return adapter.postToBle(command);
     }
 
+    private AdapterSeam.ListenerSupplier listenerSupplier() {
+        return new AdapterSeam.ListenerSupplier() {
+            @Override public Listener current() {
+                return listener;
+            }
+        };
+    }
+
     private void startScanOnBle(long generation, long token) {
         final Command command = new Command(generation, token, CommandKind.SCAN);
         scanCommand = command;
         scannedDevices.clear();
-        boolean started = adapter.attemptPlatformStart(new AdapterSeam.PlatformStart() {
+        boolean started = adapter.attemptPlatformStartOrDeliver(new AdapterSeam.PlatformStart() {
             @Override public boolean start() {
                 BluetoothAdapter bluetoothAdapter = bluetoothAdapter();
                 BluetoothLeScanner currentScanner = bluetoothAdapter == null ? null
@@ -242,16 +250,17 @@ public final class StockQixGattTransport implements StockGattDriver {
                     return false;
                 }
             }
-        });
+        }, command.completion, listenerSupplier(),
+                AdapterSeam.CallbackTag.scan(command.generation, command.token));
         if (!started) {
-            scanFailure(command, FAILURE_STATUS);
+            scanCommand = null;
         }
     }
 
     private void connectOnBle(long generation, long token, Peer peer) {
         final Command command = new Command(generation, token, CommandKind.CONNECT);
         connectCommand = command;
-        boolean started = adapter.attemptPlatformStart(new AdapterSeam.PlatformStart() {
+        boolean started = adapter.attemptPlatformStartOrDeliver(new AdapterSeam.PlatformStart() {
             @Override public boolean start() {
                 BluetoothDevice device = scannedDevices.get(peer.address());
                 if (device == null) {
@@ -280,16 +289,17 @@ public final class StockQixGattTransport implements StockGattDriver {
                 descriptorTargets.clear();
                 return true;
             }
-        });
+        }, command.completion, listenerSupplier(),
+                AdapterSeam.CallbackTag.connect(command.generation, command.token));
         if (!started) {
-            connectionFailure(command, FAILURE_STATUS);
+            connectCommand = null;
         }
     }
 
     private void discoverOnBle(long generation, long token) {
         final Command command = new Command(generation, token, CommandKind.DISCOVER);
         discoverCommand = command;
-        boolean started = adapter.attemptPlatformStart(new AdapterSeam.PlatformStart() {
+        boolean started = adapter.attemptPlatformStartOrDeliver(new AdapterSeam.PlatformStart() {
             @Override public boolean start() {
                 BluetoothGatt current = gatt;
                 try {
@@ -298,9 +308,10 @@ public final class StockQixGattTransport implements StockGattDriver {
                     return false;
                 }
             }
-        });
+        }, command.completion, listenerSupplier(),
+                AdapterSeam.CallbackTag.discover(command.generation, command.token));
         if (!started) {
-            servicesFailure(command, FAILURE_STATUS);
+            discoverCommand = null;
         }
     }
 
@@ -311,7 +322,7 @@ public final class StockQixGattTransport implements StockGattDriver {
         subscriptionCommand = command;
         final BluetoothGatt current = gatt;
         final BluetoothGattCharacteristic nativeCharacteristic = pureToNative.get(characteristic);
-        Object startedDescriptor = adapter.startSubscription(Build.VERSION.SDK_INT,
+        Object startedDescriptor = adapter.startSubscriptionOrDeliver(Build.VERSION.SDK_INT,
                 new AdapterSeam.SubscriptionPort() {
                     @Override public boolean setCharacteristicNotification() {
                         try {
@@ -345,9 +356,11 @@ public final class StockQixGattTransport implements StockGattDriver {
                         return current != null && writeDescriptorApi33(current,
                                 (BluetoothGattDescriptor) descriptor, value);
                     }
-                }, copy);
+                }, copy, command.completion, listenerSupplier(),
+                AdapterSeam.CallbackTag.subscription(command.generation, command.token,
+                        characteristic, descriptorUuid));
         if (!(startedDescriptor instanceof BluetoothGattDescriptor)) {
-            subscriptionFailure(command, characteristic, descriptorUuid, FAILURE_STATUS);
+            subscriptionCommand = null;
             return;
         }
         descriptorTargets.put((BluetoothGattDescriptor) startedDescriptor,
@@ -357,7 +370,7 @@ public final class StockQixGattTransport implements StockGattDriver {
     private void requestMtuOnBle(long generation, long token, int mtu) {
         final Command command = new Command(generation, token, CommandKind.MTU);
         mtuCommand = command;
-        boolean started = adapter.attemptPlatformStart(new AdapterSeam.PlatformStart() {
+        boolean started = adapter.attemptPlatformStartOrDeliver(new AdapterSeam.PlatformStart() {
             @Override public boolean start() {
                 BluetoothGatt current = gatt;
                 try {
@@ -366,9 +379,10 @@ public final class StockQixGattTransport implements StockGattDriver {
                     return false;
                 }
             }
-        });
+        }, command.completion, listenerSupplier(),
+                AdapterSeam.CallbackTag.mtu(command.generation, command.token, mtu));
         if (!started) {
-            mtuFailure(command, mtu, FAILURE_STATUS);
+            mtuCommand = null;
         }
     }
 
@@ -380,12 +394,18 @@ public final class StockQixGattTransport implements StockGattDriver {
         final BluetoothGatt current = gatt;
         final BluetoothGattCharacteristic nativeCharacteristic = pureToNative.get(characteristic);
         if (current == null || nativeCharacteristic == null) {
-            writeFailure(command, characteristic, FAILURE_STATUS);
+            adapter.deliverTaggedResult(command.completion, listenerSupplier(),
+                    AdapterSeam.CallbackTag.write(command.generation, command.token,
+                            characteristic), FAILURE_STATUS);
+            writeCommand = null;
+            writeTarget = null;
+            writeCharacteristic = null;
             return;
         }
         writeCharacteristic = nativeCharacteristic;
         writeTarget = characteristic;
-        boolean started = adapter.startWrite(Build.VERSION.SDK_INT, new AdapterSeam.WritePort() {
+        boolean started = adapter.startWriteOrDeliver(Build.VERSION.SDK_INT,
+                new AdapterSeam.WritePort() {
             @Override public boolean setWriteType(int requestedWriteType) {
                 nativeCharacteristic.setWriteType(requestedWriteType);
                 return true;
@@ -408,9 +428,13 @@ public final class StockQixGattTransport implements StockGattDriver {
                 return writeCharacteristicApi33(current, nativeCharacteristic, value,
                         requestedWriteType);
             }
-        }, copy, writeType);
+        }, copy, writeType, command.completion, listenerSupplier(),
+                AdapterSeam.CallbackTag.write(command.generation, command.token,
+                        characteristic));
         if (!started) {
-            writeFailure(command, characteristic, FAILURE_STATUS);
+            writeCommand = null;
+            writeTarget = null;
+            writeCharacteristic = null;
         }
     }
 
@@ -883,7 +907,7 @@ public final class StockQixGattTransport implements StockGattDriver {
 
         @Override public void onCharacteristicChanged(final BluetoothGatt callbackGatt,
                 final BluetoothGattCharacteristic characteristic, final byte[] value) {
-            final byte[] copied = value == null ? null : Arrays.copyOf(value, value.length);
+            final byte[] copied = adapter.copyApi33Notification(value);
             postToBle(new Runnable() {
                 @Override public void run() {
                     onCharacteristicChangedOnBle(callbackGatt, characteristic, copied);
@@ -894,8 +918,12 @@ public final class StockQixGattTransport implements StockGattDriver {
         @SuppressWarnings("deprecation")
         @Override public void onCharacteristicChanged(final BluetoothGatt callbackGatt,
                 final BluetoothGattCharacteristic characteristic) {
-            byte[] value = characteristic == null ? null : characteristic.getValue();
-            final byte[] copied = value == null ? null : Arrays.copyOf(value, value.length);
+            final byte[] copied = adapter.copyLegacyNotification(
+                    new AdapterSeam.LegacyValueSource() {
+                        @Override public byte[] value() {
+                            return characteristic == null ? null : characteristic.getValue();
+                        }
+                    });
             postToBle(new Runnable() {
                 @Override public void run() {
                     onCharacteristicChangedOnBle(callbackGatt, characteristic, copied);
@@ -912,6 +940,10 @@ public final class StockQixGattTransport implements StockGattDriver {
      * in this enclosing transport.
      */
     static final class AdapterSeam {
+        enum TaggedKind {
+            SCAN, CONNECT, DISCOVER, SUBSCRIBE, MTU, WRITE
+        }
+
         interface HandlerPoster {
             boolean post(Runnable command);
         }
@@ -937,6 +969,75 @@ public final class StockQixGattTransport implements StockGattDriver {
 
         interface ListenerSupplier {
             StockGattDriver.Listener current();
+        }
+
+        interface LegacyValueSource {
+            byte[] value();
+        }
+
+        static final class CallbackTag {
+            private final TaggedKind kind;
+            private final long generation;
+            private final long token;
+            private final StockGattDriver.Characteristic characteristic;
+            private final UUID descriptorUuid;
+            private final int mtu;
+
+            private CallbackTag(TaggedKind kind, long generation, long token,
+                    StockGattDriver.Characteristic characteristic, UUID descriptorUuid, int mtu) {
+                this.kind = kind;
+                this.generation = generation;
+                this.token = token;
+                this.characteristic = characteristic;
+                this.descriptorUuid = descriptorUuid;
+                this.mtu = mtu;
+            }
+
+            static CallbackTag scan(long generation, long token) {
+                return new CallbackTag(TaggedKind.SCAN, generation, token, null, null, 0);
+            }
+
+            static CallbackTag connect(long generation, long token) {
+                return new CallbackTag(TaggedKind.CONNECT, generation, token, null, null, 0);
+            }
+
+            static CallbackTag discover(long generation, long token) {
+                return new CallbackTag(TaggedKind.DISCOVER, generation, token, null, null, 0);
+            }
+
+            static CallbackTag subscription(long generation, long token,
+                    StockGattDriver.Characteristic characteristic, UUID descriptorUuid) {
+                if (characteristic == null || descriptorUuid == null) {
+                    throw new IllegalArgumentException("subscription callback tag must be complete");
+                }
+                return new CallbackTag(TaggedKind.SUBSCRIBE, generation, token, characteristic,
+                        descriptorUuid, 0);
+            }
+
+            static CallbackTag mtu(long generation, long token, int mtu) {
+                return new CallbackTag(TaggedKind.MTU, generation, token, null, null, mtu);
+            }
+
+            static CallbackTag write(long generation, long token,
+                    StockGattDriver.Characteristic characteristic) {
+                if (characteristic == null) {
+                    throw new IllegalArgumentException("write callback tag needs characteristic");
+                }
+                return new CallbackTag(TaggedKind.WRITE, generation, token, characteristic,
+                        null, 0);
+            }
+
+            TaggedKind kind() {
+                return kind;
+            }
+
+            long generation() {
+                return generation;
+            }
+
+            long token() {
+                return token;
+            }
         }
 
         static final class CompletionGate {
@@ -1003,6 +1104,18 @@ public final class StockQixGattTransport implements StockGattDriver {
             }
         }
 
+        boolean attemptPlatformStartOrDeliver(PlatformStart start, CompletionGate completion,
+                ListenerSupplier listenerSupplier, CallbackTag tag) {
+            if (completion == null || listenerSupplier == null || tag == null) {
+                throw new IllegalArgumentException("platform callback inputs must not be null");
+            }
+            if (attemptPlatformStart(start)) {
+                return true;
+            }
+            deliverTaggedResult(completion, listenerSupplier, tag, FAILURE_STATUS);
+            return false;
+        }
+
         Object startSubscription(int sdkInt, SubscriptionPort port, byte[] requestedValue) {
             if (port == null || requestedValue == null) {
                 throw new IllegalArgumentException("subscription inputs must not be null");
@@ -1033,6 +1146,19 @@ public final class StockQixGattTransport implements StockGattDriver {
             }
         }
 
+        Object startSubscriptionOrDeliver(int sdkInt, SubscriptionPort port, byte[] requestedValue,
+                CompletionGate completion, ListenerSupplier listenerSupplier, CallbackTag tag) {
+            if (completion == null || listenerSupplier == null || tag == null) {
+                throw new IllegalArgumentException("subscription callback inputs must not be null");
+            }
+            Object descriptor = startSubscription(sdkInt, port, requestedValue);
+            if (descriptor != null) {
+                return descriptor;
+            }
+            deliverTaggedResult(completion, listenerSupplier, tag, FAILURE_STATUS);
+            return null;
+        }
+
         boolean startWrite(int sdkInt, WritePort port, byte[] value, int writeType) {
             if (port == null || value == null) {
                 throw new IllegalArgumentException("write inputs must not be null");
@@ -1051,6 +1177,77 @@ public final class StockQixGattTransport implements StockGattDriver {
             } catch (RuntimeException failed) {
                 return false;
             }
+        }
+
+        boolean startWriteOrDeliver(int sdkInt, WritePort port, byte[] value, int writeType,
+                CompletionGate completion, ListenerSupplier listenerSupplier, CallbackTag tag) {
+            if (completion == null || listenerSupplier == null || tag == null) {
+                throw new IllegalArgumentException("write callback inputs must not be null");
+            }
+            if (startWrite(sdkInt, port, value, writeType)) {
+                return true;
+            }
+            deliverTaggedResult(completion, listenerSupplier, tag, FAILURE_STATUS);
+            return false;
+        }
+
+        boolean deliverTaggedResult(final CompletionGate completion,
+                final ListenerSupplier listenerSupplier, final CallbackTag tag, final int status) {
+            if (completion == null || listenerSupplier == null || tag == null) {
+                throw new IllegalArgumentException("tagged callback inputs must not be null");
+            }
+            if (!completion.claim()) {
+                return false;
+            }
+            postToCallback(new Runnable() {
+                @Override public void run() {
+                    StockGattDriver.Listener current = listenerSupplier.current();
+                    if (current == null) {
+                        return;
+                    }
+                    switch (tag.kind) {
+                        case SCAN:
+                            current.onScanFailed(tag.generation, tag.token, status);
+                            return;
+                        case CONNECT:
+                            current.onConnectionResult(tag.generation, tag.token, status);
+                            return;
+                        case DISCOVER:
+                            current.onServicesResult(tag.generation, tag.token,
+                                    Collections.<StockGattDriver.Service>emptyList(), status);
+                            return;
+                        case SUBSCRIBE:
+                            current.onSubscriptionResult(tag.generation, tag.token,
+                                    tag.characteristic, tag.descriptorUuid, status);
+                            return;
+                        case MTU:
+                            current.onMtuResult(tag.generation, tag.token, tag.mtu, status);
+                            return;
+                        case WRITE:
+                            current.onCharacteristicWrite(tag.generation, tag.token,
+                                    tag.characteristic, status);
+                            return;
+                        default:
+                            throw new AssertionError(tag.kind);
+                    }
+                }
+            });
+            return true;
+        }
+
+        byte[] copyApi33Notification(byte[] value) {
+            return copyNotification(value);
+        }
+
+        byte[] copyLegacyNotification(LegacyValueSource source) {
+            if (source == null) {
+                throw new IllegalArgumentException("legacy notification source must not be null");
+            }
+            return copyNotification(source.value());
+        }
+
+        private static byte[] copyNotification(byte[] value) {
+            return value == null ? null : Arrays.copyOf(value, value.length);
         }
 
         void deliverExactFd02Write(final CompletionGate completion,

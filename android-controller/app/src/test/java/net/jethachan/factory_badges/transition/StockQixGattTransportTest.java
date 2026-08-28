@@ -14,11 +14,18 @@ import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import org.junit.Test;
 
 public final class StockQixGattTransportTest {
@@ -138,18 +145,18 @@ public final class StockQixGattTransportTest {
         assertEquals(Arrays.asList("enable", "descriptor"), nullDescriptor.calls);
 
         FakeSubscriptionPort setValueFalse = new FakeSubscriptionPort();
-        setValueFalse.legacySetValueResult = false;
+        setValueFalse.legacySetValueOutcome = Outcome.FALSE;
         assertNull(seam.startSubscription(32, setValueFalse, new byte[] {2, 0}));
         assertEquals(Arrays.asList("enable", "descriptor", "setValue"), setValueFalse.calls);
 
         FakeSubscriptionPort modernNonSuccess = new FakeSubscriptionPort();
-        modernNonSuccess.modernWriteResult = false;
+        modernNonSuccess.modernWriteOutcome = Outcome.FALSE;
         assertNull(seam.startSubscription(33, modernNonSuccess, new byte[] {2, 0}));
         assertEquals(Arrays.asList("enable", "descriptor", "writeModern"),
                 modernNonSuccess.calls);
 
         FakeSubscriptionPort denied = new FakeSubscriptionPort();
-        denied.throwSecurityOnEnable = true;
+        denied.localEnableOutcome = Outcome.SECURITY;
         assertNull(seam.startSubscription(32, denied, new byte[] {2, 0}));
         assertEquals(Arrays.asList("enable"), denied.calls);
     }
@@ -159,13 +166,13 @@ public final class StockQixGattTransportTest {
         FifoExecutor fifo = new FifoExecutor();
         StockQixGattTransport.AdapterSeam seam = seam(handler, fifo);
         FakeWritePort legacy = new FakeWritePort();
-        legacy.legacySetValueResult = false;
+        legacy.legacySetValueOutcome = Outcome.FALSE;
         assertFalse(seam.startWrite(32, legacy, new byte[] {9, 8},
                 StockGattDriver.WRITE_TYPE_DEFAULT));
         assertEquals(Arrays.asList("setType", "setValue"), legacy.calls);
 
         FakeWritePort modern = new FakeWritePort();
-        modern.modernWriteResult = false;
+        modern.modernWriteOutcome = Outcome.FALSE;
         assertFalse(seam.startWrite(33, modern, new byte[] {9, 8},
                 StockGattDriver.WRITE_TYPE_DEFAULT));
         assertEquals(Arrays.asList("writeModern"), modern.calls);
@@ -209,6 +216,349 @@ public final class StockQixGattTransportTest {
         assertArrayEquals(new byte[] {4, 5, 6}, listener.notifications.get(0));
     }
 
+    @Test public void adapterSeamDeliversEveryStartFailureExactlyOnceAndSuppressesSuccess() {
+        FakeBleHandlerQueue handler = new FakeBleHandlerQueue();
+        FifoExecutor fifo = new FifoExecutor();
+        StockQixGattTransport.AdapterSeam seam = seam(handler, fifo);
+
+        assertStartFailure(seam, fifo, StockQixGattTransport.AdapterSeam.TaggedKind.SCAN,
+                Outcome.FALSE);
+        assertStartFailure(seam, fifo, StockQixGattTransport.AdapterSeam.TaggedKind.CONNECT,
+                Outcome.FALSE);
+        assertStartFailure(seam, fifo, StockQixGattTransport.AdapterSeam.TaggedKind.DISCOVER,
+                Outcome.RUNTIME);
+        assertStartFailure(seam, fifo, StockQixGattTransport.AdapterSeam.TaggedKind.MTU,
+                Outcome.SECURITY);
+    }
+
+    @Test public void adapterSeamTagsEverySubscriptionImmediateFailureExactlyOnce() {
+        FakeBleHandlerQueue handler = new FakeBleHandlerQueue();
+        FifoExecutor fifo = new FifoExecutor();
+        StockQixGattTransport.AdapterSeam seam = seam(handler, fifo);
+
+        FakeSubscriptionPort enableFalse = new FakeSubscriptionPort();
+        enableFalse.localEnableOutcome = Outcome.FALSE;
+        assertSubscriptionFailure(seam, fifo, 32, enableFalse,
+                Arrays.asList("enable"));
+
+        FakeSubscriptionPort enableSecurity = new FakeSubscriptionPort();
+        enableSecurity.localEnableOutcome = Outcome.SECURITY;
+        assertSubscriptionFailure(seam, fifo, 32, enableSecurity,
+                Arrays.asList("enable"));
+
+        FakeSubscriptionPort enableRuntime = new FakeSubscriptionPort();
+        enableRuntime.localEnableOutcome = Outcome.RUNTIME;
+        assertSubscriptionFailure(seam, fifo, 32, enableRuntime,
+                Arrays.asList("enable"));
+
+        FakeSubscriptionPort nullDescriptor = new FakeSubscriptionPort();
+        nullDescriptor.returnNullDescriptor = true;
+        assertSubscriptionFailure(seam, fifo, 32, nullDescriptor,
+                Arrays.asList("enable", "descriptor"));
+
+        FakeSubscriptionPort legacySetValueFalse = new FakeSubscriptionPort();
+        legacySetValueFalse.legacySetValueOutcome = Outcome.FALSE;
+        assertSubscriptionFailure(seam, fifo, 32, legacySetValueFalse,
+                Arrays.asList("enable", "descriptor", "setValue"));
+
+        FakeSubscriptionPort legacySetValueRuntime = new FakeSubscriptionPort();
+        legacySetValueRuntime.legacySetValueOutcome = Outcome.RUNTIME;
+        assertSubscriptionFailure(seam, fifo, 32, legacySetValueRuntime,
+                Arrays.asList("enable", "descriptor", "setValue"));
+
+        FakeSubscriptionPort legacyWriteFalse = new FakeSubscriptionPort();
+        legacyWriteFalse.legacyWriteOutcome = Outcome.FALSE;
+        assertSubscriptionFailure(seam, fifo, 32, legacyWriteFalse,
+                Arrays.asList("enable", "descriptor", "setValue", "writeLegacy"));
+
+        FakeSubscriptionPort legacyWriteSecurity = new FakeSubscriptionPort();
+        legacyWriteSecurity.legacyWriteOutcome = Outcome.SECURITY;
+        assertSubscriptionFailure(seam, fifo, 32, legacyWriteSecurity,
+                Arrays.asList("enable", "descriptor", "setValue", "writeLegacy"));
+
+        FakeSubscriptionPort legacyWriteRuntime = new FakeSubscriptionPort();
+        legacyWriteRuntime.legacyWriteOutcome = Outcome.RUNTIME;
+        assertSubscriptionFailure(seam, fifo, 32, legacyWriteRuntime,
+                Arrays.asList("enable", "descriptor", "setValue", "writeLegacy"));
+
+        FakeSubscriptionPort modernWriteFalse = new FakeSubscriptionPort();
+        modernWriteFalse.modernWriteOutcome = Outcome.FALSE;
+        assertSubscriptionFailure(seam, fifo, 33, modernWriteFalse,
+                Arrays.asList("enable", "descriptor", "writeModern"));
+
+        FakeSubscriptionPort modernWriteSecurity = new FakeSubscriptionPort();
+        modernWriteSecurity.modernWriteOutcome = Outcome.SECURITY;
+        assertSubscriptionFailure(seam, fifo, 33, modernWriteSecurity,
+                Arrays.asList("enable", "descriptor", "writeModern"));
+
+        FakeSubscriptionPort modernWriteRuntime = new FakeSubscriptionPort();
+        modernWriteRuntime.modernWriteOutcome = Outcome.RUNTIME;
+        assertSubscriptionFailure(seam, fifo, 33, modernWriteRuntime,
+                Arrays.asList("enable", "descriptor", "writeModern"));
+    }
+
+    @Test public void adapterSeamTagsEveryWriteImmediateFailureExactlyOnce() {
+        FakeBleHandlerQueue handler = new FakeBleHandlerQueue();
+        FifoExecutor fifo = new FifoExecutor();
+        StockQixGattTransport.AdapterSeam seam = seam(handler, fifo);
+
+        FakeWritePort legacySetValueFalse = new FakeWritePort();
+        legacySetValueFalse.legacySetValueOutcome = Outcome.FALSE;
+        assertWriteFailure(seam, fifo, 32, legacySetValueFalse,
+                Arrays.asList("setType", "setValue"));
+
+        FakeWritePort legacySetValueRuntime = new FakeWritePort();
+        legacySetValueRuntime.legacySetValueOutcome = Outcome.RUNTIME;
+        assertWriteFailure(seam, fifo, 32, legacySetValueRuntime,
+                Arrays.asList("setType", "setValue"));
+
+        FakeWritePort legacyWriteFalse = new FakeWritePort();
+        legacyWriteFalse.legacyWriteOutcome = Outcome.FALSE;
+        assertWriteFailure(seam, fifo, 32, legacyWriteFalse,
+                Arrays.asList("setType", "setValue", "writeLegacy"));
+
+        FakeWritePort legacyWriteSecurity = new FakeWritePort();
+        legacyWriteSecurity.legacyWriteOutcome = Outcome.SECURITY;
+        assertWriteFailure(seam, fifo, 32, legacyWriteSecurity,
+                Arrays.asList("setType", "setValue", "writeLegacy"));
+
+        FakeWritePort legacyWriteRuntime = new FakeWritePort();
+        legacyWriteRuntime.legacyWriteOutcome = Outcome.RUNTIME;
+        assertWriteFailure(seam, fifo, 32, legacyWriteRuntime,
+                Arrays.asList("setType", "setValue", "writeLegacy"));
+
+        FakeWritePort modernWriteFalse = new FakeWritePort();
+        modernWriteFalse.modernWriteOutcome = Outcome.FALSE;
+        assertWriteFailure(seam, fifo, 33, modernWriteFalse,
+                Arrays.asList("writeModern"));
+
+        FakeWritePort modernWriteSecurity = new FakeWritePort();
+        modernWriteSecurity.modernWriteOutcome = Outcome.SECURITY;
+        assertWriteFailure(seam, fifo, 33, modernWriteSecurity,
+                Arrays.asList("writeModern"));
+
+        FakeWritePort modernWriteRuntime = new FakeWritePort();
+        modernWriteRuntime.modernWriteOutcome = Outcome.RUNTIME;
+        assertWriteFailure(seam, fifo, 33, modernWriteRuntime,
+                Arrays.asList("writeModern"));
+    }
+
+    @Test public void adapterSeamRoutesWorkerCallsToDesignatedThreadsInFifoOrder()
+            throws Exception {
+        ThreadRecordingHandler handler = new ThreadRecordingHandler();
+        final List<String> handlerOrder = Collections.synchronizedList(new ArrayList<String>());
+        final List<String> callbackOrder = Collections.synchronizedList(new ArrayList<String>());
+        final List<String> handlerThreads = Collections.synchronizedList(new ArrayList<String>());
+        final List<String> callbackThreads = Collections.synchronizedList(new ArrayList<String>());
+        final List<Boolean> accepted = Collections.synchronizedList(new ArrayList<Boolean>());
+        final CountDownLatch callbacks = new CountDownLatch(2);
+        ExecutorService fifo = Executors.newSingleThreadExecutor(new ThreadFactory() {
+            @Override public Thread newThread(Runnable runnable) {
+                return new Thread(runnable, "designated-fifo");
+            }
+        });
+        try {
+            final StockQixGattTransport.AdapterSeam seam =
+                    new StockQixGattTransport.AdapterSeam(handler, fifo);
+            Thread worker = new Thread(new Runnable() {
+                @Override public void run() {
+                    accepted.add(seam.postToBle(threadedCommand(seam, "first", handlerOrder,
+                            callbackOrder, handlerThreads, callbackThreads, callbacks)));
+                    accepted.add(seam.postToBle(threadedCommand(seam, "second", handlerOrder,
+                            callbackOrder, handlerThreads, callbackThreads, callbacks)));
+                }
+            }, "worker-caller");
+            worker.start();
+            worker.join();
+            assertEquals(Arrays.asList(true, true), accepted);
+            assertTrue(handlerOrder.isEmpty());
+            assertTrue(callbackOrder.isEmpty());
+
+            Thread bleHandlerThread = new Thread(new Runnable() {
+                @Override public void run() {
+                    handler.drain();
+                }
+            }, "designated-ble-handler");
+            bleHandlerThread.start();
+            bleHandlerThread.join();
+            assertTrue(callbacks.await(5, TimeUnit.SECONDS));
+
+            assertEquals(Arrays.asList("first", "second"), handlerOrder);
+            assertEquals(Arrays.asList("first", "second"), callbackOrder);
+            assertEquals(Arrays.asList("designated-ble-handler", "designated-ble-handler"),
+                    handlerThreads);
+            assertEquals(Arrays.asList("designated-fifo", "designated-fifo"), callbackThreads);
+        } finally {
+            fifo.shutdownNow();
+            assertTrue(fifo.awaitTermination(5, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test public void adapterSeamCopiesBothNotificationOverloadsBeforeFifoDelivery() {
+        FakeBleHandlerQueue handler = new FakeBleHandlerQueue();
+        FifoExecutor fifo = new FifoExecutor();
+        StockQixGattTransport.AdapterSeam seam = seam(handler, fifo);
+        RecordingDriverListener listener = new RecordingDriverListener();
+        StockQixGattTransport.AdapterSeam.ListenerSupplier supplier = supplier(listener);
+
+        byte[] api33Source = new byte[] {1, 2, 3};
+        byte[] api33Value = seam.copyApi33Notification(api33Source);
+        api33Source[0] = 9;
+        seam.deliverNotification(supplier, 7, fd03(), api33Value);
+        api33Value[1] = 9;
+
+        final byte[] legacySource = new byte[] {4, 5, 6};
+        byte[] legacyValue = seam.copyLegacyNotification(
+                new StockQixGattTransport.AdapterSeam.LegacyValueSource() {
+                    @Override public byte[] value() {
+                        return legacySource;
+                    }
+                });
+        legacySource[0] = 9;
+        seam.deliverNotification(supplier, 7, fd03(), legacyValue);
+        legacyValue[1] = 9;
+
+        assertTrue(listener.notifications.isEmpty());
+        fifo.drain();
+        assertEquals(2, listener.notifications.size());
+        assertArrayEquals(new byte[] {1, 2, 3}, listener.notifications.get(0));
+        assertArrayEquals(new byte[] {4, 5, 6}, listener.notifications.get(1));
+    }
+
+    private static void assertStartFailure(StockQixGattTransport.AdapterSeam seam,
+            FifoExecutor fifo, StockQixGattTransport.AdapterSeam.TaggedKind kind,
+            final Outcome outcome) {
+        RecordingDriverListener listener = new RecordingDriverListener();
+        StockQixGattTransport.AdapterSeam.CompletionGate gate =
+                new StockQixGattTransport.AdapterSeam.CompletionGate();
+        StockQixGattTransport.AdapterSeam.CallbackTag tag = tag(kind);
+        assertFalse(seam.attemptPlatformStartOrDeliver(
+                new StockQixGattTransport.AdapterSeam.PlatformStart() {
+                    @Override public boolean start() {
+                        return result(outcome);
+                    }
+                }, gate, supplier(listener), tag));
+        assertTrue(listener.tagged.isEmpty());
+        fifo.drain();
+        assertOnlyFailure(listener, tag);
+        assertFalse(seam.deliverTaggedResult(gate, supplier(listener), tag,
+                StockGattDriver.STATUS_SUCCESS));
+        fifo.drain();
+        assertOnlyFailure(listener, tag);
+    }
+
+    private static void assertSubscriptionFailure(StockQixGattTransport.AdapterSeam seam,
+            FifoExecutor fifo, int sdkInt, FakeSubscriptionPort port, List<String> expectedCalls) {
+        RecordingDriverListener listener = new RecordingDriverListener();
+        StockQixGattTransport.AdapterSeam.CompletionGate gate =
+                new StockQixGattTransport.AdapterSeam.CompletionGate();
+        StockQixGattTransport.AdapterSeam.CallbackTag tag = tag(
+                StockQixGattTransport.AdapterSeam.TaggedKind.SUBSCRIBE);
+        assertNull(seam.startSubscriptionOrDeliver(sdkInt, port, new byte[] {2, 0}, gate,
+                supplier(listener), tag));
+        assertEquals(expectedCalls, port.calls);
+        assertTrue(listener.tagged.isEmpty());
+        fifo.drain();
+        assertOnlyFailure(listener, tag);
+        assertFalse(seam.deliverTaggedResult(gate, supplier(listener), tag,
+                StockGattDriver.STATUS_SUCCESS));
+        fifo.drain();
+        assertOnlyFailure(listener, tag);
+    }
+
+    private static void assertWriteFailure(StockQixGattTransport.AdapterSeam seam,
+            FifoExecutor fifo, int sdkInt, FakeWritePort port, List<String> expectedCalls) {
+        RecordingDriverListener listener = new RecordingDriverListener();
+        StockQixGattTransport.AdapterSeam.CompletionGate gate =
+                new StockQixGattTransport.AdapterSeam.CompletionGate();
+        StockQixGattTransport.AdapterSeam.CallbackTag tag = tag(
+                StockQixGattTransport.AdapterSeam.TaggedKind.WRITE);
+        assertFalse(seam.startWriteOrDeliver(sdkInt, port, new byte[] {9, 8},
+                StockGattDriver.WRITE_TYPE_DEFAULT, gate, supplier(listener), tag));
+        assertEquals(expectedCalls, port.calls);
+        assertTrue(listener.tagged.isEmpty());
+        fifo.drain();
+        assertOnlyFailure(listener, tag);
+        assertFalse(seam.deliverTaggedResult(gate, supplier(listener), tag,
+                StockGattDriver.STATUS_SUCCESS));
+        fifo.drain();
+        assertOnlyFailure(listener, tag);
+    }
+
+    private static void assertOnlyFailure(RecordingDriverListener listener,
+            StockQixGattTransport.AdapterSeam.CallbackTag tag) {
+        assertEquals(1, listener.tagged.size());
+        TaggedEvent event = listener.tagged.get(0);
+        assertEquals(tag.kind(), event.kind);
+        assertEquals(tag.generation(), event.generation);
+        assertEquals(tag.token(), event.token);
+        assertEquals(-1, event.status);
+    }
+
+    private static StockQixGattTransport.AdapterSeam.CallbackTag tag(
+            StockQixGattTransport.AdapterSeam.TaggedKind kind) {
+        switch (kind) {
+            case SCAN:
+                return StockQixGattTransport.AdapterSeam.CallbackTag.scan(11, 21);
+            case CONNECT:
+                return StockQixGattTransport.AdapterSeam.CallbackTag.connect(12, 22);
+            case DISCOVER:
+                return StockQixGattTransport.AdapterSeam.CallbackTag.discover(13, 23);
+            case SUBSCRIBE:
+                return StockQixGattTransport.AdapterSeam.CallbackTag.subscription(14, 24,
+                        fd01(), StockQixUuids.CCCD);
+            case MTU:
+                return StockQixGattTransport.AdapterSeam.CallbackTag.mtu(15, 25, 512);
+            case WRITE:
+                return StockQixGattTransport.AdapterSeam.CallbackTag.write(16, 26, fd02());
+            default:
+                throw new AssertionError(kind);
+        }
+    }
+
+    private static StockQixGattTransport.AdapterSeam.ListenerSupplier supplier(
+            final RecordingDriverListener listener) {
+        return new StockQixGattTransport.AdapterSeam.ListenerSupplier() {
+            @Override public StockGattDriver.Listener current() {
+                return listener;
+            }
+        };
+    }
+
+    private static Runnable threadedCommand(final StockQixGattTransport.AdapterSeam seam,
+            final String name, final List<String> handlerOrder, final List<String> callbackOrder,
+            final List<String> handlerThreads, final List<String> callbackThreads,
+            final CountDownLatch callbacks) {
+        return new Runnable() {
+            @Override public void run() {
+                handlerOrder.add(name);
+                handlerThreads.add(Thread.currentThread().getName());
+                seam.postToCallback(new Runnable() {
+                    @Override public void run() {
+                        callbackOrder.add(name);
+                        callbackThreads.add(Thread.currentThread().getName());
+                        callbacks.countDown();
+                    }
+                });
+            }
+        };
+    }
+
+    private static boolean result(Outcome outcome) {
+        switch (outcome) {
+            case SUCCESS:
+                return true;
+            case FALSE:
+                return false;
+            case SECURITY:
+                throw new SecurityException("denied");
+            case RUNTIME:
+                throw new IllegalStateException("platform failed");
+            default:
+                throw new AssertionError(outcome);
+        }
+    }
+
     private static StockQixGattTransport.AdapterSeam seam(final FakeBleHandlerQueue handler,
             FifoExecutor fifo) {
         return new StockQixGattTransport.AdapterSeam(
@@ -219,22 +569,62 @@ public final class StockQixGattTransportTest {
                 }, fifo);
     }
 
+    private static StockGattDriver.Characteristic fd01() {
+        return new StockGattDriver.Characteristic(StockQixUuids.FD01, StockGattDriver.NOTIFY,
+                Arrays.asList(StockQixUuids.CCCD));
+    }
+
+    private static StockGattDriver.Characteristic fd02() {
+        return new StockGattDriver.Characteristic(StockQixUuids.FD02, 0x0C,
+                Collections.<UUID>emptyList());
+    }
+
+    private static StockGattDriver.Characteristic fd03() {
+        return new StockGattDriver.Characteristic(StockQixUuids.FD03, 0x1A,
+                Arrays.asList(StockQixUuids.CCCD));
+    }
+
+    private enum Outcome {
+        SUCCESS, FALSE, SECURITY, RUNTIME
+    }
+
+    private static final class ThreadRecordingHandler
+            implements StockQixGattTransport.AdapterSeam.HandlerPoster {
+        private final ArrayDeque<Runnable> commands = new ArrayDeque<Runnable>();
+
+        @Override public synchronized boolean post(Runnable command) {
+            commands.addLast(command);
+            return true;
+        }
+
+        void drain() {
+            while (true) {
+                final Runnable command;
+                synchronized (this) {
+                    if (commands.isEmpty()) {
+                        return;
+                    }
+                    command = commands.removeFirst();
+                }
+                command.run();
+            }
+        }
+    }
+
     private static final class FakeSubscriptionPort
             implements StockQixGattTransport.AdapterSeam.SubscriptionPort {
         final Object descriptor = new Object();
         final List<String> calls = new ArrayList<String>();
         boolean returnNullDescriptor;
-        boolean legacySetValueResult = true;
-        boolean modernWriteResult = true;
-        boolean throwSecurityOnEnable;
+        Outcome localEnableOutcome = Outcome.SUCCESS;
+        Outcome legacySetValueOutcome = Outcome.SUCCESS;
+        Outcome legacyWriteOutcome = Outcome.SUCCESS;
+        Outcome modernWriteOutcome = Outcome.SUCCESS;
         byte[] legacyValue;
 
         @Override public boolean setCharacteristicNotification() {
             calls.add("enable");
-            if (throwSecurityOnEnable) {
-                throw new SecurityException("denied");
-            }
-            return true;
+            return result(localEnableOutcome);
         }
 
         @Override public Object findDescriptor() {
@@ -245,44 +635,46 @@ public final class StockQixGattTransportTest {
         @Override public boolean setLegacyValue(Object target, byte[] value) {
             calls.add("setValue");
             legacyValue = Arrays.copyOf(value, value.length);
-            return legacySetValueResult;
+            return result(legacySetValueOutcome);
         }
 
         @Override public boolean writeLegacyDescriptor(Object target) {
             calls.add("writeLegacy");
-            return true;
+            return result(legacyWriteOutcome);
         }
 
         @Override public boolean writeModernDescriptor(Object target, byte[] value) {
             calls.add("writeModern");
-            return modernWriteResult;
+            return result(modernWriteOutcome);
         }
     }
 
     private static final class FakeWritePort
             implements StockQixGattTransport.AdapterSeam.WritePort {
         final List<String> calls = new ArrayList<String>();
-        boolean legacySetValueResult = true;
-        boolean modernWriteResult = true;
+        Outcome writeTypeOutcome = Outcome.SUCCESS;
+        Outcome legacySetValueOutcome = Outcome.SUCCESS;
+        Outcome legacyWriteOutcome = Outcome.SUCCESS;
+        Outcome modernWriteOutcome = Outcome.SUCCESS;
 
         @Override public boolean setWriteType(int writeType) {
             calls.add("setType");
-            return true;
+            return result(writeTypeOutcome);
         }
 
         @Override public boolean setLegacyValue(byte[] value) {
             calls.add("setValue");
-            return legacySetValueResult;
+            return result(legacySetValueOutcome);
         }
 
         @Override public boolean writeLegacyCharacteristic() {
             calls.add("writeLegacy");
-            return true;
+            return result(legacyWriteOutcome);
         }
 
         @Override public boolean writeModernCharacteristic(byte[] value, int writeType) {
             calls.add("writeModern");
-            return modernWriteResult;
+            return result(modernWriteOutcome);
         }
     }
 
@@ -290,14 +682,19 @@ public final class StockQixGattTransportTest {
         final List<StockGattDriver.Characteristic> writes =
                 new ArrayList<StockGattDriver.Characteristic>();
         final List<byte[]> notifications = new ArrayList<byte[]>();
+        final List<TaggedEvent> tagged = new ArrayList<TaggedEvent>();
 
         @Override public void onScanResult(long generation, long token, StockGattDriver.Peer peer) {
         }
 
         @Override public void onScanFailed(long generation, long token, int status) {
+            tagged.add(new TaggedEvent(StockQixGattTransport.AdapterSeam.TaggedKind.SCAN,
+                    generation, token, status));
         }
 
         @Override public void onConnectionResult(long generation, long token, int status) {
+            tagged.add(new TaggedEvent(StockQixGattTransport.AdapterSeam.TaggedKind.CONNECT,
+                    generation, token, status));
         }
 
         @Override public void onDisconnected(long generation, int status) {
@@ -305,23 +702,46 @@ public final class StockQixGattTransportTest {
 
         @Override public void onServicesResult(long generation, long token,
                 List<StockGattDriver.Service> services, int status) {
+            tagged.add(new TaggedEvent(StockQixGattTransport.AdapterSeam.TaggedKind.DISCOVER,
+                    generation, token, status));
         }
 
         @Override public void onSubscriptionResult(long generation, long token,
                 StockGattDriver.Characteristic characteristic, UUID descriptorUuid, int status) {
+            tagged.add(new TaggedEvent(StockQixGattTransport.AdapterSeam.TaggedKind.SUBSCRIBE,
+                    generation, token, status));
         }
 
         @Override public void onMtuResult(long generation, long token, int mtu, int status) {
+            tagged.add(new TaggedEvent(StockQixGattTransport.AdapterSeam.TaggedKind.MTU,
+                    generation, token, status));
         }
 
         @Override public void onCharacteristicWrite(long generation, long token,
                 StockGattDriver.Characteristic characteristic, int status) {
             writes.add(characteristic);
+            tagged.add(new TaggedEvent(StockQixGattTransport.AdapterSeam.TaggedKind.WRITE,
+                    generation, token, status));
         }
 
         @Override public void onNotification(long generation,
                 StockGattDriver.Characteristic characteristic, byte[] value) {
             notifications.add(Arrays.copyOf(value, value.length));
+        }
+    }
+
+    private static final class TaggedEvent {
+        final StockQixGattTransport.AdapterSeam.TaggedKind kind;
+        final long generation;
+        final long token;
+        final int status;
+
+        TaggedEvent(StockQixGattTransport.AdapterSeam.TaggedKind kind, long generation,
+                long token, int status) {
+            this.kind = kind;
+            this.generation = generation;
+            this.token = token;
+            this.status = status;
         }
     }
 
