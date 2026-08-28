@@ -480,7 +480,9 @@ public final class StockQixGattTransport implements StockGattDriver {
             }
             String name = device.getName();
             Peer peer = new Peer(address, name == null ? "" : name, result.getRssi());
-            scannedDevices.put(peer.address(), device);
+            if (!recordScannedDevice(scannedDevices, peer.address(), device)) {
+                return;
+            }
             postCallback(new Runnable() {
                 @Override public void run() {
                     Listener current = listener;
@@ -494,6 +496,18 @@ public final class StockQixGattTransport implements StockGattDriver {
         } catch (RuntimeException ignored) {
             scanFailure(command, FAILURE_STATUS);
         }
+    }
+
+    static <T> boolean recordScannedDevice(Map<String, T> devices, String address, T device) {
+        if (devices == null || address == null || device == null) {
+            throw new IllegalArgumentException("scan registry inputs must not be null");
+        }
+        if (!devices.containsKey(address)
+                && devices.size() >= StockTransitionController.MAX_CANDIDATES) {
+            return false;
+        }
+        devices.put(address, device);
+        return true;
     }
 
     private void onScanFailureOnBle(final Command command, final int status) {
