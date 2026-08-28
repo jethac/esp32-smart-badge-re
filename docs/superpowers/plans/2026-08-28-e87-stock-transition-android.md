@@ -17,10 +17,10 @@
 - The first-install transport is the observed stock service `c2e6fd00-e966-1000-8000-bef9c223df6a`; FD01 notifies, FD02 is write-with-response, and FD03 notifies/indicates.
 - Subscribe FD01 and then FD03 with exact CCCD bytes `02 00`; request MTU 512 only after both subscriptions complete. The accepted trace negotiated MTU 256.
 - Qix frames are `9E | checksum | flags | opcode | payloadLengthLE16 | payload`; checksum is the low byte of the sum of bytes from `flags` through the end of payload. Reject wrong magic, length, checksum, channel, or opcode.
-- C0 sends the exact 27-byte outer Qix header. C1 payload is `state:u8 | allowedLength:u32le | resumeOffset:u32le`; require state 1, allowed length `1..1,048,576`, and resume offset within and aligned to the artifact unless it equals the final length.
-- C2 payload is `chunkLength:u32le | absoluteOffset:u32le | chunk`; flags are `0x01 | (serial << 3) | (logicalFrameLength > 20 ? 0x04 : 0)`. Serial starts at 1 and wraps modulo 16.
-- Permit only one logical C2 and one Android characteristic write callback in flight. Fragment outgoing logical frames into `max(20, negotiatedMtu - 6)`-byte writes using `WRITE_TYPE_DEFAULT`.
-- C3 payload is `result:u8 | nextOffset:u32le`; require result zero and the exact expected monotonic next offset. On the final C2, accept either final C3 followed by C5 or direct C5. C5 payload is exactly one zero result byte.
+- C0 sends the exact flags-`0x05`, opcode-`0xC0`, 27-byte header frame. C1 payload is `state:u8 | allowedLength:u32le | resumeOffset:u32le`; parse both u32 values as unsigned `long`, require state 1, allowed length `1..65,527` (the 65,535-byte Qix payload maximum less 8 C2 metadata bytes), and require offset `0..payloadLength` with `offset % window == 0` unless it is exactly final. Resume alignment is a compatibility policy, not a capture-proven fact.
+- C2 payload is `chunkLength:u32le | absoluteOffset:u32le | chunk`, where checked arithmetic chooses `min(window, remaining)`. Its flags are exactly `0x01 | (serial << 3) | ((14 + chunkLength) > 20 ? 0x04 : 0)`. The bind stream has an independent retained-probe `nextSerial=1`; an optional, uncaptured bind ACK uses bind-stream serial 1. C2 has a separate serial beginning at 1 and wrapping 15 to 0. Never share or infer either serial from response flags; the captured bind response flags are `0x04` and request no ACK.
+- Permit only one logical C2 and one Android characteristic write callback in flight. Fragment outgoing logical frames into `max(20, negotiatedMtu - 6)`-byte writes using `WRITE_TYPE_DEFAULT`; the reducer receives exactly one `onFd02WriteAcknowledged()` only after all fragments of that logical frame have acknowledged, never once per fragment. Notification before that logical acknowledgement or a duplicate logical acknowledgement fails closed.
+- C3 payload is exactly `result:u8 | nextOffset:u32le` (five bytes): require result zero and the exact expected monotonic next offset. A valid nonfinal C3 atomically advances the immutable snapshot and immediately emits the next C2 `SendFd02`; there is no standalone `Progress` action. On a fully write-acknowledged final C2, accept either final C3 followed by C5 or direct C5; a full-resume C1 waits C5. C5 payload is exactly one zero result byte. FD01 accepts only bind response traffic; FD03 accepts only C1/C3/C5 traffic, with every channel/opcode mismatch rejected.
 - Use the retained accepted capture only as protocol evidence, never as a flash candidate. Evidence root: `/home/jethac/.local/share/e87-dev/reference/qix-stock-accepted`; the captured `11.1.0.2` package produced the wrong Q87 resource variant and is never embedded.
 - The Stage0-H binding release source must contain exactly six delivered files and no extras: `app.bin`, `jl_isd.fw`, `update.ufw`, one `E87-<semver>-<build-id>.qix`, `manifest.json`, and `SHA256SUMS`. `jl_isd.fw` is recovery/burner evidence; do not rename it to `loader.bin`. The Qix file alone is sent by the stock transition transport. `update.ufw` is reserved for the future custom rewrite path.
 - The build task accepts only `-Pe87FirmwareRelease=<absolute reviewed release dir>` and embeds the verified release under a profile/semver/build-id asset path. The APK retains no filesystem-selection path for firmware.
@@ -108,8 +108,9 @@ Independent review: approved with no findings. This records the reported verific
 - Test: `android-controller/app/src/test/java/net/jethachan/factory_badges/transition/StockQixTransferMachineTest.java`
 
 **Interfaces:**
-- Consumes: a synthetic immutable artifact containing exactly 27 header bytes and UFW payload bytes, plus decoded FD01/FD03 frames. A real packaged release is not required for this task.
-- Produces: one explicit action at a time: `SendFd02`, `AwaitFd01`, `AwaitFd03`, `Progress`, `Complete`, or `Failed`.
+- Consumes: a synthetic immutable artifact containing exactly 27 header bytes and UFW payload bytes, decoded FD01/FD03 frames, logical FD02 acknowledgements, and explicit protocol- and transport-failure inputs. A real packaged release is not required for this task.
+- Produces: one explicit action at a time: `SendFd02`, `AwaitFd01`, `AwaitFd03`, `Complete`, or `Failed`. Progress is represented atomically in immutable snapshots, never as a standalone action.
+- `StockQixTransferMachine` is constructed with its immutable `TransitionArtifact`, owns that artifact for its lifetime, and is single-use/nonrestartable. Its constructor rejects null immediately. A `start` invocation outside `NEW` returns and sticks `Failed(INVALID_STATE)`; a new transfer requires a new machine.
 
 ```java
 public final class TransitionArtifact {
@@ -117,27 +118,111 @@ public final class TransitionArtifact {
                               byte[] qixSha256, byte[] expectedBuildId);
     public byte[] qixHeader();
     public byte[] ufwPayload();
+    public byte[] qixSha256();
+    public byte[] expectedBuildId();
 }
 public final class StockQixTransferMachine {
+    public StockQixTransferMachine(TransitionArtifact artifact);
+
+    public enum Phase {
+        NEW, WRITE_BIND, WAIT_BIND, WRITE_BIND_ACK, WRITE_C0, WAIT_C1,
+        WRITE_C2, WAIT_C3, WAIT_FINAL, WAIT_C5, COMPLETE, FAILED
+    }
+    public enum FailureCode {
+        NONE, INVALID_STATE, WRONG_CHANNEL, WRONG_OPCODE, MALFORMED_PAYLOAD,
+        PROTOCOL_REJECTED, OFFSET_MISMATCH, TRANSPORT_SETUP_FAILED,
+        TRANSPORT_WRITE_FAILED,
+        TRANSPORT_DISCONNECTED, TRANSPORT_TIMEOUT, CANCELLED,
+        FAILED_RECONNECT_REQUIRED
+    }
+    public abstract static class Action {
+        public enum Kind { SEND_FD02, AWAIT_FD01, AWAIT_FD03, COMPLETE, FAILED }
+        public abstract Kind kind();
+    }
+    public static final class SendFd02 extends Action {
+        public byte[] frame();
+        public int opcode();
+    }
+    public static final class AwaitFd01 extends Action {
+        public int expectedOpcode();
+    }
+    public static final class AwaitFd03 extends Action {
+        public int[] expectedOpcodes();
+    }
+    public static final class Complete extends Action {
+    }
+    public static final class Failed extends Action {
+        public FailureCode failureCode();
+    }
+    public static final class Snapshot {
+        public Phase phase();
+        public long totalBytes();
+        public long acknowledgedOffset();
+        public long pendingOffset();
+        public int pendingLength();
+        public boolean mayCancel();
+        public boolean terminal();
+        public FailureCode failureCode();
+        public byte[] qixSha256();
+        public byte[] expectedBuildId();
+    }
+
     public Action start(int settings, int hostId);
     public Action onFd01(QixFrame frame);
     public Action onFd03(QixFrame frame);
     public Action onFd02WriteAcknowledged();
+    public Action onProtocolFailed(FailureCode failureCode);
+    public Action onTransportFailed(FailureCode failureCode);
     public Snapshot snapshot();
 }
 ```
 
-- [ ] **Step 1: Write the transcript-driven state tests**
+The nested API above is the complete Java 8 action/state surface; no extra Task 2 production file is needed. `Action.Kind` is closed, every action subtype's `kind()` agrees with its subtype, and all action objects and array-valued accessors are immutable/defensive. `SendFd02` exposes a non-null, defensively copied complete frame and a non-sentinel opcode. `AwaitFd01.expectedOpcode()` is exactly `0x61`. `AwaitFd03.expectedOpcodes()` is a defensively copied, canonical sorted unique array: `[0xC1]` in `WAIT_C1`, `[0xC3]` in `WAIT_C3`, `[0xC3, 0xC5]` in `WAIT_FINAL`, and `[0xC5]` in `WAIT_C5`. `Complete` has no mutable payload; `Failed.failureCode()` is non-null and never `NONE`. No action exposes a nullable or sentinel frame/opcode API.
 
-Prove `bind -> bind response -> optional opcode-FF success ACK -> C0 -> C1 -> one C2 -> matching C3 -> next C2`, serial wrap across the bind ACK and C2 stream, a resumed aligned C1 offset, final-C3-then-C5, and direct-final-C5. The accepted trace is 1,080,360 UFW bytes, allowed length 1024, 1,056 C2 blocks, 1,055 C3 responses, and final `9EC701C5010000`.
+Internal reducer failures select the exact protocol `FailureCode` (`INVALID_STATE`, `WRONG_CHANNEL`, `WRONG_OPCODE`, `MALFORMED_PAYLOAD`, `PROTOCOL_REJECTED`, or `OFFSET_MISMATCH`). The two externally callable failure ingress methods have closed, disjoint domains. In every nonterminal phase, `onProtocolFailed` accepts only `INVALID_STATE`, `WRONG_CHANNEL`, `WRONG_OPCODE`, `MALFORMED_PAYLOAD`, `PROTOCOL_REJECTED`, and `OFFSET_MISMATCH`. In every nonterminal phase, `onTransportFailed` accepts only `TRANSPORT_SETUP_FAILED`, `TRANSPORT_WRITE_FAILED`, `TRANSPORT_DISCONNECTED`, `TRANSPORT_TIMEOUT`, `CANCELLED`, and `FAILED_RECONNECT_REQUIRED`. For either method in a nonterminal phase, `null`, `NONE`, or any wrong-domain code throws `IllegalArgumentException` with zero phase, action, or snapshot mutation. For either method in a terminal phase, return the existing terminal action before validating the supplied code. A valid externally supplied code moves the nonterminal machine to its corresponding sticky `Failed` action.
+
+**Closed phase table:** The no-restart `start` rule is evaluated first: `start` outside `NEW` returns and sticks `Failed(INVALID_STATE)`. Every other input not shown below, including a notification while a `WRITE_*` logical acknowledgement is pending or a duplicate `onFd02WriteAcknowledged()`, moves the nonterminal machine to `FAILED` and returns its sticky `Failed` action. Each correctly domain-typed `onProtocolFailed(FailureCode)` and `onTransportFailed(FailureCode)` is legal in every nonterminal phase and does the same; a null, `NONE`, or out-of-domain external failure input throws `IllegalArgumentException` without mutating the nonterminal machine. Apart from the invalid-restart rule, `COMPLETE` and `FAILED` keep returning their respective terminal action for every later input without mutation, including external failure calls before their code domains are validated.
+
+| Phase | Legal input | Output and next phase |
+|---|---|---|
+| `NEW` | `start(settings, hostId)` | `SendFd02(bind)` → `WRITE_BIND` |
+| `WRITE_BIND` | one logical `onFd02WriteAcknowledged()` | `AwaitFd01` → `WAIT_BIND` |
+| `WAIT_BIND` | valid FD01 bind response, flags `0x04` (captured no-ACK) | `SendFd02(C0)` → `WRITE_C0` |
+| `WAIT_BIND` | valid FD01 bind response requesting reply (compatibility) | `SendFd02(opcode-FF bind ACK, bind-stream serial 1)` → `WRITE_BIND_ACK` |
+| `WRITE_BIND_ACK` | one logical `onFd02WriteAcknowledged()` | `SendFd02(C0)` → `WRITE_C0` |
+| `WRITE_C0` | one logical `onFd02WriteAcknowledged()` | `AwaitFd03` → `WAIT_C1` |
+| `WAIT_C1` | valid FD03 C1 with nonfinal aligned resume | `SendFd02(C2)` → `WRITE_C2` |
+| `WAIT_C1` | valid FD03 C1 with full resume (`offset == total`) | `AwaitFd03` → `WAIT_C5` |
+| `WRITE_C2` | one logical acknowledgement for a nonfinal C2 | `AwaitFd03` → `WAIT_C3` |
+| `WRITE_C2` | one logical acknowledgement for the final C2 | `AwaitFd03` → `WAIT_FINAL` |
+| `WAIT_C3` | valid FD03 nonfinal C3 | atomically update snapshot and immediately `SendFd02(next C2)` → `WRITE_C2` |
+| `WAIT_FINAL` | valid FD03 final C3 | `AwaitFd03` → `WAIT_C5` |
+| `WAIT_FINAL` | valid FD03 direct final C5 | `Complete` → `COMPLETE` |
+| `WAIT_C5` | valid FD03 zero-result C5 | `Complete` → `COMPLETE` |
+| `COMPLETE` | any non-`start` input | existing `Complete` action, stay `COMPLETE` |
+| `COMPLETE` | `start(...)` | `Failed(INVALID_STATE)` → `FAILED` |
+| `FAILED` | any non-`start` input | existing `Failed` action, stay `FAILED` |
+| `FAILED` | `start(...)` | `Failed(INVALID_STATE)`, stay `FAILED` |
+
+`Complete` means the stock transport accepted the payload; it does not mean that custom firmware booted or passed post-C5 build verification. Optional bind ACK, nonzero resume, and final-C3-before-C5 are compatibility behaviors, not capture-proven facts.
+
+**Immutable artifact and snapshot contract:** `TransitionArtifact` rejects null inputs; a header length other than 27; a Qix SHA length other than 32; an expected build ID length other than 16; an empty payload or one larger than `32 MiB - 27`; a declared unsigned-u32 Qix payload length that does not equal the UFW payload length; or a whole-Qix SHA mismatch. It defensively copies every constructor input and every getter result, including `qixSha256()` and `expectedBuildId()`.
+
+`Snapshot` is immutable and carries phase, total bytes, acknowledged offset, pending offset/length, `mayCancel`, terminal state, failure code, Qix SHA, and expected build ID. Its accessors are the nested API shown above; its byte arrays are defensively copied and `failureCode()` is `NONE` unless phase is `FAILED`. `mayCancel` is true from `NEW` through `WAIT_C1` and flips false atomically only when a valid C1 is accepted; no other input, including a pre-C1 failure, flips it. The acknowledged offset advances only on C1 resume, accepted C3, or direct-final C5. A final C3 may report 100% while phase remains `WAIT_C5`.
+
+- [ ] **Step 1: Write capture-vector and phase-table tests**
+
+Pin capture counts/vectors: 1,080,360 UFW bytes, captured window 1024, 1,056 C2 blocks, 1,055 C3 responses, and final `9EC701C5010000`. Prove capture no-ACK bind flow; separately label optional ACK serial 1, nonzero aligned resume, and final-C3-before-C5 as compatibility cases. Cover aligned and full resume, both final paths, independent bind/C2 serial distribution and 15→0 wrap, and no response-serial inference. Pin C0 as flags `05`, opcode `C0`, header length 27; C2 length/offset u32le fields, checked `min(window, remaining)` chunks, and long-frame flag boundary chunks 6 and 7. Include a maximum window of 65,527 and unsigned-u32 high-bit C1 values. Test constructor artifact injection/null rejection, single-use second `start`, and the exact nested action subtype/`Kind`/accessor contract, including canonical `AwaitFd03.expectedOpcodes()` arrays by phase.
 
 - [ ] **Step 2: Record RED and implement the smallest deterministic reducer**
 
-The machine owns phase, negotiated chunk length, next offset, expected acknowledgement, and serial. It never calls Android APIs, reads files, or performs writes itself. Each input method returns one immutable action; a second event while an acknowledgement is pending fails closed.
+The machine owns only phase, negotiated window, offsets, expected logical acknowledgement, independent bind/C2 serial state, and immutable snapshots. It never calls Android APIs, reads files, or performs writes itself. `onFd02WriteAcknowledged()` is invoked only once after all GATT fragment callbacks for one logical frame; it is never a fragment callback. A valid nonfinal C3 updates the snapshot and immediately returns the next `SendFd02`, so the reducer cannot stall waiting for a progress action.
 
-- [ ] **Step 3: Add exhaustive rejection tests**
+Encode exact frames: C0 uses flags `05`, opcode `C0`, and the 27-byte header. C2 uses `chunkLength:u32le | absoluteOffset:u32le | chunk`, checked arithmetic, `min(window, remaining)`, and flags `01 | (serial << 3) | ((14 + chunkLength) > 20 ? 04 : 00)`. C3 is exactly five bytes with zero result and the expected monotonic offset. C5 is exactly one zero byte and is legal only after a fully write-acknowledged final C2, a final C3, or full resume. Enforce FD01/FD03 channel and opcode ownership strictly.
 
-Reject duplicate C1, state other than 1, zero/oversized allowed length, unaligned or out-of-range resume, C3 before C2, nonzero C3/C5, nonmonotonic C3, premature C5, unexpected channel/opcode, payload length mismatch, a second C2 request while pending, and any event after terminal success/failure.
+- [ ] **Step 3: Add exhaustive rejection and immutability tests**
+
+Reject every wrong phase, channel, opcode, payload size, result, and offset; duplicate C1; state other than 1; zero/oversized windows; unsigned-u32 high-bit values; unaligned/out-of-range resume; C3 before C2; nonmonotonic C3; premature C5; notification before logical write acknowledgement; duplicate logical acknowledgement; and any attempt to emit two C2 frames concurrently. Test both closed external failure domains: `onProtocolFailed` accepts only `INVALID_STATE` plus protocol codes and `onTransportFailed` accepts only `TRANSPORT_SETUP_FAILED` plus transport/cancel/reconnect codes. In every nonterminal phase, null, `NONE`, and every cross-domain code must throw `IllegalArgumentException` with zero state/snapshot mutation; in either terminal phase, either external method must return the existing terminal action before code-domain validation. Pin `mayCancel=true` in `NEW` through `WAIT_C1` and its sole atomic false transition on valid C1. Prove terminal stickiness with the documented invalid-restart exception. Attempt mutation of every constructor input, getter result, action payload/frame, expected-opcode array, and snapshot byte-array result, including artifact Qix SHA and expected build ID.
 
 - [ ] **Step 4: Run focused/full gates and commit**
 
@@ -150,18 +235,21 @@ git commit -m 'feat(android): pace acknowledged stock Qix transfer'
 ### Task 3: Add the isolated Android FD00 transport and controller
 
 **Files:**
+- Modify: `android-controller/app/src/main/java/net/jethachan/factory_badges/transition/StockQixUuids.java` (add the standard CCCD UUID).
 - Create: `android-controller/app/src/main/java/net/jethachan/factory_badges/transition/StockGattDriver.java`
 - Create: `android-controller/app/src/main/java/net/jethachan/factory_badges/transition/StockQixGattTransport.java`
 - Create: `android-controller/app/src/main/java/net/jethachan/factory_badges/transition/StockTransitionController.java`
+- Modify: `android-controller/app/src/test/java/net/jethachan/factory_badges/transition/StockQixUuidsTest.java` (pin the standard CCCD UUID).
 - Test: matching tests under `android-controller/app/src/test/java/net/jethachan/factory_badges/transition/`
 
 **Interfaces:**
 - Consumes: Android GATT callbacks through generation/token-tagged adapter methods and actions from Task 2.
 - Produces: normalized connection, subscription, MTU, write, receive, progress, failure, and completion callbacks.
+- Constructs the Task 2 machine from a validated immutable artifact before connection. When a per-channel `QixFrameAssembler` synchronously rejects wrong magic at a frame start or a complete-frame codec/decode failure (including checksum after the frame is complete), the controller calls `onProtocolFailed(MALFORMED_PAYLOAD)`. An incomplete or truncated otherwise-valid notification fragment remains pending reassembly: it is neither rejected nor allowed to refresh the response timeout. Complete-frame exact-length/codec rejection remains a protocol failure wherever it is detectable. If the expected response does not complete before its deadline, response-timeout expiry calls `onTransportFailed(TRANSPORT_TIMEOUT)`. Scan, connect, discovery, service/characteristic/property validation, CCCD subscription, and MTU setup failures call `onTransportFailed(TRANSPORT_SETUP_FAILED)`; the controller preserves the same artifact identity and immutable snapshot metadata across those setup failures.
 
 - [ ] **Step 1: Write fake-driver ordering tests**
 
-Pin service/characteristic discovery, FD01 CCCD then FD03 CCCD with `02 00`, MTU 512 after both descriptors acknowledge, FD02 `WRITE_TYPE_DEFAULT`, `max(20, mtu-6)` fragmentation, exactly one write callback outstanding, per-channel assemblers, stale GATT generation rejection, disconnect failure, timeout failure, and direct-final-C5.
+Pin `StockQixUuids.CCCD` as `00002902-0000-1000-8000-00805f9b34fb`, service/characteristic discovery, FD01 CCCD then FD03 CCCD with `02 00`, MTU 512 after both descriptors acknowledge, FD02 `WRITE_TYPE_DEFAULT`, `max(20, mtu-6)` fragmentation, exactly one write callback outstanding, and per-channel assembler behavior: wrong magic at a frame start plus complete-frame checksum/codec failure route `onProtocolFailed(MALFORMED_PAYLOAD)`; incomplete/truncated valid fragments remain pending and do not refresh the response deadline; deadline expiry routes `onTransportFailed(TRANSPORT_TIMEOUT)`; complete-frame exact-length rejection is tested only where detectable. Also pin stale GATT generation rejection, setup failure routing, disconnect failure, timeout failure, and direct-final-C5.
 
 - [ ] **Step 2: Record RED and implement the fakeable driver/controller boundary**
 
