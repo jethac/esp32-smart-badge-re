@@ -80,6 +80,15 @@
           "firmware/overlay/SDK/apps/watch/e87/e87_maintenance.c",
           "firmware/overlay/SDK/apps/watch/e87/e87_rcsp_profile.c"
         ]
+      },
+      {
+        "name": "rcsp-target-binding",
+        "test": "firmware/host/test_rcsp_target.c",
+        "sources": [
+          "firmware/overlay/SDK/apps/watch/e87/e87_maintenance.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_rcsp_profile.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_rcsp_target.c"
+        ]
       }
     ],
     "power": [
