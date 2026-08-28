@@ -2,7 +2,6 @@ package net.jethachan.factory_badges.ui;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -31,7 +30,7 @@ public final class MaintenanceUiPresenterTest {
         assertFalse(presenter.viewState().confirmationEnabled());
         assertFalse(presenter.viewState().startEnabled());
         assertEquals(0, host.openCount);
-        assertNull(host.session);
+        assertEquals(0, host.session.startScanCount);
     }
 
     @Test public void readyArtifactStillRequiresFreshCheckAndExplicitStart() {

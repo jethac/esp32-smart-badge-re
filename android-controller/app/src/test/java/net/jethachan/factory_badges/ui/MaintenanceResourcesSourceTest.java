@@ -21,7 +21,9 @@ public final class MaintenanceResourcesSourceTest {
     private static final String ANDROID = "http://schemas.android.com/apk/res/android";
 
     @Test public void layoutExposesOnlyExplicitGatedTransitionControls() throws Exception {
-        Document document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(true);
+        Document document = factory.newDocumentBuilder().parse(
                 Paths.get("app/src/main/res/layout/activity_maintenance.xml").toFile());
         Set<String> ids = new LinkedHashSet<String>();
         NodeList all = document.getElementsByTagName("*");

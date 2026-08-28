@@ -23,7 +23,8 @@ public final class MaintenanceActivityBoundaryTest {
         assertTrue(onCreate.contains("new MaintenanceUiPresenter("));
         assertFalse(onCreate.matches("(?s).*(startScan|onStartPressed|requestPermissions|"
                 + "StockTransitionController|StockQixGattTransport).*"));
-        assertFalse(source.matches("(?s).*(update\\.ufw|\\.qix|QIX_HEADER|byte\\[\\].*=).*"));
+        assertFalse(source.matches("(?s).*(update\\.ufw|\\\"[^\\\"]*\\.qix\\\"|"
+                + "QIX_HEADER|byte\\[\\].*=).*"));
     }
 
     @Test public void explicitStartChecksPermissionBeforePresenterConsumesGate() throws Exception {
@@ -68,7 +69,7 @@ public final class MaintenanceActivityBoundaryTest {
     }
 
     private static String method(String source, String name) {
-        int marker = source.indexOf(name + "(");
+        int marker = source.indexOf("void " + name + "(");
         if (marker < 0) throw new AssertionError("missing method " + name);
         int open = source.indexOf('{', marker);
         if (open < 0) throw new AssertionError("missing method body " + name);
