@@ -86,17 +86,27 @@ public final class MaintenanceUiPresenterTest {
                 presenter.viewState().phase());
         assertEquals(1, presenter.viewState().candidates().size());
         assertSame(first, presenter.viewState().candidates().get(0));
+        assertTrue(presenter.viewState().confirmationEnabled());
+        assertFalse(presenter.viewState().confirmationChecked());
         assertThrows(UnsupportedOperationException.class,
                 () -> presenter.viewState().candidates().add(other));
 
         presenter.onCandidateSelected(other);
         assertEquals(0, host.session.connectCount);
+        presenter.onCandidateSelected(first);
+        assertEquals("the scan-start confirmation cannot authorize connect",
+                0, host.session.connectCount);
+
+        presenter.onConfirmationChanged(true);
+        assertTrue(presenter.viewState().confirmationChecked());
 
         presenter.onCandidateSelected(first);
         assertEquals(1, host.session.connectCount);
         assertSame(first, host.session.connectedPeer);
         assertEquals(MaintenanceUiPresenter.Phase.CONNECTING,
                 presenter.viewState().phase());
+        assertFalse("connect consumes the fresh physical confirmation",
+                presenter.viewState().confirmationChecked());
 
         presenter.onCandidateSelected(first);
         assertEquals(1, host.session.connectCount);
@@ -107,6 +117,7 @@ public final class MaintenanceUiPresenterTest {
         MaintenanceUiPresenter presenter = host.presenter;
         StockGattDriver.Peer first = peer("AA:BB:CC:DD:EE:01", "E87");
         host.listener.onCandidate(first);
+        presenter.onConfirmationChanged(true);
         presenter.onCandidateSelected(first);
 
         host.listener.onProgress(256L, 1024L, true);

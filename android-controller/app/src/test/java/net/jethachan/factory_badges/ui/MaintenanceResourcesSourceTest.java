@@ -59,6 +59,8 @@ public final class MaintenanceResourcesSourceTest {
         String xml = new String(Files.readAllBytes(
                 Paths.get("app/src/main/res/values/strings.xml")), StandardCharsets.UTF_8);
         assertTrue(xml.contains(">I put the badge in its stock receiving screen<"));
+        assertTrue(xml.contains(
+                ">Confirm receiving mode again, then select the receiving badge<"));
         assertTrue(xml.contains(">Waiting for custom firmware to boot and identify itself.<"));
         assertTrue(xml.contains(">Not available until custom recovery is hardware-proven.<"));
         assertFalse(xml.contains(">Transition succeeded<"));

@@ -51,6 +51,15 @@ public final class MaintenanceActivityBoundaryTest {
                 + "BluetoothOTAManager|AE00|AE01|AE02).*"));
     }
 
+    @Test public void surfacedCandidateButtonsRemainDisabledUntilTheFreshConnectGate()
+            throws Exception {
+        String renderCandidates = method(read(ACTIVITY), "renderCandidates");
+
+        assertTrue(renderCandidates.contains("MaintenanceUiPresenter.Phase.CANDIDATES"));
+        assertTrue(renderCandidates.contains("state.confirmationChecked()"));
+        assertTrue(renderCandidates.contains("presenter.onCandidateSelected(peer)"));
+    }
+
     @Test public void mainScreenCanOnlyOpenMaintenanceByExplicitActivityIntent() throws Exception {
         String source = read(Paths.get(
                 "app/src/main/java/net/jethachan/factory_badges/ui/MainActivity.java"));
