@@ -680,3 +680,14 @@ index 415f592..c51058c 100644
 -
 +
 +#endif /* CONFIG_BOARD_E87_1542_STAGE0_H */
+diff --git a/SDK/cpu/br35/sdk_ld.c b/SDK/cpu/br35/sdk_ld.c
+index 3f28ea4..8df4e2d 100644
+--- a/SDK/cpu/br35/sdk_ld.c
++++ b/SDK/cpu/br35/sdk_ld.c
+@@ -35,4 +35,6 @@
+ EXTERN(
+ _start
++#ifndef CONFIG_BOARD_E87_1542_STAGE0_H
+ #include "sdk_used_list.c"
++#endif
+ );
