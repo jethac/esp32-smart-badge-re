@@ -16,7 +16,8 @@ provider values over BLE and the badge renders the complete face locally. The
 trial provider is Devin. The phone presents arbitrary Day and Week sliders from
 0 through 100 and sends a fixed on-demand credit value of `$17.27`. The badge
 renders two Apple-Watch-style progress rings, the Devin mark, and the credit
-amount on its 368x368 round display.
+amount on its 360x360 direct-DBI round display. The stock image uploader's
+368x368 JPEG target is a separate transport/storage format, not panel geometry.
 
 The same custom firmware must remain rewriteable without showing the vendor's
 receiving UI. A physical staged hold on badge button 1 opens normal pairing at
@@ -75,16 +76,26 @@ The deliverables are:
 ## 3. Evidence and constraints that drive the design
 
 - The working reference is AC707N/BR35, not the earlier AC697/BR30 hypothesis.
-- The panel is 368x368 RGB565 with a reported circular radius of 180 pixels.
-- A full RGB565 framebuffer is 270,848 bytes and does not fit in usable RAM.
-  Rendering therefore uses two 16-row buffers, totaling 23,552 bytes.
+- The recovered model-1552 direct-DBI descriptor is 360x360 RGB565 with a
+  reported circular radius of 180 pixels. A full RGB565 framebuffer is 259,200
+  bytes and does not fit in usable RAM. The stock descriptor instead uses two
+  30-row buffers of `0x5460` bytes each; exact double buffering totals `0xA8C0`.
+  The existing `0x6000` tail fits one stock buffer for serial hardware proof,
+  not both. The Android stock path separately targets 368x368 JPEG uploads.
 - The pinned generic build disables PSRAM and the model-1552 ISD has no PSRAM
   directive; the physical model-1542 package remains unverified. The custom
   image is PSRAM-independent in every case.
 - The model-1552 display descriptor names a JD9855 panel and points to a
-  validated 657-byte initialization list. Bus mode, pin mapping, timing,
-  orientation, byte order, and window offsets still require reconstruction and
-  sacrificial-hardware validation before a display build is flashed.
+  validated 657-byte, 51-record initialization list with SHA-256
+  `BB0767D3E0BF4AD982725C6A38A9168DDF9E5BA2E3D4D595B1FFBDD17E5B89FF`.
+  Its direct-DBI parameters are QSPI mode/submode `0x21`, pixel type `0x21`,
+  idle-low clock, unidirectional RGB565 input/output, and 90 fps. Dedicated bus
+  pins are CS `PA07`, CLK `PA12`, D0-D3 `PA08`-`PA11`; reset is `PA05`, TE is
+  `PA06`, and open-drain `IO_LCD_PG` is low/on and high-Z/off for backlight.
+  These are proven for decoded model 1552 but inferred for physical model 1542.
+  Orientation/mirroring, RGB/BGR and byte order, 360-pixel clipping, actual bus
+  timing/framing, TE phase, read behavior, and sleep current remain hardware
+  gates.
 - Both user buttons are decoded through one PB07 ADC resistor ladder in the
   model-1552 target configuration. This is **PROVEN for the decoded model-1552
   artifact and UNVERIFIED for the physical model-1542**: the packed config-item
@@ -199,7 +210,7 @@ vendor binary in place.
 
 ### 5.1 Geometry and style
 
-The coordinate system is 368x368 with center `(184, 184)`. Rendering is clipped
+The coordinate system is 360x360 with center `(180, 180)`. Rendering is clipped
 to the physical circle.
 
 - Background: black (`#000000`).
@@ -213,26 +224,27 @@ to the physical circle.
 - Active arc ends are round. V1 uses solid fills without a gradient or shadow;
   the Apple-Watch resemblance comes from the proportions, tracks, and caps.
 - The Day icon is Material Symbol `today`, centered on the outer ring's fixed
-  12-o'clock start point `(184, 24)` in an 18x18 px box.
+  12-o'clock start point `(180, 20)` in an 18x18 px box.
 - The Week icon is Material Symbol `date_range`, centered on the inner ring's
-  fixed 12-o'clock start point `(184, 54)` in an 18x18 px box.
+  fixed 12-o'clock start point `(180, 50)` in an 18x18 px box.
 - Icons stay at the start points; they never travel with the progress heads.
 - The Devin SVG already in `assets/icons/devin.svg` is converted to a compiled
-  alpha asset in a 96x96 px box centered at `(184, 170)`.
+  alpha asset in a 96x96 px box centered at `(180, 166)`.
 - The credit string uses a compiled Roboto Medium 30 px subset, centered at
-  `(184, 244)`, and is formatted from integer cents as `$17.27`; floating-point
+  `(180, 240)`, and is formatted from integer cents as `$17.27`; floating-point
   currency formatting is not used.
 
 ### 5.2 Rendering mechanism
 
-The renderer operates on 16-row horizontal strips. While one RGB565 strip is
-sent to the display, the next is drawn into the second buffer. The two buffers
-need `0x5C00` bytes; the BR35 LCD tail reservation is increased from the generic
-`0x5000` to an aligned `0x6000`, with a link-map assertion preventing overlap.
-Rings are drawn from fixed-point distance/angle calculations with coverage
-antialiasing; rounded caps are circles at the calculated arc endpoints.
-Compiled alpha masks provide the logo, symbols, and a deliberately limited text
-glyph set.
+The renderer operates on twelve 360x30 horizontal strips at y origins
+`0,30,...,330`. The first display probe uses one aligned `0x5460` RGB565 buffer
+inside the existing `0x6000` LCD tail and serially waits for DBI idle before
+every reuse. After that passes, production may render into one stock buffer
+while DBI sends the other, but two buffers require a linker-proven `0xA8C0`
+tail; no buffer is reused before its completion callback. Rings are drawn from
+fixed-point distance/angle calculations with coverage antialiasing; rounded
+caps are circles at the calculated arc endpoints. Compiled alpha masks provide
+the logo, symbols, and a deliberately limited text glyph set.
 
 The face redraws only when validated semantic state changes, when a transient
 overlay begins or ends, or after display wake. Receiving BLE bytes never invokes
@@ -373,14 +385,18 @@ MaskROM recovery is required.
 
 ### 7.3 Button 2 and sleep
 
-A short button-2 event turns off the backlight and panel, disconnects BLE, and
-enters the lowest verified wakeable power state. Pressing button 2 wakes the
-badge. If the selected state retains RAM, the last face is redrawn; otherwise
-the badge cold-boots to `WAITING FOR PHONE` or `PAIR ME NOW` and the phone
-reconnect worker resends current values. Metrics are never written to flash to
-hide this distinction. V1 has no ordinary inactivity timeout: button 2 is the
-only user-level path into sleep, although low-voltage and hardware safety logic
-may still force a protected shutdown.
+A short button-2 event drains DBI, turns the backlight off, sends display-off
+(`28`) then sleep-in (`10`), waits at least 120 ms, releases the LCD clock,
+disconnects BLE, and enters the lowest verified wakeable power state. Pressing
+button 2 reacquires the clock, applies the recovered high-10/low-10/high-100-ms
+reset, replays the exact init, redraws while dark, and enables backlight last.
+The recovered stock path has no separate panel-rail callback. If the selected
+state retains RAM, the last face is redrawn; otherwise the badge cold-boots to
+`WAITING FOR PHONE` or `PAIR ME NOW` and the phone reconnect worker resends
+current values. Metrics are never written to flash to hide this distinction.
+V1 has no ordinary inactivity timeout: button 2 is the only user-level path
+into sleep, although low-voltage and hardware safety logic may still force a
+protected shutdown.
 
 The power policy records whether sleep was entered explicitly by button 2.
 That `manual_sleep` state remains authoritative across charger insertion and
@@ -549,7 +565,8 @@ validated wired/programmer migration; it is outside this trial.
   clockwise geometry, round caps, clipping, and credit formatting.
 - Android APK assemble, install, and launch on the connected Redmi 9T.
 - Firmware compile/link, map inspection, stack/heap budget check, and proof that
-  two 16-row buffers fit without PSRAM.
+  the serial `0x5460` buffer fits without PSRAM; production promotion separately
+  proves the `0xA8C0` exact-stock double-buffer reservation.
 - Container unpack/repack verification, hashes, profile check, Qix wrapper CRC,
   and an exact single-bank loader/update dry run using the output artifact.
 - Static checks proving normal firmware has no stock UIRES dependency and the
@@ -575,10 +592,16 @@ untouched before badge A is written:
    probe PB08 as an ADC substitute: the pinned model-1552 mapping and GPADC
    surface select PB07.
 3. **Badge C — JD9855 display unit.** Flash the conservative panel probe only
-   after badge A boots. Validate reset/init and solid red/green/blue/white/black
-   fills, then aligned partial windows, orientation, color order, TE behavior,
-   backlight, panel sleep, and 100 wake cycles. It does not enable buttons,
-   normal GATT, or recovery gestures.
+   after badge A boots. With backlight off, compare rails, exact pins, reset,
+   and current to the untouched reference, then replay only the hashed init.
+   Serially issue black/white/red/green/blue `lcd_clear` operations with
+   `lcd_wait_busy`, followed by twelve independently addressed 360x30 strips
+   from one `0x5460` buffer, including final y=330. Validate coordinates,
+   clipping, orientation, color/byte order, and tearing before enabling
+   completion-callback double buffering, TE synchronization, or
+   `lcd_draw_continue`. Then validate backlight, exact panel sleep/wake order,
+   current, and 100 wake cycles. It does not enable buttons, normal GATT, or
+   recovery gestures.
 4. **Badge D — full/recovery candidate.** Build the measured PB07 board profile
    from badge B and the display profile from badge C, then validate tap,
    pairing, countdown, 10-second maintenance, direct runtime PB07 PINR16, and

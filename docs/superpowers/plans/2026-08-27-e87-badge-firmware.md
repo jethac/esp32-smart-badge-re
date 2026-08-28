@@ -4,7 +4,7 @@
 
 **Goal:** Build a UIRES-free AC707N/BR35 firmware overlay that renders the Devin rings locally, accepts the exact semantic BLE packet, supports staged pairing/rewrite recovery, and keeps the face/BLE active while charging.
 
-**Architecture:** Pure C state, timing, battery, power, and rendering modules are host-tested independently, then compiled through a small overlay against a pinned JieLi SDK. The display uses direct BR35 DBI APIs and two 16-row linker-tail buffers; normal BLE and application-side RCSP maintenance are mutually exclusive modes controlled by one application state machine.
+**Architecture:** Pure C state, timing, battery, power, and rendering modules are host-tested independently, then compiled through a small overlay against a pinned JieLi SDK. The display uses direct BR35 DBI APIs and twelve 360x30 strips: the hardware ladder starts serially with one stock-size buffer, while exact-stock callback double buffering is a separately map-proven promotion. Normal BLE and application-side RCSP maintenance are mutually exclusive modes controlled by one application state machine.
 
 **Tech Stack:** C11 host tests with Clang, Python 3.11 asset/golden/static tests, JieLi AC707N SDK commit `d0167685d032d745d88fe50233302edd46941622`, PI32v2/r3 target compiler, direct `app_ble_*` and BR35 DBI APIs.
 
@@ -12,10 +12,10 @@
 
 ## Global Constraints
 
-- Target chip is AC707N/BR35, entry `0x0C000100`, profile `E87-JD9855-R1`, display 368x368 RGB565, physical radius 180.
+- Target chip is AC707N/BR35, entry `0x0C000100`, profile `E87-JD9855-R1`, direct-DBI display 360x360 RGB565, physical radius 180. The stock phone path's 368x368 JPEG upload target is not panel geometry.
 - Normal BLE accepts only the exact eight-byte no-sequence v1 snapshot and acknowledges duplicates without redrawing.
 - Renderer uses no full framebuffer, heap allocation, floating point, `libm`, PSRAM, filesystem, stock UI, JLUI, LVGL, touch, audio, or stock `UIRES`.
-- Two aligned `368*16*2 = 0x2E00` buffers consume exactly `0x5C00`; linker tail reservation is exactly `0x6000` and the remaining `0x400` is untouched slack.
+- One aligned stock strip buffer is `360*30*2 = 0x5460` and fits the existing `0x6000` linker tail for serial bring-up. Exact stock double buffering is `2*0x5460 = 0xA8C0`; enabling callback streaming requires a larger, independently map-proven reservation.
 - Button 1 fires tap, pairing, warning, and maintenance at release-before-3s, 3s, 7s, and 10s; PB08/16s pin-reset recovery is an early-boot fallback. Button 2 is the only ordinary sleep control.
 - Charger electrical detection/start/full/close and safety remain enabled. The E87 application never selects `ID_WINDOW_BATCHARGE`, `ID_WINDOW_BEDSIDE_WATCH`, `IDLE_MODE_CHARGE`, or charger-triggered soft-off; Button 2 never calls `charge_close()`.
 - V1 is single-bank only. A physical gesture never calls `update_mode_api_v2()`; only the official verified-loader handler may call it after a nonzero loader address and power/profile gates pass.
@@ -64,7 +64,7 @@ uint32_t e87_power_step(struct e87_power_state *state,
                         const struct e87_power_event *event);
 
 int e87_render_strip(const struct e87_render_model *model, uint16_t y,
-                     uint8_t rows, uint16_t pixels[368 * 16]);
+                     uint8_t rows, uint16_t pixels[360 * 30]);
 int e87_render_frame(const struct e87_render_model *model,
                      struct e87_strip_sink *sink);
 ```
@@ -87,7 +87,7 @@ int e87_render_frame(const struct e87_render_model *model,
 
 ```c
 E87_TEST(harness_reports_assertions) {
-    E87_ASSERT_EQ_U32(0x5c00u, 2u * 368u * 16u * 2u);
+    E87_ASSERT_EQ_U32(0x5460u, 360u * 30u * 2u);
 }
 ```
 
@@ -352,11 +352,11 @@ git commit -m "feat(firmware): pin and compile display assets"
 
 **Interfaces:**
 - Consumes: immutable render model plus generated alpha/glyph arrays.
-- Produces: exactly 23 bounded RGB565 strips and independently decoded PNG goldens.
+- Produces: exactly 12 bounded 360x30 RGB565 strips and independently decoded PNG goldens.
 
 - [ ] **Step 1: Write geometry/color tests**
 
-Test outer radius/stroke/color `160/22/#BFC3C7`, inner `130/22/#FFFFFF`, black background, 18%-luminance tracks, start at 12 o'clock, clockwise progress at `0,1,50,99,100`, seamless 100, circular caps, physical-circle clipping, fixed icon centers `(184,24)` and `(184,54)`, Devin center `(184,170)`, and credit center `(184,244)`.
+Test 360x360 geometry with center `(180,180)`, outer radius/stroke/color `160/22/#BFC3C7`, inner `130/22/#FFFFFF`, black background, 18%-luminance tracks, start at 12 o'clock, clockwise progress at `0,1,50,99,100`, seamless 100, circular caps, physical-circle clipping, fixed icon centers `(180,20)` and `(180,50)`, Devin center `(180,166)`, and credit center `(180,240)`.
 
 - [ ] **Step 2: Implement deterministic integer primitives**
 
@@ -364,7 +364,7 @@ Use Q16 CORDIC angle, squared-distance annulus/cap tests, four fixed subpixel co
 
 - [ ] **Step 3: Write strip and formatting tests**
 
-Assert y origins `0,16,...,352`, final rows 16, no write outside `368*16`, sink failure stops immediately, and currency formatting uses integer cents only. Test battery, Pair, Waiting, countdown, and maintenance overlays, including bolt only for charging/full.
+Assert the twelve y origins `0,30,...,330`, final rows 30, no write outside `360*30`, sink failure stops immediately, and currency formatting uses integer cents only. Test battery, Pair, Waiting, countdown, and maintenance overlays, including bolt only for charging/full.
 
 - [ ] **Step 4: Implement `e87_render_strip`/`e87_render_frame`**
 
@@ -399,13 +399,15 @@ git commit -m "feat(firmware): render Devin rings in RGB565 strips"
 
 **Interfaces:**
 - Consumes: recovered model-1552 plaintext app and public BR35 `dbi.h` APIs.
-- Produces: validated 657-byte init program, panel lifecycle, and double-buffered strip sink.
+- Produces: validated 657-byte init program, panel lifecycle, a serial strip
+  sink for the first hardware gate, and a separately gated callback-streaming
+  promotion.
 
 - [ ] **Step 1: Write extraction/parser tests**
 
-Input app SHA-256 must be `A38B77E27B1DC73CAE0FBD8A7C4E3A04C64FF393FB4F27BC92A7578336BE0147`, base `0x0C000100`, init address `0x0C0E59E0`, length 657. Extracted SHA-256 must be `BB0767D3E0BF4AD982725C6A38A9168DDF9E5BA2E3D4D595B1FFBDD17E5B89FF`.
+Input app SHA-256 must be `A38B77E27B1DC73CAE0FBD8A7C4E3A04C64FF393FB4F27BC92A7578336BE0147`, base `0x0C000100`, descriptor file offset `0xEF688`, actual runtime descriptor `0x00106E08`, init address `0x0C0E59E0`, and init length 657. Extracted init SHA-256 must be `BB0767D3E0BF4AD982725C6A38A9168DDF9E5BA2E3D4D595B1FFBDD17E5B89FF`. The 196-byte parameter source at file offset `0xEF8A4`, loaded through RAM pointer `0x00107024`, must hash to `BFF9D90B248ECFB370877A1CF9677D67E66E4BC1E79E07962CC59E1A87A43A3B`.
 
-Parse records bounded by `12 34 56 78` and `87 65 43 21`; a body beginning `FF 5A A5 FF` is a one-byte millisecond delay. Assert terminal TE `35 00`, RGB565 `3A 55`, sleep-out `11` + 120 ms, display-on `29` + 20 ms.
+Parse exactly 51 records bounded by `12 34 56 78` and `87 65 43 21`; a body beginning `FF 5A A5 FF` is a one-byte millisecond delay. Assert the final records are delay 10 ms, `4C 00`, TE `35 00`, RGB565 `3A 55`, sleep-out `11`, delay 120 ms, display-on `29`, and delay 20 ms, with no MADCTL `36` or address-window `2A`/`2B` in the init blob.
 
 - [ ] **Step 2: Implement extraction and vendor the exact raw blob**
 
@@ -413,11 +415,13 @@ Parse records bounded by `12 34 56 78` and `87 65 43 21`; a body beginning `FF 5
 
 - [ ] **Step 3: Implement the raw DBI panel driver**
 
-Use `lcd_init`, `lcd_write_cmd`, `lcd_set_draw_area`, `lcd_draw`, `lcd_wait_busy`, and `lcd_draw_set_callback`. Leave JLUI/LVGL/UI/touch macros zero. Interpret the init program, own reset/rail/backlight hooks from the board profile, and keep backlight off on any init failure.
+Use `lcd_init`, `lcd_write_cmd`, `lcd_set_draw_area`, `lcd_clear`, `lcd_draw`, `lcd_wait_busy`, and, only after serial proof, `lcd_draw_set_callback`. Leave JLUI/LVGL/UI/touch macros zero. Preserve the recovered 360x360 RGB565 `LCD_TYPE_SPI` descriptor facts: QSPI mode/submode `0x21` (`QSPI_MODE | QSPI_SUBMODE1`), pixel type `0x21` (`PIXEL_1P2T | PIXEL_1T2B`), idle-low clock, unidirectional operation, 90 fps, declared buffer count 2 and size `0x5460`, alignment 2/2, and radius 180. The serial adapter deliberately supplies only one `0x5460` application transfer buffer and waits before reuse; it must not misreport that staged allocation as the stock descriptor's two-buffer memory layout. Model-1552 pins are reset `PA05`, TE `PA06`, CS `PA07`, CLK `PA12`, D0-D3 `PA08`-`PA11`, and open-drain `IO_LCD_PG` backlight low/on, high-Z/off. There is no DC or separate recovered rail hook. Keep every such model-1552 value `INFERRED` for model 1542 and keep backlight off on any init failure.
 
 - [ ] **Step 4: Write and implement streaming tests**
 
-Two buffers alternate; a buffer cannot be reused before its completion callback. Exactly 23 full aligned windows are emitted. Do not use `lcd_draw_continue` until hardware proves framing. Sleep drains/aborts DBI, sends panel sleep, then backlight off; wake initializes/exits sleep, redraws, then enables backlight.
+First test `lcd_clear` black/white/red/green/blue serially, waiting after every call. Then use one `0x5460` buffer for exactly twelve independently addressed 360x30 windows at y `0,30,...,330`, with `lcd_wait_busy` before reuse. Only after that hardware stage passes may a linker-proven `0xA8C0` configuration alternate two buffers; a buffer cannot be reused before its completion callback. Do not use `lcd_draw_continue` or gate rendering on TE until logic-analyzer evidence proves framing and phase.
+
+Sleep calls `lcd_wait_busy`, disables backlight, writes display-off `28` then sleep-in `10`, waits at least 120 ms, and releases the LCD clock. Wake reacquires the clock, applies reset high 10 ms/low 10 ms/high 100 ms, replays the exact init, redraws while dark, and enables backlight last. Do not invent a panel-rail toggle.
 
 - [ ] **Step 5: Run and commit**
 
@@ -544,7 +548,7 @@ git commit -m "feat(firmware): add physically gated RCSP maintenance"
 
 - [ ] **Step 1: Write board/config negative tests**
 
-Require BLE-only stack, no Classic/SPP/TWS/UI/LVGL/touch/PSRAM/audio/storage/demos, charge enabled/power-on enabled, no automatic shutdown, single-bank, packaged reset disabled, runtime PB08/16, and `CONFIG_LCD_BUF_STATIC_RAM_LEN=0x6000` despite UI macros being zero.
+Require BLE-only stack, no Classic/SPP/TWS/UI/LVGL/touch/PSRAM/audio/storage/demos, charge enabled/power-on enabled, no automatic shutdown, single-bank, packaged reset disabled, runtime PB08/16, and a serial-probe `CONFIG_LCD_BUF_STATIC_RAM_LEN=0x6000` containing one `0x5460` buffer despite UI macros being zero. A build enabling exact-stock callback double buffering must instead prove at least `0xA8C0` without overlapping heap, stacks, or update scratch.
 
 The board profile must identify the recovered model-1552 JD9855 descriptor and callbacks as `INFERRED` for model 1542, include every rail/reset/backlight/DBI field used by target compilation, and set `labEligible: true` but `releaseEligible: false`. No inferred electrical field may silently acquire a `CONFIRMED` status; only the hardware ladder can make that transition.
 
@@ -562,7 +566,7 @@ At BT stack ready initialize E87 BLE and bypass Classic/TWS reconnect. Add E87 c
 
 - [ ] **Step 5: Patch linker tail with assertions**
 
-Correct the guard to `CONFIG_LCD_BUF_STATIC_RAM_LEN`, reserve `[0x130E00,0x136E00)`, define buffer symbols `[0x130E00,0x133C00)` and `[0x133C00,0x136A00)`, retain `[0x136A00,0x136E00)` slack, and assert tail ends at update scratch start.
+Correct the guard to `CONFIG_LCD_BUF_STATIC_RAM_LEN`. For the serial ladder reserve the existing `[0x130E00,0x136E00)` tail, define one buffer `[0x130E00,0x136260)`, retain `[0x136260,0x136E00)` slack, and assert the tail ends at update scratch start. Do not enable callback double buffering until a new reservation of at least `0xA8C0` has fresh link-map, heap, stack, update-scratch, and region-boundary proofs; do not guess its start address in the patch.
 
 - [ ] **Step 6: Run overlay tests and commit**
 
@@ -595,7 +599,7 @@ Parse preprocessed call references where available and conservatively scan sourc
 
 - [ ] **Step 3: Write map fixtures and checker**
 
-Require entry `0x0C000100`, RAM lower bound `0x10054C`, top `0x137000`, update start `0x136E00`, tail start `0x130E00`, used `0x5C00`, reserved `0x6000`, PSRAM zero, heap at least `0x8000`, and no `368*368*2` object.
+For the serial ladder require entry `0x0C000100`, RAM lower bound `0x10054C`, top `0x137000`, update start `0x136E00`, tail start `0x130E00`, used `0x5460`, reserved `0x6000`, PSRAM zero, heap at least `0x8000`, and no `360*360*2` object. Add a negative fixture proving exact-stock callback double buffering fails unless its reservation is at least `0xA8C0` and every adjacent boundary is re-proven.
 
 - [ ] **Step 4: Run the complete host firmware gate**
 

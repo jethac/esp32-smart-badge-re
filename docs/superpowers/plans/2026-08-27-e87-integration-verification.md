@@ -122,11 +122,11 @@ Exercise PB08/16-second early recovery from the heartbeat build and confirm Mask
 
 - [ ] **Step 1: Measure the display electrical sequence**
 
-With backlight initially disabled, confirm rail voltages/current against the untouched reference. Exercise reset and send only the validated JD9855 init program. Stop on current/temperature/reset anomalies.
+With backlight initially disabled, confirm rail voltages/current and continuity against the untouched reference for the recovered model-1552 mapping: reset `PA05`, TE `PA06`, CS `PA07`, CLK `PA12`, D0-D3 `PA08`-`PA11`, and open-drain `IO_LCD_PG` backlight low/on and high-Z/off. Confirm there is no separate DC or recovered panel-rail hook. Configure only `LCD_TYPE_SPI`, QSPI mode/submode `0x21`, pixel type `0x21`, idle-low clock, unidirectional RGB565 input/output, and no more than the recovered 90-fps request; measure the actual derived clock. Apply reset high 10 ms, low 10 ms, high 100 ms, then send only the 657-byte/51-record init whose SHA-256 is `BB0767D3E0BF4AD982725C6A38A9168DDF9E5BA2E3D4D595B1FFBDD17E5B89FF`. Stop on any pin, current, temperature, reset, or model-1542 transferability mismatch.
 
 - [ ] **Step 2: Render solid-color and address-window patterns**
 
-Verify black, white, red, green, blue, corners, axes, 16-row strip boundaries, final y=352 strip, physical circular clipping, orientation, tearing, and no buffer reuse before DBI completion. Photographs must include a color/coordinate legend.
+Confirm the direct-DBI target is 360x360 RGB565; keep the stock uploader's 368x368 JPEG target out of this measurement. Serially verify black, white, red, green, and blue `lcd_clear` calls with `lcd_wait_busy`. Then use one `0x5460` buffer for twelve independently addressed 360x30 strips at y `0,30,...,330`, waiting before every reuse. Verify corners, axes, physical circular clipping/radius 180, orientation/mirroring, RGB/BGR and byte order, active-area offsets, actual QSPI timing/framing, and tearing. Only after the serial path passes may a linker-proven `0xA8C0` build test two-buffer completion callbacks, TE synchronization, and then `lcd_draw_continue`. Photographs and logic-analyzer captures must include a color/coordinate legend.
 
 - [ ] **Step 3: Render semantic goldens**
 
@@ -151,7 +151,7 @@ Test debounce and release before 3 seconds, 3-second pairing entry, 7-second des
 
 - [ ] **Step 2: Exercise Button 2 and persistence**
 
-Tap Button 2 awake/unplugged, awake/plugged, asleep/unplugged, and asleep/plugged. Confirm it is the sole ordinary sleep control, disconnects BLE/panel safely, does not stop charger electrical control, and plugging/unplugging preserves awake/manual-sleep state and last RAM face while power remains.
+Tap Button 2 awake/unplugged, awake/plugged, asleep/unplugged, and asleep/plugged. Confirm it is the sole ordinary sleep control, does not stop charger electrical control, and plugging/unplugging preserves awake/manual-sleep state and last RAM face while power remains. Capture the panel order: drain DBI; backlight off; display-off `28`; sleep-in `10`; wait at least 120 ms; release LCD clock. Wake must reacquire the clock, repeat the high-10/low-10/high-100-ms reset and exact init, redraw while dark, and enable backlight last, with no invented rail toggle. Measure sleep current and repeat at least 100 cycles.
 
 - [ ] **Step 3: Calibrate battery reporting**
 

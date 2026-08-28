@@ -208,16 +208,22 @@ Safeguards for any future update client:
 ## 5. JD9855 panel reconstruction
 
 The official SDK default is **not** the target panel. It selects a 320x386
-GC9B71 QSPI display. Copying that profile explains neither the captured
-368x368 JPEG nor the stock descriptor.
+GC9B71 QSPI display. Copying that profile explains neither the stock
+368x368 JPEG upload target nor the recovered direct-DBI descriptor.
 
 ### 5.1 Stock descriptor and command list
 
 The following is **PROVEN from the validated model-1552 plaintext app**:
 
-- Displayed/captured image geometry is 368x368.
+- The plaintext app SHA-256 is
+  `A38B77E27B1DC73CAE0FBD8A7C4E3A04C64FF393FB4F27BC92A7578336BE0147`.
+- The direct-DBI active, input, and output geometry is 360x360 RGB565. A full
+  RGB565 frame is 259,200 bytes. The stock Android image path independently
+  resizes JPEG uploads to 368x368; that transport/storage size is not the DBI
+  scanout geometry.
 - A registered LCD descriptor is at app file offset `0xEF688`, flat address
-  `0x0C0EF788` when imported at `0x0C000100`.
+  `0x0C0EF788` when imported at `0x0C000100`, and actual runtime RAM address
+  `0x00106E08`.
 - Its name pointer resolves to ASCII `jd9855`.
 - Column alignment is 2; row alignment is 2; radius is 180.
 - Init pointer is `0x0C0E59E0`; its file offset is `0xE58E0`.
@@ -225,6 +231,15 @@ The following is **PROVEN from the validated model-1552 plaintext app**:
 - Init SHA-256 is
   `BB0767D3E0BF4AD982725C6A38A9168DDF9E5BA2E3D4D595B1FFBDD17E5B89FF`.
 - The same command blob is present in the decoded 1558 and 1606 variants.
+- The RAM `dbi_param` pointer is `0x00107024`. Its recovered 196-byte source
+  image begins at app file offset `0xEF8A4`; the raw parameter SHA-256 is
+  `BFF9D90B248ECFB370877A1CF9677D67E66E4BC1E79E07962CC59E1A87A43A3B`.
+- The stock profile is `LCD_TYPE_SPI`, QSPI mode/submode `0x21`
+  (`QSPI_MODE | QSPI_SUBMODE1`), pixel type `0x21`
+  (`PIXEL_1P2T | PIXEL_1T2B`), idle-low clock, unidirectional RGB565
+  input/output, 90 fps, two buffers, and `0x5460` / 21,600 bytes per buffer.
+  Each buffer is exactly `360 * 30 * 2`, so a stock frame is twelve 30-row
+  transfers.
 
 The descriptor follows the official `struct lcd_drive` layout at
 [`SDK/apps/watch/include/ui/lcd/lcd_drive.h:115-143`](https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200/-/blob/d0167685d032d745d88fe50233302edd46941622/SDK/apps/watch/include/ui/lcd/lcd_drive.h#L115-143):
@@ -260,63 +275,70 @@ B7 01 29 01 51
 BB 1B 64 C4 0E 3E F5
 ```
 
-Its tail enables TE (`35 00`), selects RGB565 (`3A 55`), sends sleep-out
-(`11`), delays 120 ms, sends display-on (`29`), and delays 20 ms.
+Its final records are delay 10 ms, `4C 00`, TE enable (`35 00`), RGB565
+selection (`3A 55`), sleep-out (`11`), delay 120 ms, display-on (`29`), and
+delay 20 ms. The exact 657-byte blob contains 51 framed records and does not
+send MADCTL (`36`) or address-window commands (`2A`/`2B`). The pinned DBI
+library supplies `2A`/`2B` plus RAM write/continue (`2C`/`3C`) for draw
+operations.
 
 `jd9855` is therefore a strong embedded identity, but no matching public driver
 or datasheet has been validated. Treat the controller name as **INFERRED** until
 read-ID or package/logic-analyzer evidence confirms it.
 
-### 5.2 What is still missing
+### 5.2 Recovered pins and remaining hardware gates
 
-The descriptor's parameter pointer targets RAM, so the flash descriptor does
-not by itself reveal the complete bus setup. These remain **UNVERIFIED**:
+The stock model-1552 path fixes the dedicated QSPI pins to CS `PA07`, CLK
+`PA12`, D0 `PA08`, D1 `PA09`, D2 `PA10`, and D3 `PA11`; reset is `PA05` and TE
+is `PA06`. `PA08` is also the read selector if a read transaction is used.
+There is no separate DC pin in this QSPI profile. Backlight is `IO_LCD_PG`
+(`0xE7`) through an open-drain hook: drive low for on and release high-Z for
+off. The descriptor has no panel-power callback and its `pin_en`/`pin_en_ex`
+selectors are absent, so the recovered application does not toggle a separate
+panel rail.
 
-- exact QSPI/SPI submode and write framing;
-- DBI clock/fps and clock polarity;
-- CS/DC/read/TE/reset/backlight pins and active levels;
-- orientation/MADCTL and RGB/BGR byte order;
-- column/page/RAM-write commands and any 368x368 window offsets;
-- whether TE is edge- or level-driven in the target board code.
+Those values are **PROVEN for the decoded model-1552 artifact and INFERRED for
+the physical model-1542**. Before a model-1542 display build, confirm the rails,
+pin continuity, backlight polarity, reset waveform, QSPI framing/actual clock,
+and current against the untouched reference. A logic analyzer must also settle
+orientation and mirroring (the init has no `36` command), RGB/BGR and byte
+order, the 360-pixel active-area/clipping behavior, TE edge/phase, and whether
+the read path works. Do not infer any of these from the generic GC9B71 profile.
 
-Reconstruct them systematically:
-
-1. Define `struct lcd_drive` at `0x0C0EF788` in Ghidra and name every function
-   pointer above.
-2. Find all references to RAM `0x00107024`, especially writes before `lcd_init`.
-3. Apply the official [`struct dbi_param`](https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200/-/blob/d0167685d032d745d88fe50233302edd46941622/SDK/interface/ui/cpu/br35/dbi.h#L189-285)
-   layout and recover dimensions, buffer count/size, fps, SPI mode, pixel type,
-   format, pin selectors, QSPI opcodes, DCS window commands, and polarity.
-4. Trace the backlight/sleep functions and board GPIO initialization; do not
-   infer pins from the generic GC9B71 profile.
-5. Confirm on a sacrificial badge with a logic analyzer, starting at or below
-   the recovered clock. Capture reset, init, TE, one solid fill, and one small
-   aligned window.
-6. First render red/green/blue/white/black bars. A swapped color, mirrored
-   image, wrap at an edge, or intermittent first line is a bus/window bug, not
-   an asset bug.
+The recovered reset sequence is high 10 ms, low 10 ms, high 100 ms before the
+exact init program. Request no more than the recovered 90 fps for the first
+probe; the DBI clock is derived from fps and its actual wire frequency must be
+measured. First render black/white/red/green/blue with a serial
+`lcd_clear`/`lcd_wait_busy` sequence; then send independently addressed 360x30
+strips. A swapped color, mirrored image, wrap at an edge, or intermittent first
+line is a bus/window bug, not an asset bug.
 
 Do not substitute the SDK's dormant JD5858 360x360 MCU driver. Its geometry,
 8-bit bus, init prefix, and timing differ from the stock evidence.
 
 ## 6. Rendering without a framebuffer
 
-A 368x368 RGB565 framebuffer is 270,848 bytes, larger than the generic app RAM
+A 360x360 RGB565 framebuffer is 259,200 bytes, larger than the generic app RAM
 budget before stacks, Bluetooth, and application state. The firmware should be
 strip-buffered and PSRAM-independent.
 
-Recommended design (**INFERRED/PROPOSED**):
+Recovered constraints and staged design:
 
-- Two 16-line buffers require `368 * 16 * 2 * 2 = 23,552 = 0x5C00` bytes. The
-  generic linker reserves only `0x5000`, so this configuration does **not** fit
-  unchanged. Expand the aligned LCD tail to at least `0x6000` and re-prove heap
-  and region boundaries, or use two 8-line buffers (`11,776 = 0x2E00` bytes).
-- Statically allocate and align both buffers. Do not allocate in the draw loop.
-- At each frame, wait for TE at the defined boundary, render strip N while DBI
-  transmits strip N-1, and swap on the completion callback.
+- One stock 30-row buffer is `360 * 30 * 2 = 21,600 = 0x5460` bytes and fits
+  the existing aligned `0x6000` LCD tail. Use that single buffer for the first
+  serial hardware ladder, always calling `lcd_wait_busy` before reuse.
+- Exact stock double buffering consumes `2 * 0x5460 = 43,200 = 0xA8C0` bytes.
+  It does not fit a `0x6000` reservation. Production callback-driven streaming
+  therefore requires a linker-tail expansion to at least `0xA8C0` plus fresh
+  map, heap, stack, update-scratch, and region-boundary proofs.
+- Statically allocate and align selected buffers. Do not allocate in the draw
+  loop. Emit twelve windows at y origins `0,30,...,330`, each 360x30.
+- Keep the first ladder serial. Only after every independently addressed strip
+  passes may two buffers alternate; a buffer is reusable only after the draw
+  completion callback or an explicit `lcd_wait_busy`.
 - Use `lcd_draw` for the first window and `lcd_draw_continue` only when the
-  recovered target bus mode supports it. These are nonblocking APIs in
-  `SDK/interface/ui/cpu/br35/dbi.h:346-368,449-459`.
+  logic analyzer proves `3C` framing and tearing behavior. These are
+  nonblocking APIs in `SDK/interface/ui/cpu/br35/dbi.h:346-368,449-459`.
 - Clip every primitive to the active strip and round dirty rectangles to the
   proven two-pixel row/column alignment.
 - Render static background, rings, icon masks, and glyphs locally. Android
@@ -644,11 +666,15 @@ registration, light/sleep/deep/soft-off states, and GPIO/analog/RTC wake APIs:
 - `SDK/interface/driver/power/power_wakeup.h:5-59,85-133`
 - `SDK/cpu/br35/power/key_wakeup.c:12-24`
 
-Before sleep: finish/abort DBI transfer, put the panel into sleep, turn off the
-backlight, quiesce BLE or enter the intended connection mode, and arm the raw
-button wake source. On wake: restore clocks and DBI state, exit panel sleep with
-the recovered delays, then redraw. Measure current in every state; successful
-API calls are not a power measurement.
+Before sleep: drain the DBI transfer with `lcd_wait_busy`, turn the backlight
+off, send display-off (`28`) followed by sleep-in (`10`), wait at least 120 ms,
+then release the LCD clock and quiesce BLE or enter the intended connection
+mode. Arm the raw button wake source. On wake: acquire the LCD clock, apply the
+recovered reset timing, replay the full exact init program, and repaint while
+the backlight remains off; enable the backlight last. The recovered stock path
+has no separate panel-rail callback, so do not invent a rail toggle. Measure
+current and repeat at least 100 cycles; successful API calls are not a power
+measurement.
 
 ### 9.1 Charge-through display operation
 
@@ -726,7 +752,8 @@ renderer:
 The existing Flutter code is evidence for current stock connectivity and a
 useful transport reference:
 
-- `lib/e87/e87_const.dart` — current stock AE00/FD00 UUIDs and 368x368 target.
+- `lib/e87/e87_const.dart` — current stock AE00/FD00 UUIDs and 368x368 JPEG
+  upload target; it is not the direct-DBI panel geometry.
 - `lib/e87/e87_client.dart` — Android BLE connection, MTU, notifications, and
   authentication order.
 - `lib/e87/upload_session.dart` — stock image-transfer state machine.
@@ -779,8 +806,10 @@ Before a badge sees the file, verify:
 - PI32v2 entry is `0x0C000100` for this build;
 - every load/runtime section fits its declared region;
 - heap and task stacks meet the measured headroom target;
-- the LCD tail is at least `0x6000` for two 16-row 368-wide RGB565 buffers, or
-  the build deliberately selects the `0x2E00` two-8-row alternative;
+- the serial panel-probe build reserves and uses one aligned `0x5460` 360x30
+  RGB565 buffer inside the current `0x6000` LCD tail, or the production build
+  reserves at least `0xA8C0` for two exact stock buffers and re-proves all
+  adjacent RAM/update boundaries;
 - every partition is aligned, non-overlapping, and below the measured flash
   capacity;
 - outer Qix length and CRC validate;
@@ -810,10 +839,16 @@ the only route to the next stage. Mark badge E untouched before writing badge A:
    `adc_io2ch(IO_PORTB_07) == AD_CH_PMU_PADC0` from the exact board-profile
    allowlist and carry the channel as 32 bits in telemetry. PB08 is not the
    decoded model-1552 ADC input.
-3. **Badge C — JD9855 fills:** at conservative clock, validate reset/init and
-   solid red/green/blue/white/black screens; then aligned partial windows,
-   double-buffered refresh, color/orientation/TE, backlight, panel sleep/wake,
-   and 100 cycles. Do not enable button or update behavior in this image.
+3. **Badge C — JD9855 fills:** keep the backlight off while comparing rails,
+   pins, current, and reset timing with the untouched reference. Replay only
+   the exact hashed init, then serially run black/white/red/green/blue
+   `lcd_clear` calls with `lcd_wait_busy`. With one `0x5460` buffer, send twelve
+   independently addressed 360x30 windows at y `0,30,...,330`, waiting after
+   every draw. Validate corners, axes, clipping, orientation, byte/color order,
+   and TE with captures. Only then test completion-callback double buffering
+   with a linker-proven `0xA8C0` tail; prove `lcd_draw_continue` separately.
+   Test backlight, the exact sleep/wake order, current, and 100 cycles. Do not
+   enable button or update behavior in this image.
 4. **Badge D — full/recovery:** only after B and C establish their profiles,
    integrate normal GATT/rendering, DMM-calibrated battery behavior, charging,
    buttons, package `RESET = PB07_00_0;`, direct runtime PB07 PINR16, and the
@@ -972,8 +1007,12 @@ write.
 - Exact untouched model-1542 flash image, stock partition metadata, and device
   calibration.
 - Full physical package marking and whether dormant PSRAM is present.
-- JD9855 bus mode, clock/fps, pin mapping, polarity, orientation, byte order,
-  address-window offsets, and TE electrical behavior.
+- Whether the model-1552 360x360 QSPI descriptor, `PA05` reset, `PA06` TE,
+  dedicated `PA07`/`PA12`/`PA08`-`PA11` bus, and `IO_LCD_PG` open-drain
+  backlight mapping transfer unchanged to model 1542.
+- Measured QSPI clock/framing, orientation/mirroring, RGB/BGR and byte order,
+  360-pixel active-area/clipping behavior, TE edge/phase, optional read
+  behavior, and sleep current on the physical model-1542 board.
 - Exact model-1542 touch controller and touch pins, if touch is populated.
 - Measured PB07 ADC clusters across units, temperature, voltage, and tolerance,
   the physical key-0/key-1 label mapping, and confirmation of the actual ADC pin
