@@ -37,6 +37,21 @@
         "sources": []
       }
     ],
+    "lab_smoke": [
+      {
+        "name": "lab-panel-smoke",
+        "test": "firmware/host/test_lab_smoke.c",
+        "sources": [
+          "firmware/overlay/SDK/apps/watch/e87/e87_lab_smoke.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_panel_jd9855.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_lcd_stream.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_transient_renderer.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_renderer.c",
+          "firmware/generated/e87_transient_assets.c",
+          "firmware/generated/e87_assets.c"
+        ]
+      }
+    ],
     "lcd": [
       {
         "name": "lcd-serial-panel",

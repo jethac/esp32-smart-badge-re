@@ -1,0 +1,54 @@
+diff --git a/SDK/apps/watch/app_main.c b/SDK/apps/watch/app_main.c
+index dd7f8e9..fe1f53c 100644
+--- a/SDK/apps/watch/app_main.c
++++ b/SDK/apps/watch/app_main.c
+@@ -14,3 +14,3 @@
+ const struct task_info task_info_table[] = {
+-    {"app_core", 20, 0, 768, 768},
++    {"app_core", 1, 0, 4096, 128},
+     {0, 0},
+diff --git a/SDK/build/Makefile.mk b/SDK/build/Makefile.mk
+index 3709ada..5e3cd3c 100644
+--- a/SDK/build/Makefile.mk
++++ b/SDK/build/Makefile.mk
+@@ -877,2 +877,14 @@
+ # E87_FULL_REQUIRED_SOURCES_END
++# E87 LAB_ONLY panel smoke extends the reviewed full substrate closure.
++E87_FULL_REQUIRED_SOURCES += \
++	apps/watch/log_config/app_config.c \
++	apps/watch/e87/e87_lab_smoke.c \
++	apps/watch/e87/e87_lcd_stream.c \
++	apps/watch/e87/e87_panel_jd9855.c \
++	apps/watch/e87/e87_renderer.c \
++	apps/watch/e87/e87_transient_renderer.c \
++	apps/watch/e87/e87_assets.c \
++	apps/watch/e87/e87_transient_assets.c \
++	cpu/br35/power/power_gate.c
++# E87 LAB_ONLY panel smoke source closure complete.
+ c_SRC_FILES := $(E87_FULL_REQUIRED_SOURCES)
+@@ -1092,2 +1104,5 @@
+     cpu/br35/liba/vm.a
++# LAB_ONLY: gpu.a owns the BR35 DBI implementation used by the serial panel seam.
++E87_FULL_REQUIRED_ARCHIVES += \
++    cpu/br35/liba/gpu.a
+ # E87 full required archive list complete.
+diff --git a/SDK/cpu/br35/sdk_ld.c b/SDK/cpu/br35/sdk_ld.c
+index 0642d63..de7e4b3 100644
+--- a/SDK/cpu/br35/sdk_ld.c
++++ b/SDK/cpu/br35/sdk_ld.c
+@@ -310 +310,8 @@
++    .e87_lcd_buffer _E87_LCD_BUFFER_START : ALIGN(4)
++    {
++        KEEP(*(.e87_lcd_buffer))
++        . = ALIGN(4);
++    } > ram0
++    ASSERT(SIZEOF(.e87_lcd_buffer) == 0x5460,
++           "E87 LAB_ONLY serial LCD buffer size changed")
+ #endif
+@@ -699,2 +706,6 @@ ASSERT((_E87_LCD_RESERVED_END - _E87_LCD_RESERVED_START) == 0x6000,
+        "E87 full LCD reserve size changed");
++ASSERT(ADDR(.e87_lcd_buffer) == _E87_LCD_BUFFER_START,
++       "E87 LAB_ONLY serial LCD buffer moved");
++ASSERT(SIZEOF(.e87_lcd_buffer) == 0x5460,
++       "E87 LAB_ONLY serial LCD buffer is not exact");
+ ASSERT((_E87_LCD_BUFFER_END - _E87_LCD_BUFFER_START) == 0x5460,

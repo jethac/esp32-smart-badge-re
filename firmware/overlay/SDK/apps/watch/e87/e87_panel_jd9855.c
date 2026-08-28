@@ -319,7 +319,12 @@ _Static_assert(DBI_D0 == IO_PORTA_08 &&
  * image.  In QSPI submode 1 there is no DC wire; the zero DC selector is not
  * a claim that PA09 is connected as DC.
  */
-static struct dbi_param e87_jd9855_dbi_param = {
+/*
+ * LAB_ONLY runtime allocation contract: the smoke image owns one serial
+ * 0x5460 strip and waits for DBI completion before reuse.  This does not
+ * revise the recovered two-buffer descriptor evidence recorded above.
+ */
+static struct dbi_param e87_lab_smoke_dbi_param = {
     .scr_x = 0,
     .scr_y = 0,
     .scr_w = 360,
@@ -327,7 +332,7 @@ static struct dbi_param e87_jd9855_dbi_param = {
     .lcd_width = 360,
     .lcd_height = 360,
     .lcd_type = LCD_TYPE_SPI,
-    .buffer_num = 2,
+    .buffer_num = 1,
     .buffer_size = 0x5460,
     .in_width = 360,
     .in_height = 360,
@@ -355,7 +360,7 @@ static int e87_sdk_dbi_init(
     if (profile != &e87_jd9855_profile) {
         return -1;
     }
-    return lcd_init(&e87_jd9855_dbi_param);
+    return lcd_init(&e87_lab_smoke_dbi_param);
 }
 
 static void e87_sdk_set_align(void *context, uint8_t row, uint8_t column)

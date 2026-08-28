@@ -1,0 +1,34 @@
+{
+  "schema": "e87-lab-panel-smoke-packaging-lock-v1",
+  "profileId": "E87-1542-LAB-PANEL-SMOKE-H",
+  "basePackagingLock": {
+    "filename": "packaging.lock.json",
+    "sha256": "28E6C1DEF70F894F89FDC7FFB8527F204688888C58EEDC052CD8A36F3AEBC003"
+  },
+  "qix": {
+    "headerBytes": 27,
+    "magicHex": "BCAF01",
+    "payloadCrc": "CRC16_CCITT_FALSE",
+    "payloadCrcSeed": 65535,
+    "version": "11.1.0.4"
+  },
+  "eligibility": {
+    "labEligible": true,
+    "status": "LAB_ONLY"
+  },
+  "stagingOverrides": {
+    "flash_params_v3.bin": {
+      "baseSha256": "7E27AE860FFFE505813057AC481AD7AA262574718E6C50E9F4420EED0696B6F7",
+      "generatedSdkRelativePath": "SDK/cpu/br35/tools/flash_params_v3.bin",
+      "sha256": "7069536B81DF3377FDE743084302BF2DAE599BB74E98B427EDB50A35FF39CF69"
+    }
+  },
+  "delivery": [
+    "app.bin",
+    "jl_isd.fw",
+    "update.ufw",
+    "qix",
+    "manifest.json",
+    "SHA256SUMS"
+  ]
+}

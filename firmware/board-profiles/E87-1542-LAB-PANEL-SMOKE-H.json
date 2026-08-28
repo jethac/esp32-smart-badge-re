@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "profileId": "E87-1542-LAB-PANEL-SMOKE-H",
+  "sdkCommit": "d0167685d032d745d88fe50233302edd46941622",
+  "status": "LAB_ONLY",
+  "lineage": {
+    "sourceBaseCommit": "bc534124b6ce3c50d990aa0e87dded792dd63f8d",
+    "baseProfile": "E87-1542-FULL-SUBSTRATE-H",
+    "patchOrder": [
+      "firmware/patches/full/0001-e87-full-substrate.patch",
+      "firmware/patches/lab-panel-smoke/0001-e87-lab-panel-smoke.patch"
+    ]
+  },
+  "versions": {
+    "transportQix": "11.1.0.4",
+    "firmwareBuildInfoSemver": "0.1.0",
+    "domainsIndependent": true,
+    "nextFullMinimum": "11.1.0.5"
+  },
+  "behavior": {
+    "initialScreen": "PAIR_ME_NOW",
+    "faceAfterMs": 3000,
+    "dayPercent": 67,
+    "weekPercent": 42,
+    "creditCents": 1727
+  },
+  "boot": {
+    "applicationTask": "app_core",
+    "appCorePriority": 1,
+    "appCoreStackBytes": 4096,
+    "appCoreQueueEntries": 128
+  },
+  "capabilities": {
+    "panel": true,
+    "localRendering": true,
+    "bluetooth": false,
+    "rcsp": false,
+    "charger": false,
+    "update": false,
+    "recoveryClaim": false
+  },
+  "panel": {
+    "controller": "JD9855",
+    "width": 360,
+    "height": 360,
+    "model1542Status": "INFERRED",
+    "recoveredDescriptorBufferCount": 2,
+    "runtimeSerialBufferCount": 1,
+    "runtimeSerialBufferBytes": 21600,
+    "runtimePolicy": "WAIT_AFTER_EVERY_STRIP_BACKLIGHT_AFTER_FIRST_FRAME"
+  },
+  "memory": {
+    "reservedStart": 1248768,
+    "reservedEnd": 1273344,
+    "reservedBytes": 24576,
+    "bufferStart": 1248768,
+    "bufferEnd": 1270368,
+    "bufferBytes": 21600,
+    "slackBytes": 2976,
+    "minimumHeapBytes": 32768,
+    "psramBytes": 0
+  },
+  "generatedOverlayMappings": [
+    {
+      "source": "firmware/generated/e87_assets.c",
+      "destination": "SDK/apps/watch/e87/e87_assets.c",
+      "sha256": "8c7ca8fc4b0d0db260e109d31b218d08c7ecc480bfe7fa202701344d3f34c664"
+    },
+    {
+      "source": "firmware/generated/e87_assets.h",
+      "destination": "SDK/apps/watch/include/e87_assets.h",
+      "sha256": "3932c79d65a78c8bfea74427d3f92e535d2bef55876a990f6aa136e674039979"
+    },
+    {
+      "source": "firmware/generated/e87_transient_assets.c",
+      "destination": "SDK/apps/watch/e87/e87_transient_assets.c",
+      "sha256": "ba23e72ca2fbb473234ab0f7f88ac00b78f755e3cfd8d335a29445897583e32a"
+    },
+    {
+      "source": "firmware/generated/e87_transient_assets.h",
+      "destination": "SDK/apps/watch/include/e87_transient_assets.h",
+      "sha256": "92080a640ea2f3dbb8376848b7759fb47d9253c8386ae31fe2c5001ddc251134"
+    }
+  ],
+  "targetClosure": {
+    "additionalSources": [
+      "apps/watch/log_config/app_config.c",
+      "apps/watch/e87/e87_lab_smoke.c",
+      "apps/watch/e87/e87_lcd_stream.c",
+      "apps/watch/e87/e87_panel_jd9855.c",
+      "apps/watch/e87/e87_renderer.c",
+      "apps/watch/e87/e87_transient_renderer.c",
+      "apps/watch/e87/e87_assets.c",
+      "apps/watch/e87/e87_transient_assets.c",
+      "cpu/br35/power/power_gate.c"
+    ],
+    "additionalArchives": [
+      {
+        "path": "cpu/br35/liba/gpu.a",
+        "sha256": "71dcf8be68f79760cb1cbc612abc58cb17019ec95ec2cde33f62a1f8937ecf32"
+      }
+    ],
+    "requiredResolution": [
+      {
+        "provider": "objs/apps/watch/log_config/app_config.c.o",
+        "requester": "cpu/br35/liba/gpu.a(dbi.c.o)",
+        "symbol": "log_tag_const_d_UI"
+      },
+      {
+        "provider": "objs/apps/watch/log_config/app_config.c.o",
+        "requester": "cpu/br35/liba/gpu.a(dbi_mcu.c.o)",
+        "symbol": "log_tag_const_i_UI"
+      }
+    ]
+  },
+  "disabled": [
+    "bluetooth",
+    "rcsp",
+    "charger",
+    "update-engine",
+    "generic-initcalls",
+    "stock-app-modes",
+    "stock-ui",
+    "audio"
+  ]
+}
