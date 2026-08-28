@@ -597,13 +597,19 @@ def validate_artifacts(
     section = re.escape(update["section"])
     symbol = re.escape(update["symbol"])
     matches = re.findall(
-        rf"^\s*{section}\s+0x[0-9a-fA-F]+\s+0x([0-9a-fA-F]+)\s+\S+\n"
+        rf"^\s*{section}\s+0x[0-9a-fA-F]+\s+0x([0-9a-fA-F]+)\s+"
+        rf"cpu/br35/tools/sdk\.elf\.o\n"
         rf"\s+0x[0-9a-fA-F]+\s+{symbol}\s*$",
         text,
         re.M,
     )
     if len(matches) != 1 or int(matches[0], 16) != update["size"]:
         fail("disabled update exception differs from exact inert symbol")
+    provider_flags = modules.get(update["sourceObject"], {}).get(
+        update["symbol"], ""
+    )
+    if "p" not in provider_flags:
+        fail("disabled update provider differs from exact source object")
     if "OUTPUT(cpu/br35/tools/sdk.elf elf32-pi32v2)" not in text:
         fail("map: missing exact Stage 0 ELF output")
     return len(rows), len(source_loads)
