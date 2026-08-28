@@ -22,8 +22,8 @@ def sha256(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
-def row_digest(rows: list[str]) -> str:
-    return sha256(("\n".join(sorted(rows)) + "\n").encode("ascii"))
+def graph_digest(rows: list[str]) -> str:
+    return sha256("".join(rows).encode("ascii"))
 
 
 class Stage0MapValidatorTests(unittest.TestCase):
@@ -39,6 +39,9 @@ class Stage0MapValidatorTests(unittest.TestCase):
         self.evidence_path = self.root / "evidence.json"
         self.map_path = self.root / "sdk.map"
         self.elf_path = self.root / "sdk.elf"
+        self.resolution_path = self.root / "sdk.elf.resolution.txt"
+        self.object_list_path = self.root / "sdk.elf.objs.txt"
+        self.app_bin_path = self.root / "app.bin"
         self.archive_bytes = {
             "cpu/br35/liba/btstack.a": b"synthetic btstack archive\n",
             "toolchain/lib/r3-large/libc.a": b"synthetic toolchain libc\n",
@@ -53,15 +56,35 @@ class Stage0MapValidatorTests(unittest.TestCase):
             "objs/apps/common/update/update.c.o",
             "objs/apps/watch/e87/e87_stage0_app.c.o",
         ]
-        self.rows = [
-            "cpu/br35/liba/btstack.a(btstack_main.c.o)",
-            "cpu/br35/liba/btstack.a(btstack_task.c.o)",
-            "toolchain/lib/r3-large/libc.a(lib_a-memcpy.o)",
+        self.graph_rows = [
+            "cpu/br35/liba/btstack.a(btstack_task.c.o)\t"
+            "O:objs/apps/watch/e87/e87_stage0_app.c.o\tbtstack_init\t1\n",
+            "cpu/br35/liba/btstack.a(btstack_main.c.o)\t"
+            "A:cpu/br35/liba/btstack.a(btstack_task.c.o)\t"
+            "btstack_mem_init\t1\n",
+            "TOOLCHAIN/lib/r3-large/libc.a(lib_a-memcpy.o)\t"
+            "A:cpu/br35/liba/btstack.a(btstack_main.c.o)\tmemcpy\t0\n",
         ]
         self.map_bytes = self.make_map()
         self.elf_bytes = b"synthetic linked stage0 ELF\n"
+        self.resolution_bytes = (
+            b"objs/apps/watch/e87/e87_stage0_app.c.o\n"
+            b"-r=objs/apps/watch/e87/e87_stage0_app.c.o,btstack_init,l\n"
+            b"cpu/br35/liba/btstack.a.llvm.1.btstack_task.c\n"
+            b"-r=cpu/br35/liba/btstack.a.llvm.1.btstack_task.c,btstack_init,pl\n"
+            b"-r=cpu/br35/liba/btstack.a.llvm.1.btstack_task.c,btstack_mem_init,l\n"
+            b"cpu/br35/liba/btstack.a.llvm.2.btstack_main.c\n"
+            b"-r=cpu/br35/liba/btstack.a.llvm.2.btstack_main.c,btstack_mem_init,pl\n"
+        )
+        self.object_list_bytes = (
+            " " + " ".join(self.source_objects) + "\n"
+        ).encode("ascii")
+        self.app_bin_bytes = b"synthetic Stage0 loadable payload\n"
         self.map_path.write_bytes(self.map_bytes)
         self.elf_path.write_bytes(self.elf_bytes)
+        self.resolution_path.write_bytes(self.resolution_bytes)
+        self.object_list_path.write_bytes(self.object_list_bytes)
+        self.app_bin_path.write_bytes(self.app_bin_bytes)
         self.evidence = self.make_evidence()
         self.write_evidence()
 
@@ -80,7 +103,7 @@ class Stage0MapValidatorTests(unittest.TestCase):
             "cpu/br35/liba/btstack.a(btstack_main.c.o)\n"
             "  btstack_task.c.o (symbol from plugin) (btstack_mem_init)\n"
             f"{toolchain_archive}(lib_a-memcpy.o)\n"
-            "  btstack_main.c.o (symbol from plugin) (memcpy)\n\n"
+            "  btstack_main.c.o (memcpy)\n\n"
             "Discarded input sections\n\n"
             "Memory Configuration\n\n"
             "Linker script and memory map\n"
@@ -109,8 +132,15 @@ class Stage0MapValidatorTests(unittest.TestCase):
                 "elfSize": len(self.elf_bytes),
                 "mapSha256": sha256(self.map_bytes),
                 "mapSize": len(self.map_bytes),
+                "resolutionSha256": sha256(self.resolution_bytes),
+                "resolutionSize": len(self.resolution_bytes),
+                "objectListSha256": sha256(self.object_list_bytes),
+                "objectListSize": len(self.object_list_bytes),
+                "appBinSha256": sha256(self.app_bin_bytes),
+                "appBinSize": len(self.app_bin_bytes),
                 "linkLogSha256": "1" * 64,
-                "postLinkStatus": "LINK_SUCCEEDED_POST_BUILD_TOOLING_UNAVAILABLE",
+                "buildMode": "VENDOR_MAKE_EXPLICIT_LINK_TARGET_NO_POST",
+                "postLinkStatus": "NOT_INVOKED_BY_EXPLICIT_LINK_TARGET",
             },
             "sourceObjects": self.source_objects,
             "archives": [
@@ -123,12 +153,12 @@ class Stage0MapValidatorTests(unittest.TestCase):
             ],
             "archiveLoadOrder": list(self.archive_bytes),
             "mapContract": {
-                "archiveInclusionRowCount": len(self.rows),
-                "archiveInclusionRowsSha256": row_digest(self.rows),
+                "archiveInclusionRowCount": len(self.graph_rows),
+                "archiveInclusionRowsSha256": graph_digest(self.graph_rows),
                 "btstackObjectCount": 2,
-                "btstackObjectsSha256": row_digest(self.rows[:2]),
+                "btstackObjectsSha256": graph_digest(self.graph_rows[:2]),
                 "btctrlerObjectCount": 0,
-                "btctrlerObjectsSha256": row_digest([]),
+                "btctrlerObjectsSha256": graph_digest([]),
                 "requiredProvenance": [
                     {
                         "archiveMember": (
@@ -182,6 +212,12 @@ class Stage0MapValidatorTests(unittest.TestCase):
                 str(self.map_path),
                 "--elf",
                 str(self.elf_path),
+                "--resolution",
+                str(self.resolution_path),
+                "--object-list",
+                str(self.object_list_path),
+                "--app-bin",
+                str(self.app_bin_path),
                 "--evidence",
                 str(self.evidence_path),
                 "--sdk-root",
@@ -209,6 +245,15 @@ class Stage0MapValidatorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("stage0 link map qualified", result.stdout)
 
+    def test_plugin_bit_is_bound_in_the_canonical_extraction_graph(self) -> None:
+        self.rewrite_map(
+            b"btstack_main.c.o (memcpy)\n",
+            b"btstack_main.c.o (symbol from plugin) (memcpy)\n",
+        )
+        result = self.run_validator()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("inclusion graph", result.stderr)
+
     def test_raw_map_digest_is_verified_before_semantics(self) -> None:
         self.map_path.write_bytes(self.map_path.read_bytes() + b"# drift\n")
         result = self.run_validator()
@@ -220,6 +265,20 @@ class Stage0MapValidatorTests(unittest.TestCase):
         result = self.run_validator()
         self.assertEqual(result.returncode, 2)
         self.assertIn("ELF", result.stderr)
+
+    def test_resolution_object_list_and_loadable_payload_are_bound(self) -> None:
+        for path, label in (
+            (self.resolution_path, "resolution"),
+            (self.object_list_path, "object list"),
+            (self.app_bin_path, "app.bin"),
+        ):
+            with self.subTest(path=path):
+                original = path.read_bytes()
+                path.write_bytes(original + b"drift")
+                result = self.run_validator()
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(label, result.stderr)
+                path.write_bytes(original)
 
     def test_source_load_set_is_exact(self) -> None:
         self.rewrite_map(
@@ -248,14 +307,12 @@ class Stage0MapValidatorTests(unittest.TestCase):
         self.assertIn("inclusion rows", result.stderr)
 
     def test_btstack_root_provenance_is_exact(self) -> None:
-        self.rewrite_map(b"(btstack_init)\n", b"(profile_init)\n")
-        self.rows = [row for row in self.rows]
         contract = self.evidence["mapContract"]
         assert isinstance(contract, dict)
         provenance = contract["requiredProvenance"]
         assert isinstance(provenance, list)
         assert isinstance(provenance[0], dict)
-        provenance[0]["symbol"] = "btstack_init"
+        provenance[0]["symbol"] = "profile_init"
         self.write_evidence()
         result = self.run_validator()
         self.assertEqual(result.returncode, 2)
@@ -305,17 +362,30 @@ class Stage0MapValidatorTests(unittest.TestCase):
                     "85afcbb99355559694258c13e302662d0ec91cfff465fc979342b09b511d7265"
                 ),
                 "mapSize": 207206,
-                "linkLogSha256": (
-                    "8cca2b1e4d30fe4cc1613b4870084653b82a5053e50028273bd2a22c0d6fbddc"
+                "resolutionSha256": (
+                    "7debceead388594c38473bf31053adfc7a08053b72e246ece8aac741bdcb624d"
                 ),
-                "postLinkStatus": "LINK_SUCCEEDED_POST_BUILD_TOOLING_UNAVAILABLE",
+                "resolutionSize": 1006294,
+                "objectListSha256": (
+                    "c27b43fcfa8809d505cefd648aa4790710f9f23d2714a0fa311482025a978af2"
+                ),
+                "objectListSize": 778,
+                "appBinSha256": (
+                    "1ccf13fc6ebeffb6e2f3a8fb131892016558d766ad607f5a321eeedd079295d8"
+                ),
+                "appBinSize": 181696,
+                "linkLogSha256": (
+                    "60ee5c7600d757c1e3545b012ad74665ec1819fb181f169ac3beee515d95f830"
+                ),
+                "buildMode": "VENDOR_MAKE_EXPLICIT_LINK_TARGET_NO_POST",
+                "postLinkStatus": "NOT_INVOKED_BY_EXPLICIT_LINK_TARGET",
             },
         )
         contract = evidence["mapContract"]
         self.assertEqual(contract["archiveInclusionRowCount"], 303)
         self.assertEqual(
             contract["archiveInclusionRowsSha256"],
-            "f7c21e1f70956b607cb9e60cc04cb9efa08dabb8d71e6ef0a82bbcf6a0a55459",
+            "5d94797fcc83b031ef37ea0ffa71608ef4f584006955b2da5001e49bc38433b5",
         )
         self.assertEqual(contract["btstackObjectCount"], 52)
         self.assertEqual(contract["btctrlerObjectCount"], 135)
