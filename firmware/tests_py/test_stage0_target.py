@@ -14,6 +14,7 @@ PROFILE = REPO_ROOT / "firmware/board-profiles/E87-1542-STAGE0-H.json"
 BTSTACK_RUNTIME_EVIDENCE = REPO_ROOT / (
     "firmware/evidence/stage0/btstack-runtime-gate.json"
 )
+LINK_CLOSURE_EVIDENCE = REPO_ROOT / "firmware/evidence/stage0/link-closure.json"
 SUITES = REPO_ROOT / "firmware/host/suites.json"
 ADV_HEADER = REPO_ROOT / (
     "firmware/overlay/SDK/apps/watch/include/e87/e87_stage0_adv.h"
@@ -91,7 +92,7 @@ class Stage0TargetTests(unittest.TestCase):
                 "pin-reset",
                 "adc",
                 "filesystem-app-route",
-                "data-storage",
+                "data-storage-app-route",
                 "audio",
                 "update",
                 "rcsp",
@@ -106,7 +107,8 @@ class Stage0TargetTests(unittest.TestCase):
                     "behavior is non-connectable advertising only"
                 ),
                 "immutableBootSeam": (
-                    "setup_arch retains sdfile_init and syscfg_tools_init before app_main"
+                    "setup_arch retains live sdfile_init and syscfg_tools_init before "
+                    "app_main; exact fs.a and vm.a members are pinned by link evidence"
                 ),
                 "readyTupleEvidence": (
                     "btstack.a btstack_task.c.o calls "
@@ -116,7 +118,36 @@ class Stage0TargetTests(unittest.TestCase):
                 "btstackRuntimeEvidence": (
                     "firmware/evidence/stage0/btstack-runtime-gate.json"
                 ),
+                "linkClosureEvidence": (
+                    "firmware/evidence/stage0/link-closure.json"
+                ),
             },
+        )
+
+    def test_link_closure_evidence_binds_final_payload_and_lto_receipts(self) -> None:
+        self.assertTrue(LINK_CLOSURE_EVIDENCE.is_file())
+        evidence = read_json(LINK_CLOSURE_EVIDENCE)
+        self.assertEqual(evidence["evidenceId"], "E87-S0-LINK-CLOSURE")
+        artifact = evidence["qualificationArtifact"]
+        self.assertEqual(
+            artifact["sourceCommit"],
+            "e2bbef2daf19837652d3b566305e86f6e980950a",
+        )
+        self.assertEqual(artifact["buildTag"], "E2BBEF2D")
+        self.assertEqual(
+            artifact["appBinSha256"],
+            "1ccf13fc6ebeffb6e2f3a8fb131892016558d766ad607f5a321eeedd079295d8",
+        )
+        self.assertEqual(artifact["appBinSize"], 181696)
+        self.assertEqual(artifact["buildMode"], "VENDOR_MAKE_EXPLICIT_LINK_TARGET_NO_POST")
+        self.assertEqual(
+            evidence["policy"]["immutableBootSeamArchives"],
+            [
+                "cpu/br35/liba/cfg_tool.a",
+                "cpu/br35/liba/device.a",
+                "cpu/br35/liba/fs.a",
+                "cpu/br35/liba/vm.a",
+            ],
         )
 
     def test_btstack_runtime_gate_evidence_is_exact_and_hash_pinned(self) -> None:
