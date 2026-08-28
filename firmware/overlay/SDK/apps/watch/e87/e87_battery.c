@@ -21,22 +21,46 @@ static const struct e87_battery_knot discharge_curve[] = {
     {UINT32_C(4280), UINT8_C(100)}
 };
 
-bool e87_battery_filter_mv(const uint16_t *half_vbat_samples,
-                           size_t sample_count,
-                           uint32_t *out_stable_mv)
+bool e87_battery_full_mv_from_quarter_mv(uint32_t quarter_mv,
+                                         uint32_t *out_full_mv)
+{
+    uint32_t full_mv;
+
+    if (out_full_mv == NULL || quarter_mv < E87_BATTERY_FULL_MV_MIN ||
+        quarter_mv > E87_BATTERY_FULL_MV_MAX /
+            E87_BATTERY_QUARTER_DIVISOR) {
+        return false;
+    }
+
+    full_mv = quarter_mv * E87_BATTERY_QUARTER_DIVISOR;
+    if (full_mv < E87_BATTERY_FULL_MV_MIN ||
+        full_mv > E87_BATTERY_FULL_MV_MAX) {
+        return false;
+    }
+    *out_full_mv = full_mv;
+    return true;
+}
+
+bool e87_battery_filter_full_mv(const uint32_t *samples,
+                                size_t count,
+                                uint32_t *out_full_mv)
 {
     uint32_t sorted[E87_BATTERY_SAMPLE_COUNT];
     uint32_t sum = UINT32_C(0);
+    uint32_t average;
     size_t index;
 
-    if (half_vbat_samples == NULL || out_stable_mv == NULL ||
-        sample_count != E87_BATTERY_SAMPLE_COUNT) {
+    if (samples == NULL || out_full_mv == NULL ||
+        count != E87_BATTERY_SAMPLE_COUNT) {
         return false;
     }
 
     for (index = 0U; index < E87_BATTERY_SAMPLE_COUNT; index += 1U) {
-        sorted[index] =
-            (uint32_t)half_vbat_samples[index] * UINT32_C(2);
+        if (samples[index] < E87_BATTERY_FULL_MV_MIN ||
+            samples[index] > E87_BATTERY_FULL_MV_MAX) {
+            return false;
+        }
+        sorted[index] = samples[index];
     }
     for (index = 1U; index < E87_BATTERY_SAMPLE_COUNT; index += 1U) {
         const uint32_t value = sorted[index];
@@ -50,42 +74,58 @@ bool e87_battery_filter_mv(const uint16_t *half_vbat_samples,
     }
     for (index = 1U; index <= E87_BATTERY_TRIMMED_SAMPLE_COUNT;
          index += 1U) {
+        if (sum > UINT32_MAX - sorted[index]) {
+            return false;
+        }
         sum += sorted[index];
     }
 
-    *out_stable_mv = sum / E87_BATTERY_TRIMMED_SAMPLE_COUNT;
+    average = sum / E87_BATTERY_TRIMMED_SAMPLE_COUNT;
+    *out_full_mv = average;
     return true;
 }
 
-uint8_t e87_battery_percent_from_mv(uint32_t stable_mv)
+bool e87_battery_percent_from_full_mv(uint32_t full_mv,
+                                      uint8_t *out_percent)
 {
+    uint8_t percent;
     size_t index;
 
-    if (stable_mv < discharge_curve[0].millivolts) {
-        return UINT8_C(0);
+    if (out_percent == NULL || full_mv < E87_BATTERY_FULL_MV_MIN ||
+        full_mv > E87_BATTERY_FULL_MV_MAX) {
+        return false;
+    }
+
+    if (full_mv < discharge_curve[0].millivolts) {
+        percent = UINT8_C(0);
+        *out_percent = percent;
+        return true;
     }
     for (index = 1U;
          index < sizeof(discharge_curve) / sizeof(discharge_curve[0]);
          index += 1U) {
-        if (stable_mv <= discharge_curve[index].millivolts) {
+        if (full_mv <= discharge_curve[index].millivolts) {
             const struct e87_battery_knot *lower =
                 &discharge_curve[index - 1U];
             const struct e87_battery_knot *upper =
                 &discharge_curve[index];
             const uint32_t voltage_offset =
-                stable_mv - lower->millivolts;
+                full_mv - lower->millivolts;
             const uint32_t voltage_span =
                 upper->millivolts - lower->millivolts;
             const uint32_t percent_span =
                 (uint32_t)upper->percent - (uint32_t)lower->percent;
-            uint32_t percent = (uint32_t)lower->percent +
-                voltage_offset * percent_span / voltage_span;
+            percent = (uint8_t)((uint32_t)lower->percent +
+                voltage_offset * percent_span / voltage_span);
 
-            if (percent > UINT32_C(100)) {
-                percent = UINT32_C(100);
+            if (percent > UINT8_C(100)) {
+                percent = UINT8_C(100);
             }
-            return (uint8_t)percent;
+            *out_percent = percent;
+            return true;
         }
     }
-    return UINT8_C(100);
+    percent = UINT8_C(100);
+    *out_percent = percent;
+    return true;
 }
