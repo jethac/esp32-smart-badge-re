@@ -11,8 +11,12 @@ import tempfile
 from pathlib import Path
 from typing import Sequence
 
-from e87_apk import _canonical, _regular_absolute, audit_apk, write_receipt
-from e87_embed import ValidationError
+try:
+    from .e87_apk import _canonical, _regular_absolute, audit_apk, write_receipt
+    from .e87_embed import ValidationError
+except ImportError:
+    from e87_apk import _canonical, _regular_absolute, audit_apk, write_receipt
+    from e87_embed import ValidationError
 
 
 SERIAL = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")

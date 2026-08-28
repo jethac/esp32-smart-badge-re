@@ -9,6 +9,7 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
@@ -483,38 +484,49 @@ public final class MainActivity extends Activity {
         final AlertDialog[] dialogHolder = new AlertDialog[1];
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle(R.string.scan_dialog_title)
-                .setAdapter(adapter, (ignored, which) -> {
-                    if (which >= 0 && which < addresses.size()) {
-                        onCandidateSelected(
-                                dialogHolder[0], devices, addresses.get(which));
+                .setAdapter(adapter, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface ignored, int which) {
+                        if (which >= 0 && which < addresses.size()) {
+                            onCandidateSelected(
+                                    dialogHolder[0], devices, addresses.get(which));
+                        }
                     }
                 })
-                .setNegativeButton(R.string.cancel, (ignored, which) -> {
-                    // The dismiss listener owns session disposal.
-                })
+                .setNegativeButton(
+                        R.string.cancel,
+                        new DialogInterface.OnClickListener() {
+                            @Override public void onClick(
+                                    DialogInterface ignored, int which) {
+                                // The dismiss listener owns session disposal.
+                            }
+                        })
                 .create();
         dialogHolder[0] = dialog;
         dialog.setCancelable(true);
-        dialog.setOnCancelListener(ignored -> {
-            boolean currentSession = candidateDialog == dialog && candidateDevices == devices;
-            if (!currentSession) {
-                devices.clear();
-                return;
-            }
-            scanner.stop();
-            releaseCandidateSession(dialog, devices, false);
-            refreshEnvironment();
-        });
-        dialog.setOnDismissListener(ignored -> {
-            boolean currentSession = candidateDialog == dialog && candidateDevices == devices;
-            if (currentSession) scanner.stop();
-            devices.clear();
-            if (currentSession) {
-                candidateDevices = null;
-                candidateAddresses = null;
-                candidateAdapter = null;
-                candidateDialog = null;
+        dialog.setOnCancelListener(new DialogInterface.OnCancelListener() {
+            @Override public void onCancel(DialogInterface ignored) {
+                boolean currentSession = candidateDialog == dialog && candidateDevices == devices;
+                if (!currentSession) {
+                    devices.clear();
+                    return;
+                }
+                scanner.stop();
+                releaseCandidateSession(dialog, devices, false);
                 refreshEnvironment();
+            }
+        });
+        dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override public void onDismiss(DialogInterface ignored) {
+                boolean currentSession = candidateDialog == dialog && candidateDevices == devices;
+                if (currentSession) scanner.stop();
+                devices.clear();
+                if (currentSession) {
+                    candidateDevices = null;
+                    candidateAddresses = null;
+                    candidateAdapter = null;
+                    candidateDialog = null;
+                    refreshEnvironment();
+                }
             }
         });
 

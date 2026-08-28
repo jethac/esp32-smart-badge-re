@@ -70,7 +70,8 @@ def _class_descriptors(dexdump_output: str) -> tuple[str, ...]:
         raise ValidationError("dexdump output must be text")
     values = re.findall(r"Class descriptor\s+: '([^']+)'", dexdump_output)
     if (not values or len(values) > MAX_CLASSES or len(values) != len(set(values))
-            or any(DESCRIPTOR.fullmatch(value) is None for value in values)):
+            or any(DESCRIPTOR.fullmatch(value) is None for value in values)
+            or any("$$ExternalSyntheticLambda" in value for value in values)):
         raise ValidationError("authorized class descriptor inventory is invalid")
     return tuple(sorted(values))
 
@@ -122,6 +123,7 @@ def validate_surface(receipt_path: Path, source_root: Path) -> tuple[str, ...]:
             or raw_descriptors != sorted(raw_descriptors)
             or len(raw_descriptors) != len(set(raw_descriptors))
             or any(not isinstance(item, str) or DESCRIPTOR.fullmatch(item) is None
+                   or "$$ExternalSyntheticLambda" in item
                    for item in raw_descriptors)):
         raise ValidationError("reviewed class descriptor inventory is invalid")
     return tuple(raw_descriptors)

@@ -1,0 +1,38 @@
+{
+  "dexFiles": [
+    {
+      "length": 7004,
+      "name": "classes.dex",
+      "sha256": "9EAEF0F070D448B1F47FF58C7EEE57A3F3CE0157CAF5F1FD10ECBBE4CCAF876E"
+    },
+    {
+      "length": 47416,
+      "name": "classes2.dex",
+      "sha256": "C55FB40FC0609122509D8ED16077F173BEA961015B0FD7752E64C938AECB17E4"
+    },
+    {
+      "length": 79232,
+      "name": "classes3.dex",
+      "sha256": "89F3ADD662171150A110AE87BBD9037D5369D2A75BFC49DBC2843D8C78F21695"
+    },
+    {
+      "length": 5744,
+      "name": "classes4.dex",
+      "sha256": "871F3DF4AC660EF76B781D10D7711D7A0DCC5B93367A75DD9D05D2B069422E8E"
+    },
+    {
+      "length": 133360,
+      "name": "classes5.dex",
+      "sha256": "33457BE77CB7A0A85ED8BA95363EF59E5598DB00AD194BDC6C1E678C660BBAD2"
+    },
+    {
+      "length": 82160,
+      "name": "classes6.dex",
+      "sha256": "D4C59E08BB841FF372D2886890D9FE6BBE104218B473D8F415FDF8F6FC9A7652"
+    }
+  ],
+  "schemaId": "e87-android-authorized-build-v1",
+  "schemaVersion": 1,
+  "surfaceReceiptSha256": "1F6889D882149C4C0FD0DFC38A220965930E488AA9299C00BD0F878C2416DA4A",
+  "variant": "labQualified"
+}

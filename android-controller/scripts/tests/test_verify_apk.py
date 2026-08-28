@@ -9,6 +9,12 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
+
+from scripts import e87_apk
+from scripts.e87_build import build_authorization
+from scripts.e87_embed import ValidationError, _canonical
+from scripts.e87_surface import build_surface
 
 from .test_e87_embed import ReleaseFixture, ROLE_NAMES
 
@@ -39,6 +45,9 @@ XMLTREE = """N: android=http://schemas.android.com/apk/res/android
 SURFACE = json.loads((Path(__file__).resolve().parents[1]
                       / "e87-authorized-app-surface.json").read_bytes())
 AUTHORIZED_DESCRIPTORS = tuple(SURFACE["classDescriptors"])
+PRODUCTION_SOURCE_ROOT = (
+    Path(__file__).resolve().parents[2] / "app/src/main/java"
+)
 
 
 def make_dexdump(*, multidex: bool = False) -> str:
@@ -66,6 +75,11 @@ class VerifyApkTest(unittest.TestCase):
         self.dexdump = self.make_tool("dexdump", DEXDUMP)
         self.apk = self.base / "controller.apk"
         self.write_apk()
+        self.surface_receipt = self.base / "authorized-surface.json"
+        self.surface_receipt.write_bytes(_canonical(
+            build_surface(PRODUCTION_SOURCE_ROOT, DEXDUMP)))
+        self.build_receipt = self.base / "authorized-build.json"
+        self.authorize_current_apk()
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -122,19 +136,31 @@ class VerifyApkTest(unittest.TestCase):
             for name in sorted(entries):
                 archive.writestr(name, entries[name])
 
+    def authorize_current_apk(self) -> None:
+        self.build_receipt.write_bytes(_canonical(build_authorization(
+            self.apk,
+            self.surface_receipt,
+        )))
+
     def verify(self, *, aapt: Path | None = None, dexdump: Path | None = None,
                receipt: Path | None = None) -> subprocess.CompletedProcess[str]:
-        command = [
-            sys.executable, os.fspath(SCRIPT),
-            "--apk", os.fspath(self.apk),
-            "--release", os.fspath(self.release.root),
-            "--aapt", os.fspath(self.aapt if aapt is None else aapt),
-            "--dexdump", os.fspath(self.dexdump if dexdump is None else dexdump),
-        ]
-        if receipt is not None:
-            command += ["--receipt", os.fspath(receipt)]
-        return subprocess.run(command, cwd=self.base, text=True,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        try:
+            with mock.patch.object(
+                    e87_apk, "SURFACE_RECEIPT", self.surface_receipt), mock.patch.object(
+                    e87_apk, "BUILD_RECEIPT", self.build_receipt), mock.patch.object(
+                    e87_apk, "SOURCE_ROOT", PRODUCTION_SOURCE_ROOT):
+                value = e87_apk.audit_apk(
+                    self.apk,
+                    self.release.root,
+                    self.aapt if aapt is None else aapt,
+                    self.dexdump if dexdump is None else dexdump,
+                )
+            if receipt is not None:
+                e87_apk.write_receipt(receipt, value)
+            return subprocess.CompletedProcess(
+                [], 0, _canonical(value).decode("ascii"), "")
+        except (OSError, ValidationError, zipfile.BadZipFile) as error:
+            return subprocess.CompletedProcess([], 2, "", str(error))
 
     def test_audit_accepts_exact_bytes_and_emits_canonical_path_free_receipt(self) -> None:
         receipt = self.base / "apk-audit.json"
@@ -143,7 +169,8 @@ class VerifyApkTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         value = json.loads(receipt.read_bytes())
-        self.assertEqual("e87-android-apk-audit-v1", value["schemaId"])
+        self.assertEqual("e87-android-apk-audit-v2", value["schemaId"])
+        self.assertEqual(2, value["schemaVersion"])
         self.assertEqual("net.jethachan.factory_badges", value["applicationId"])
         self.assertEqual(31, value["minSdk"])
         self.assertEqual(34, value["targetSdk"])
@@ -153,6 +180,9 @@ class VerifyApkTest(unittest.TestCase):
         self.assertEqual("11.1.0.4", value["qixVersion"])
         self.assertEqual(self.release.receipt["releaseRoot"], value["releaseRoot"])
         self.assertEqual(len(AUTHORIZED_DESCRIPTORS), value["authorizedClassCount"])
+        self.assertEqual(["classes.dex"], [
+            record["name"] for record in value["authorizedDex"]])
+        self.assertRegex(value["authorizedBuildSha256"], r"^[0-9A-F]{64}$")
         self.assertRegex(value["authorizedSurfaceSha256"], r"^[0-9A-F]{64}$")
         self.assertNotIn(os.fspath(self.base), receipt.read_text(encoding="ascii"))
         self.assertEqual(
@@ -177,6 +207,7 @@ class VerifyApkTest(unittest.TestCase):
 
     def test_audit_accepts_contiguous_multidex_only_when_every_dex_is_scanned(self) -> None:
         self.write_apk(extra={"classes2.dex": b"second dex"})
+        self.authorize_current_apk()
         dump = make_dexdump(multidex=True)
 
         result = self.verify(dexdump=self.make_tool("dexdump", dump))
@@ -237,6 +268,22 @@ class VerifyApkTest(unittest.TestCase):
 """
         result = self.verify(
             dexdump=self.make_tool("dexdump", unapproved_namespace))
+        self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+
+    def test_audit_rejects_changed_code_inside_an_authorized_descriptor(self) -> None:
+        self.write_apk(mutate=(
+            "classes.dex",
+            b"changed implementation referencing android.bluetooth.BluetoothGatt",
+        ))
+        changed_dump = DEXDUMP.replace(
+            "  Superclass",
+            "  type              : 'Landroid/bluetooth/BluetoothGatt;'\n"
+            "  Superclass",
+            1,
+        )
+
+        result = self.verify(dexdump=self.make_tool("dexdump", changed_dump))
+
         self.assertEqual(2, result.returncode, result.stdout + result.stderr)
 
     def test_paths_and_receipt_are_create_only_and_absolute(self) -> None:

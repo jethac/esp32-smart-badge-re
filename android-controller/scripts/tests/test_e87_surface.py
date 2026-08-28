@@ -63,6 +63,14 @@ Class #0            -
         with self.assertRaises(ValidationError):
             validate_surface(self.receipt, self.source)
 
+        value.pop("unreviewed")
+        value["classDescriptors"] = [
+            "Lnet/jethachan/factory_badges/One$$ExternalSyntheticLambda0;"
+        ]
+        self.receipt.write_bytes(_canonical(value))
+        with self.assertRaises(ValidationError):
+            validate_surface(self.receipt, self.source)
+
     def test_generator_rejects_duplicate_or_non_application_descriptors(self) -> None:
         duplicate = self.dump + self.dump.split("Class #0", 1)[1]
         with self.assertRaises(ValidationError):
@@ -72,6 +80,14 @@ Class #0            -
                 self.source,
                 self.dump.replace(
                     "Lnet/jethachan/factory_badges/One;", "Lexample/Hidden;"),
+            )
+        with self.assertRaises(ValidationError):
+            build_surface(
+                self.source,
+                self.dump.replace(
+                    "Lnet/jethachan/factory_badges/One;",
+                    "Lnet/jethachan/factory_badges/One$$ExternalSyntheticLambda0;",
+                ),
             )
 
 

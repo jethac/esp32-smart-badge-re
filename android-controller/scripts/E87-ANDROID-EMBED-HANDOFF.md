@@ -51,7 +51,9 @@ Before installation, audit the exact APK and create a path-independent, create-o
   --receipt /absolute/new/path/apk-audit.json
 ```
 
-The APK audit also validates `scripts/e87-authorized-app-surface.json`. That committed review receipt closes both the complete production Java source inventory with per-file SHA-256 hashes and the complete allowed DEX class-descriptor inventory. Any production source/class change therefore fails the audit until a newly built APK is used to create a separate candidate receipt and that receipt diff is independently reviewed:
+The APK audit validates two committed review receipts. `scripts/e87-authorized-app-surface.json` closes the complete production Java source inventory with per-file SHA-256 hashes and the complete allowed DEX class-descriptor inventory. `scripts/e87-authorized-app-build.json` binds that exact surface-receipt hash plus every contiguous `classes*.dex` entry name, uncompressed length, and SHA-256 for the `labQualified` build. Descriptor equality alone is not authorization: any implementation-byte, source, class, DEX-layout, or toolchain-output change fails the audit.
+
+Create the source/class candidate first:
 
 ```sh
 /usr/bin/python3.11 scripts/generate-authorized-surface.py \
@@ -60,7 +62,20 @@ The APK audit also validates `scripts/e87-authorized-app-surface.json`. That com
   --output /absolute/new/path/e87-authorized-app-surface.json
 ```
 
-The generator is deliberately create-only. It does not authorize a change by itself and the committed receipt must never be refreshed merely to make an unexpected APK pass.
+Then bind the same rebuilt APK to that exact candidate surface receipt:
+
+```sh
+/usr/bin/python3.11 scripts/generate-authorized-build.py \
+  --apk /absolute/path/to/rebuilt-app-labQualified.apk \
+  --surface-receipt /absolute/new/path/e87-authorized-app-surface.json \
+  --output /absolute/new/path/e87-authorized-app-build.json
+```
+
+Both generators are deliberately create-only. They do not authorize a change by themselves. Both candidate diffs require independent review and the committed receipts must never be refreshed merely to make an unexpected APK pass.
+
+The surface generator also rejects D8 `$$ExternalSyntheticLambda` classes. Debug D8 writes nondeterministic synthetic-lambda checksum metadata into otherwise identical DEX files; explicit anonymous listeners/posters keep the exact entry hashes reproducible across clean builds instead of normalizing away bytes.
+
+The current `MaintenanceActivity` is narrowly the one-time stock-firmware transition screen and therefore self-gates on a ready embedded stock artifact before inflating UI or creating a session. This is not a rule for the later custom SAF/RCSP maintenance hub, which must remain usable without an embedded stock Qix and should be split from, or gate only, the stock-transition subsection.
 
 Installation and installed-byte verification require the Redmi's explicit `adb` serial. Both commands re-run the complete offline audit before contacting that serial, and every `adb` invocation includes `-s <serial>`:
 

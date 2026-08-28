@@ -541,7 +541,9 @@ public final class BadgeSyncServiceBoundaryTest {
         assertTrue(main > ble);
         assertTrue(runtime > main);
         assertTrue(controller > runtime);
-        assertTrue(create.contains("bleHandler::post"));
+        assertTrue(create.contains("new BadgeSyncServiceRuntime.BlePoster()"));
+        assertTrue(create.contains("return bleHandler.post(task)"));
+        assertFalse(create.contains("bleHandler::post"));
         assertTrue(create.contains(
                 "Looper.myLooper() == Looper.getMainLooper()"));
         assertTrue(create.contains("return mainHandler.post(task)"));

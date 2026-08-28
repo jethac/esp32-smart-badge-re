@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 import json
+import io
 import os
-import shutil
 import subprocess
-import sys
-import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest import mock
 
-from .test_verify_apk import VerifyApkTest
+from scripts import e87_apk, e87_device
+
+from .test_verify_apk import PRODUCTION_SOURCE_ROOT, VerifyApkTest
 
 
 INSTALL = Path(__file__).resolve().parents[1] / "install-apk.py"
@@ -65,10 +67,25 @@ class HostScriptTest(VerifyApkTest):
         ]
 
     def run_script(self, script: Path, arguments: list[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [sys.executable, os.fspath(script), *arguments],
-            cwd=self.base, env=self.host_env(), text=True,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        output = io.StringIO()
+        error = io.StringIO()
+        function = e87_device.install if script == INSTALL else e87_device.verify_installed
+        description = "test serial-scoped E87 host command"
+        with mock.patch.object(
+                e87_apk, "SURFACE_RECEIPT", self.surface_receipt), mock.patch.object(
+                e87_apk, "BUILD_RECEIPT", self.build_receipt), mock.patch.object(
+                e87_apk, "SOURCE_ROOT", PRODUCTION_SOURCE_ROOT), mock.patch.dict(
+                os.environ, self.host_env(), clear=False), redirect_stdout(
+                output), redirect_stderr(error):
+            try:
+                returncode = e87_device.run(function, description, arguments)
+            except SystemExit as exit_status:
+                returncode = int(exit_status.code)
+        return subprocess.CompletedProcess(
+            [os.fspath(script), *arguments],
+            returncode,
+            output.getvalue(),
+            error.getvalue(),
         )
 
     def test_install_requires_serial_audits_first_and_passes_exact_serial_to_adb(self) -> None:

@@ -11,6 +11,7 @@ import android.text.format.DateFormat;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -55,6 +56,10 @@ public final class MaintenanceActivity extends Activity {
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (!MaintenanceEntryGate.canEnter(getApplicationContext())) {
+            finish();
+            return;
+        }
         setContentView(R.layout.activity_maintenance);
         artifactStatus = findViewById(R.id.artifact_status);
         artifactIdentity = findViewById(R.id.artifact_identity);
@@ -68,13 +73,22 @@ public final class MaintenanceActivity extends Activity {
         mainHandler = new Handler(Looper.getMainLooper());
 
         receiveModeConfirmation.setOnCheckedChangeListener(
-                (button, checked) -> {
-                    if (!rendering) presenter.onConfirmationChanged(checked);
+                new CompoundButton.OnCheckedChangeListener() {
+                    @Override public void onCheckedChanged(
+                            CompoundButton button, boolean checked) {
+                        if (!rendering) presenter.onConfirmationChanged(checked);
+                    }
                 });
-        startTransitionButton.setOnClickListener(
-                view -> onStartTransitionClicked());
-        cancelTransitionButton.setOnClickListener(
-                view -> presenter.onCancelPressed());
+        startTransitionButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                onStartTransitionClicked();
+            }
+        });
+        cancelTransitionButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                presenter.onCancelPressed();
+            }
+        });
         presenter = new MaintenanceUiPresenter(
                 new EmbeddedFirmwareRepository(getApplicationContext()), host);
     }
@@ -197,8 +211,11 @@ public final class MaintenanceActivity extends Activity {
             candidateButton.setEnabled(
                     state.phase() == MaintenanceUiPresenter.Phase.CANDIDATES
                             && state.confirmationChecked());
-            candidateButton.setOnClickListener(
-                    view -> presenter.onCandidateSelected(peer));
+            candidateButton.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View view) {
+                    presenter.onCandidateSelected(peer);
+                }
+            });
             candidateList.addView(candidateButton);
         }
         int visibility = candidates.isEmpty() ? View.GONE : View.VISIBLE;

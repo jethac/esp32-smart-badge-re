@@ -898,7 +898,12 @@ public final class BadgeSyncService extends Service {
                 null);
         runtime = new BadgeSyncServiceRuntime(
                 initialSnapshot,
-                bleHandler::post,
+                new BadgeSyncServiceRuntime.BlePoster() {
+                    @Override
+                    public boolean post(Runnable task) {
+                        return bleHandler.post(task);
+                    }
+                },
                 new BadgeSyncServiceRuntime.MainPoster() {
                     @Override
                     public boolean isMainThread() {

@@ -27,6 +27,27 @@ public final class MaintenanceActivityBoundaryTest {
                 + "QIX_HEADER|byte\\[\\].*=).*"));
     }
 
+    @Test public void directLifecycleEntryFailsClosedBeforeAnyUiOrSessionSideEffect()
+            throws Exception {
+        String onCreate = method(read(ACTIVITY), "onCreate");
+
+        assertOrder(onCreate,
+                "super.onCreate(savedInstanceState)",
+                "if (!MaintenanceEntryGate.canEnter(getApplicationContext()))",
+                "finish()",
+                "return",
+                "setContentView(R.layout.activity_maintenance)",
+                "findViewById(R.id.artifact_status)",
+                "new Handler(Looper.getMainLooper())",
+                "new MaintenanceUiPresenter(",
+                "new EmbeddedFirmwareRepository(getApplicationContext())");
+        String beforeGate = onCreate.substring(0,
+                onCreate.indexOf("MaintenanceEntryGate.canEnter"));
+        assertFalse(beforeGate.matches("(?s).*(setContentView|findViewById|new Handler|"
+                + "new EmbeddedFirmwareRepository|new MaintenanceUiPresenter|requestPermissions|"
+                + "startScan|openSession).*"));
+    }
+
     @Test public void explicitStartChecksPermissionBeforePresenterConsumesGate() throws Exception {
         String start = method(read(ACTIVITY), "onStartTransitionClicked");
 

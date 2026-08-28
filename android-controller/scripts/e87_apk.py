@@ -13,15 +13,40 @@ import zipfile
 from pathlib import Path
 from typing import Sequence
 
-from e87_embed import (
-    INDEX_NAME,
-    RECEIPT_NAME,
-    ValidationError,
-    _canonical,
-    _sha,
-    validate_release,
-)
-from e87_surface import RECEIPT_NAME as SURFACE_RECEIPT_NAME, validate_surface
+try:
+    from .e87_build import (
+        DEX_CANDIDATE,
+        DEX_NAME,
+        RECEIPT_NAME as BUILD_RECEIPT_NAME,
+        validate_build_authorization,
+    )
+    from .e87_embed import (
+        ValidationError,
+        _canonical,
+        _sha,
+        validate_release,
+    )
+    from .e87_surface import (
+        RECEIPT_NAME as SURFACE_RECEIPT_NAME,
+        validate_surface,
+    )
+except ImportError:
+    from e87_build import (
+        DEX_CANDIDATE,
+        DEX_NAME,
+        RECEIPT_NAME as BUILD_RECEIPT_NAME,
+        validate_build_authorization,
+    )
+    from e87_embed import (
+        ValidationError,
+        _canonical,
+        _sha,
+        validate_release,
+    )
+    from e87_surface import (
+        RECEIPT_NAME as SURFACE_RECEIPT_NAME,
+        validate_surface,
+    )
 
 
 APPLICATION_ID = "net.jethachan.factory_badges"
@@ -52,6 +77,7 @@ FORBIDDEN_APP_REFERENCES = (
     "BluetoothOTAManager",
 )
 SURFACE_RECEIPT = Path(__file__).resolve().with_name(SURFACE_RECEIPT_NAME)
+BUILD_RECEIPT = Path(__file__).resolve().with_name(BUILD_RECEIPT_NAME)
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "app/src/main/java"
 
 
@@ -118,11 +144,13 @@ def _audit_zip(
                     or any(segment in ("", ".", "..") for segment in name.split("/"))):
                 if not name.endswith("/"):
                     raise ValidationError("APK has a noncanonical ZIP path")
-        if "AndroidManifest.xml" not in names or not any(
-                re.fullmatch(r"classes[0-9]*\.dex", name) for name in names):
+        dex_candidates = tuple(name for name in names if DEX_CANDIDATE.fullmatch(name))
+        if any(DEX_NAME.fullmatch(name) is None for name in dex_candidates):
+            raise ValidationError("APK contains a noncanonical DEX entry name")
+        if "AndroidManifest.xml" not in names or not dex_candidates:
             raise ValidationError("APK lacks its manifest or DEX")
         dex_entries = tuple(sorted(
-            (name for name in names if re.fullmatch(r"classes[0-9]*\.dex", name)),
+            dex_candidates,
             key=_dex_rank,
         ))
         canonical_dex_entries = tuple(
@@ -255,6 +283,11 @@ def audit_apk(apk: Path, release_root: Path, aapt: Path, dexdump: Path) -> dict[
     dexdump = _regular_absolute(dexdump, "dexdump", executable=True)
     release = validate_release(Path(release_root))
     authorized_descriptors = validate_surface(SURFACE_RECEIPT, SOURCE_ROOT)
+    authorized_dex = validate_build_authorization(
+        BUILD_RECEIPT,
+        apk,
+        SURFACE_RECEIPT,
+    )
     projection, tree_digest, dex_entries = _audit_zip(apk, release)
     min_sdk, target_sdk = _audit_badging(
         _run(aapt, ["dump", "badging", os.fspath(apk)], "aapt badging"))
@@ -271,7 +304,9 @@ def audit_apk(apk: Path, release_root: Path, aapt: Path, dexdump: Path) -> dict[
     return {
         "applicationId": APPLICATION_ID,
         "apkSha256": _sha(apk.read_bytes()),
+        "authorizedBuildSha256": _sha(BUILD_RECEIPT.read_bytes()),
         "authorizedClassCount": len(authorized_descriptors),
+        "authorizedDex": list(authorized_dex),
         "authorizedSurfaceSha256": _sha(SURFACE_RECEIPT.read_bytes()),
         "buildId": release.receipt["buildId"],
         "chip": release.receipt["chip"],
@@ -286,8 +321,8 @@ def audit_apk(apk: Path, release_root: Path, aapt: Path, dexdump: Path) -> dict[
         "qixVersion": release.receipt["qixVersion"],
         "releaseEligible": release.receipt["releaseEligible"],
         "releaseRoot": release.receipt["releaseRoot"],
-        "schemaId": "e87-android-apk-audit-v1",
-        "schemaVersion": 1,
+        "schemaId": "e87-android-apk-audit-v2",
+        "schemaVersion": 2,
         "semver": release.receipt["semver"],
         "targetSdk": target_sdk,
     }

@@ -111,7 +111,6 @@
     "Lnet/jethachan/factory_badges/sync/BadgeSyncController$Selection;",
     "Lnet/jethachan/factory_badges/sync/BadgeSyncController$SnapshotSink;",
     "Lnet/jethachan/factory_badges/sync/BadgeSyncController;",
-    "Lnet/jethachan/factory_badges/sync/BadgeSyncService$$ExternalSyntheticLambda0;",
     "Lnet/jethachan/factory_badges/sync/BadgeSyncService$1;",
     "Lnet/jethachan/factory_badges/sync/BadgeSyncService$2;",
     "Lnet/jethachan/factory_badges/sync/BadgeSyncService$3;",
@@ -120,6 +119,7 @@
     "Lnet/jethachan/factory_badges/sync/BadgeSyncService$6;",
     "Lnet/jethachan/factory_badges/sync/BadgeSyncService$7;",
     "Lnet/jethachan/factory_badges/sync/BadgeSyncService$8;",
+    "Lnet/jethachan/factory_badges/sync/BadgeSyncService$9;",
     "Lnet/jethachan/factory_badges/sync/BadgeSyncService$BleScheduler$1;",
     "Lnet/jethachan/factory_badges/sync/BadgeSyncService$BleScheduler;",
     "Lnet/jethachan/factory_badges/sync/BadgeSyncService$BoundClient;",
@@ -282,12 +282,12 @@
     "Lnet/jethachan/factory_badges/ui/AndroidStockTransitionSession$SchedulerPort$1;",
     "Lnet/jethachan/factory_badges/ui/AndroidStockTransitionSession$SchedulerPort;",
     "Lnet/jethachan/factory_badges/ui/AndroidStockTransitionSession;",
-    "Lnet/jethachan/factory_badges/ui/MainActivity$$ExternalSyntheticLambda0;",
-    "Lnet/jethachan/factory_badges/ui/MainActivity$$ExternalSyntheticLambda1;",
-    "Lnet/jethachan/factory_badges/ui/MainActivity$$ExternalSyntheticLambda2;",
-    "Lnet/jethachan/factory_badges/ui/MainActivity$$ExternalSyntheticLambda3;",
     "Lnet/jethachan/factory_badges/ui/MainActivity$10;",
     "Lnet/jethachan/factory_badges/ui/MainActivity$11;",
+    "Lnet/jethachan/factory_badges/ui/MainActivity$12;",
+    "Lnet/jethachan/factory_badges/ui/MainActivity$13;",
+    "Lnet/jethachan/factory_badges/ui/MainActivity$14;",
+    "Lnet/jethachan/factory_badges/ui/MainActivity$15;",
     "Lnet/jethachan/factory_badges/ui/MainActivity$1;",
     "Lnet/jethachan/factory_badges/ui/MainActivity$2;",
     "Lnet/jethachan/factory_badges/ui/MainActivity$3;",
@@ -308,13 +308,13 @@
     "Lnet/jethachan/factory_badges/ui/MainUiPresenter$SyncButtonKind;",
     "Lnet/jethachan/factory_badges/ui/MainUiPresenter$ViewState;",
     "Lnet/jethachan/factory_badges/ui/MainUiPresenter;",
-    "Lnet/jethachan/factory_badges/ui/MaintenanceActivity$$ExternalSyntheticLambda0;",
-    "Lnet/jethachan/factory_badges/ui/MaintenanceActivity$$ExternalSyntheticLambda1;",
-    "Lnet/jethachan/factory_badges/ui/MaintenanceActivity$$ExternalSyntheticLambda2;",
-    "Lnet/jethachan/factory_badges/ui/MaintenanceActivity$$ExternalSyntheticLambda3;",
     "Lnet/jethachan/factory_badges/ui/MaintenanceActivity$1;",
     "Lnet/jethachan/factory_badges/ui/MaintenanceActivity$2;",
     "Lnet/jethachan/factory_badges/ui/MaintenanceActivity$3;",
+    "Lnet/jethachan/factory_badges/ui/MaintenanceActivity$4;",
+    "Lnet/jethachan/factory_badges/ui/MaintenanceActivity$5;",
+    "Lnet/jethachan/factory_badges/ui/MaintenanceActivity$6;",
+    "Lnet/jethachan/factory_badges/ui/MaintenanceActivity$7;",
     "Lnet/jethachan/factory_badges/ui/MaintenanceActivity;",
     "Lnet/jethachan/factory_badges/ui/MaintenanceEntryGate;",
     "Lnet/jethachan/factory_badges/ui/MaintenanceUiPresenter$1;",
@@ -384,7 +384,7 @@
     },
     {
       "path": "net/jethachan/factory_badges/sync/BadgeSyncService.java",
-      "sha256": "12F32AC504C35D68137DB07E193C561202B857C5D5086707EFFAEA60FCB89820"
+      "sha256": "3A50B0C28282817FE142699551A9D8428F36920BDE8C31C44F20B75471493014"
     },
     {
       "path": "net/jethachan/factory_badges/sync/ReconnectPolicy.java",
@@ -456,7 +456,7 @@
     },
     {
       "path": "net/jethachan/factory_badges/ui/MainActivity.java",
-      "sha256": "9988E9070944F7B03228606CAE83619CFAEA5072FC33F5C8CB4EE2D800D7AE7D"
+      "sha256": "AE421A0454F386AC6C3A27D15C3C3B5E0B7468D06F9590ABA6315E858476EC44"
     },
     {
       "path": "net/jethachan/factory_badges/ui/MainUiPresenter.java",
@@ -464,7 +464,7 @@
     },
     {
       "path": "net/jethachan/factory_badges/ui/MaintenanceActivity.java",
-      "sha256": "514BC03D468C17232086F7B0C8AF5B4B1508B5B503DDCE5159996B743A60E8E7"
+      "sha256": "0C0A252267292C08845AFEB9E4C555B0A77439A149796BD8330B65D9BC919F75"
     },
     {
       "path": "net/jethachan/factory_badges/ui/MaintenanceEntryGate.java",
