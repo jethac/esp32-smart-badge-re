@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "requiredE87Sources": [
+    "SDK/apps/watch/e87/e87_battery.c",
+    "SDK/apps/watch/e87/e87_battery_sampler.c",
+    "SDK/apps/watch/e87/e87_br35_battery_charge.c",
+    "SDK/apps/watch/e87/e87_charge_adapter.c",
+    "SDK/apps/watch/e87/e87_charge_bridge.c",
+    "SDK/apps/watch/e87/e87_power_policy.c"
+  ],
+  "retainedLowLevelSources": [
+    "SDK/cpu/br35/charge/charge.c"
+  ],
+  "forbiddenSdkSources": [
+    "SDK/cpu/br35/charge/charge_config.c",
+    "SDK/apps/watch/battery/charge.c",
+    "SDK/apps/watch/message/adapter/battery.c"
+  ]
+}
