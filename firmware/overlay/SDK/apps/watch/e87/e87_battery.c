@@ -60,6 +60,8 @@ bool e87_battery_filter_full_mv(const uint32_t *samples,
             samples[index] > E87_BATTERY_FULL_MV_MAX) {
             return false;
         }
+    }
+    for (index = 0U; index < E87_BATTERY_SAMPLE_COUNT; index += 1U) {
         sorted[index] = samples[index];
     }
     for (index = 1U; index < E87_BATTERY_SAMPLE_COUNT; index += 1U) {
