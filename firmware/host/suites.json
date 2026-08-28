@@ -100,6 +100,27 @@
           "firmware/overlay/SDK/apps/watch/e87/e87_build_info.c"
         ]
       }
+    ],
+    "transient_renderer": [
+      {
+        "name": "transient-screens",
+        "test": "firmware/host/test_transient_renderer.c",
+        "sources": [
+          "firmware/overlay/SDK/apps/watch/e87/e87_transient_renderer.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_renderer.c",
+          "firmware/generated/e87_transient_assets.c",
+          "firmware/generated/e87_assets.c"
+        ]
+      }
+    ],
+    "ui": [
+      {
+        "name": "transient-ui-policy",
+        "test": "firmware/host/test_ui.c",
+        "sources": [
+          "firmware/overlay/SDK/apps/watch/e87/e87_ui.c"
+        ]
+      }
     ]
   }
 }

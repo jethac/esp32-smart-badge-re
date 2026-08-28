@@ -1,0 +1,461 @@
+{
+  "bolt": {
+    "alphaSha256": "f12a1745739a5cbfe2d57f057e9cf77186b5c06dacabedd81f1bf54ff085a6cb",
+    "byteCount": 324,
+    "height": 18,
+    "nonzeroBounds": [
+      3,
+      1,
+      14,
+      16
+    ],
+    "symbol": "e87_transient_asset_bolt",
+    "width": 18
+  },
+  "font": {
+    "advanceScale": 8,
+    "family": "Roboto",
+    "filter": "BOX",
+    "pixelSize": 30,
+    "rasterScale": 8,
+    "weight": 500,
+    "width": 100
+  },
+  "generatorSha256": "547ba004f0418343e16b930c4c67274fc31c5f6a3fdb9682d130e4567f22d657",
+  "glyphAlphaByteCount": 11474,
+  "glyphAlphaSha256": "eff1d93b8d46844b78d4b6ec07287492292a19f74ce5876877eb7785cfffa044",
+  "glyphOrder": [
+    " ",
+    "%",
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "A",
+    "B",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "R",
+    "S",
+    "T",
+    "U",
+    "W",
+    "Y"
+  ],
+  "glyphs": [
+    {
+      "advanceQ3": 60,
+      "alphaOffset": 0,
+      "ascii": 32,
+      "bearingX": 0,
+      "bearingY": 0,
+      "byteCount": 0,
+      "character": " ",
+      "height": 0,
+      "width": 0
+    },
+    {
+      "advanceQ3": 177,
+      "alphaOffset": 0,
+      "ascii": 37,
+      "bearingX": 1,
+      "bearingY": -22,
+      "byteCount": 460,
+      "character": "%",
+      "height": 23,
+      "width": 20
+    },
+    {
+      "advanceQ3": 136,
+      "alphaOffset": 460,
+      "ascii": 48,
+      "bearingX": 1,
+      "bearingY": -22,
+      "byteCount": 345,
+      "character": "0",
+      "height": 23,
+      "width": 15
+    },
+    {
+      "advanceQ3": 136,
+      "alphaOffset": 805,
+      "ascii": 49,
+      "bearingX": 2,
+      "bearingY": -22,
+      "byteCount": 220,
+      "character": "1",
+      "height": 22,
+      "width": 10
+    },
+    {
+      "advanceQ3": 136,
+      "alphaOffset": 1025,
+      "ascii": 50,
+      "bearingX": 1,
+      "bearingY": -22,
+      "byteCount": 330,
+      "character": "2",
+      "height": 22,
+      "width": 15
+    },
+    {
+      "advanceQ3": 136,
+      "alphaOffset": 1355,
+      "ascii": 51,
+      "bearingX": 1,
+      "bearingY": -22,
+      "byteCount": 345,
+      "character": "3",
+      "height": 23,
+      "width": 15
+    },
+    {
+      "advanceQ3": 136,
+      "alphaOffset": 1700,
+      "ascii": 52,
+      "bearingX": 0,
+      "bearingY": -22,
+      "byteCount": 374,
+      "character": "4",
+      "height": 22,
+      "width": 17
+    },
+    {
+      "advanceQ3": 136,
+      "alphaOffset": 2074,
+      "ascii": 53,
+      "bearingX": 1,
+      "bearingY": -22,
+      "byteCount": 345,
+      "character": "5",
+      "height": 23,
+      "width": 15
+    },
+    {
+      "advanceQ3": 136,
+      "alphaOffset": 2419,
+      "ascii": 54,
+      "bearingX": 1,
+      "bearingY": -22,
+      "byteCount": 345,
+      "character": "6",
+      "height": 23,
+      "width": 15
+    },
+    {
+      "advanceQ3": 136,
+      "alphaOffset": 2764,
+      "ascii": 55,
+      "bearingX": 0,
+      "bearingY": -22,
+      "byteCount": 352,
+      "character": "7",
+      "height": 22,
+      "width": 16
+    },
+    {
+      "advanceQ3": 136,
+      "alphaOffset": 3116,
+      "ascii": 56,
+      "bearingX": 1,
+      "bearingY": -22,
+      "byteCount": 345,
+      "character": "8",
+      "height": 23,
+      "width": 15
+    },
+    {
+      "advanceQ3": 136,
+      "alphaOffset": 3461,
+      "ascii": 57,
+      "bearingX": 1,
+      "bearingY": -22,
+      "byteCount": 330,
+      "character": "9",
+      "height": 22,
+      "width": 15
+    },
+    {
+      "advanceQ3": 159,
+      "alphaOffset": 3791,
+      "ascii": 65,
+      "bearingX": 0,
+      "bearingY": -22,
+      "byteCount": 440,
+      "character": "A",
+      "height": 22,
+      "width": 20
+    },
+    {
+      "advanceQ3": 152,
+      "alphaOffset": 4231,
+      "ascii": 66,
+      "bearingX": 2,
+      "bearingY": -22,
+      "byteCount": 352,
+      "character": "B",
+      "height": 22,
+      "width": 16
+    },
+    {
+      "advanceQ3": 157,
+      "alphaOffset": 4583,
+      "ascii": 68,
+      "bearingX": 2,
+      "bearingY": -22,
+      "byteCount": 374,
+      "character": "D",
+      "height": 22,
+      "width": 17
+    },
+    {
+      "advanceQ3": 136,
+      "alphaOffset": 4957,
+      "ascii": 69,
+      "bearingX": 2,
+      "bearingY": -22,
+      "byteCount": 330,
+      "character": "E",
+      "height": 22,
+      "width": 15
+    },
+    {
+      "advanceQ3": 132,
+      "alphaOffset": 5287,
+      "ascii": 70,
+      "bearingX": 2,
+      "bearingY": -22,
+      "byteCount": 308,
+      "character": "F",
+      "height": 22,
+      "width": 14
+    },
+    {
+      "advanceQ3": 163,
+      "alphaOffset": 5595,
+      "ascii": 71,
+      "bearingX": 1,
+      "bearingY": -22,
+      "byteCount": 414,
+      "character": "G",
+      "height": 23,
+      "width": 18
+    },
+    {
+      "advanceQ3": 170,
+      "alphaOffset": 6009,
+      "ascii": 72,
+      "bearingX": 2,
+      "bearingY": -22,
+      "byteCount": 396,
+      "character": "H",
+      "height": 22,
+      "width": 18
+    },
+    {
+      "advanceQ3": 68,
+      "alphaOffset": 6405,
+      "ascii": 73,
+      "bearingX": 2,
+      "bearingY": -22,
+      "byteCount": 110,
+      "character": "I",
+      "height": 22,
+      "width": 5
+    },
+    {
+      "advanceQ3": 152,
+      "alphaOffset": 6515,
+      "ascii": 75,
+      "bearingX": 2,
+      "bearingY": -22,
+      "byteCount": 396,
+      "character": "K",
+      "height": 22,
+      "width": 18
+    },
+    {
+      "advanceQ3": 130,
+      "alphaOffset": 6911,
+      "ascii": 76,
+      "bearingX": 2,
+      "bearingY": -22,
+      "byteCount": 308,
+      "character": "L",
+      "height": 22,
+      "width": 14
+    },
+    {
+      "advanceQ3": 210,
+      "alphaOffset": 7219,
+      "ascii": 77,
+      "bearingX": 2,
+      "bearingY": -22,
+      "byteCount": 506,
+      "character": "M",
+      "height": 22,
+      "width": 23
+    },
+    {
+      "advanceQ3": 170,
+      "alphaOffset": 7725,
+      "ascii": 78,
+      "bearingX": 2,
+      "bearingY": -22,
+      "byteCount": 396,
+      "character": "N",
+      "height": 22,
+      "width": 18
+    },
+    {
+      "advanceQ3": 165,
+      "alphaOffset": 8121,
+      "ascii": 79,
+      "bearingX": 1,
+      "bearingY": -22,
+      "byteCount": 437,
+      "character": "O",
+      "height": 23,
+      "width": 19
+    },
+    {
+      "advanceQ3": 153,
+      "alphaOffset": 8558,
+      "ascii": 80,
+      "bearingX": 2,
+      "bearingY": -22,
+      "byteCount": 374,
+      "character": "P",
+      "height": 22,
+      "width": 17
+    },
+    {
+      "advanceQ3": 151,
+      "alphaOffset": 8932,
+      "ascii": 82,
+      "bearingX": 2,
+      "bearingY": -22,
+      "byteCount": 374,
+      "character": "R",
+      "height": 22,
+      "width": 17
+    },
+    {
+      "advanceQ3": 145,
+      "alphaOffset": 9306,
+      "ascii": 83,
+      "bearingX": 1,
+      "bearingY": -22,
+      "byteCount": 391,
+      "character": "S",
+      "height": 23,
+      "width": 17
+    },
+    {
+      "advanceQ3": 146,
+      "alphaOffset": 9697,
+      "ascii": 84,
+      "bearingX": 0,
+      "bearingY": -22,
+      "byteCount": 396,
+      "character": "T",
+      "height": 22,
+      "width": 18
+    },
+    {
+      "advanceQ3": 157,
+      "alphaOffset": 10093,
+      "ascii": 85,
+      "bearingX": 1,
+      "bearingY": -22,
+      "byteCount": 391,
+      "character": "U",
+      "height": 23,
+      "width": 17
+    },
+    {
+      "advanceQ3": 211,
+      "alphaOffset": 10484,
+      "ascii": 87,
+      "bearingX": 0,
+      "bearingY": -22,
+      "byteCount": 572,
+      "character": "W",
+      "height": 22,
+      "width": 26
+    },
+    {
+      "advanceQ3": 147,
+      "alphaOffset": 11056,
+      "ascii": 89,
+      "bearingX": 0,
+      "bearingY": -22,
+      "byteCount": 418,
+      "character": "Y",
+      "height": 22,
+      "width": 19
+    }
+  ],
+  "lockSha256": "bf28b7cc21fc3154a3c90dc29027fb44ef212b0cc5980c86046eedd8f203f420",
+  "outputs": {
+    "c": {
+      "sha256": "ba23e72ca2fbb473234ab0f7f88ac00b78f755e3cfd8d335a29445897583e32a"
+    },
+    "header": {
+      "sha256": "92080a640ea2f3dbb8376848b7759fb47d9253c8386ae31fe2c5001ddc251134"
+    }
+  },
+  "runtimeReference": "127.0.0.1:5001/e87/asset-runtime@sha256:859689ef25f6940e22a5ea2427471596b42bb628bc8d308b5d3334721784d0ea",
+  "schemaVersion": 1,
+  "sources": {
+    "bolt": {
+      "byteLength": 335,
+      "destination": "firmware/assets/sources/bolt.svg",
+      "license": "Apache-2.0",
+      "repository": "google/material-design-icons",
+      "sha256": "13195a03d22906ca3c7a78fc6e104cb269b98ddac7dca96c424fadc623c33f3c",
+      "upstreamCommit": "e083cc60a0828fdd3b404cea0cb8a5b900e9c23e",
+      "upstreamPath": "symbols/web/bolt/materialsymbolsrounded/bolt_24px.svg"
+    },
+    "roboto": {
+      "byteLength": 488584,
+      "destination": "firmware/assets/sources/Roboto[wdth,wght].ttf",
+      "license": "OFL-1.1",
+      "sha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134"
+    }
+  },
+  "uiSpec": {
+    "sha256": "ff389bbc002c4aa4bde4bd980836fb85e65aa39c22212a73acef96cc8c6ce7af",
+    "strings": {
+      "batteryError": "BATTERY ERROR",
+      "batteryStale": "BATTERY OLD",
+      "holdHint": "HOLD BUTTON 1",
+      "maintenanceReady": "READY TO UPDATE",
+      "pairMe": "PAIR ME NOW",
+      "pairing": "PAIRING",
+      "phoneReady": "PHONE READY",
+      "releaseButton": "RELEASE BUTTON",
+      "update": "UPDATE",
+      "updateError": "UPDATE ERROR",
+      "updateWarningLine1": "KEEP HOLDING",
+      "updateWarningLine2": "FOR UPDATE",
+      "waitingForPhone": "WAITING FOR PHONE"
+    }
+  }
+}

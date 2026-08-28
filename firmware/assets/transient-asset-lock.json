@@ -1,0 +1,22 @@
+{
+  "baseAssetLockSha256": "7832996bc29c95c2a4374280cc4014af322d840b98b97fb29006399a6a774b2b",
+  "runtimeReference": "127.0.0.1:5001/e87/asset-runtime@sha256:859689ef25f6940e22a5ea2427471596b42bb628bc8d308b5d3334721784d0ea",
+  "schemaVersion": 1,
+  "sources": {
+    "bolt": {
+      "byteLength": 335,
+      "destination": "firmware/assets/sources/bolt.svg",
+      "license": "Apache-2.0",
+      "repository": "google/material-design-icons",
+      "sha256": "13195a03d22906ca3c7a78fc6e104cb269b98ddac7dca96c424fadc623c33f3c",
+      "upstreamCommit": "e083cc60a0828fdd3b404cea0cb8a5b900e9c23e",
+      "upstreamPath": "symbols/web/bolt/materialsymbolsrounded/bolt_24px.svg"
+    },
+    "roboto": {
+      "byteLength": 488584,
+      "destination": "firmware/assets/sources/Roboto[wdth,wght].ttf",
+      "license": "OFL-1.1",
+      "sha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134"
+    }
+  }
+}

@@ -1,0 +1,273 @@
+{
+  "compileArguments": [
+    "/usr/bin/x86_64-linux-gnu-gcc-12",
+    "-B/usr/bin/",
+    "-fuse-ld=bfd",
+    "-std=c11",
+    "-O0",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-pedantic",
+    "-fno-common",
+    "-DE87_HOST_TEST=1",
+    "-Wl,--build-id=none",
+    "-I",
+    "firmware/host",
+    "-I",
+    "firmware/overlay/SDK/apps/watch/include",
+    "-I",
+    "firmware/generated",
+    "firmware/host/render_transient_renderer.c",
+    "firmware/overlay/SDK/apps/watch/e87/e87_transient_renderer.c",
+    "firmware/overlay/SDK/apps/watch/e87/e87_renderer.c",
+    "firmware/generated/e87_transient_assets.c",
+    "firmware/generated/e87_assets.c",
+    "-o",
+    "$TMP/render_transient_renderer"
+  ],
+  "compiler": {
+    "byteLength": 1301496,
+    "executable": "/usr/bin/x86_64-linux-gnu-gcc-12",
+    "sha256": "75e997ec62297a6484f491bae28ab0ccb489daba23e398fd10fe68e9e6f0def8"
+  },
+  "dimensions": {
+    "height": 360,
+    "width": 360
+  },
+  "inputs": {
+    "firmware/assets/transient-ui.json": "ff389bbc002c4aa4bde4bd980836fb85e65aa39c22212a73acef96cc8c6ce7af",
+    "firmware/generated/e87_assets.c": "8c7ca8fc4b0d0db260e109d31b218d08c7ecc480bfe7fa202701344d3f34c664",
+    "firmware/generated/e87_assets.h": "3932c79d65a78c8bfea74427d3f92e535d2bef55876a990f6aa136e674039979",
+    "firmware/generated/e87_transient_assets.c": "ba23e72ca2fbb473234ab0f7f88ac00b78f755e3cfd8d335a29445897583e32a",
+    "firmware/generated/e87_transient_assets.h": "92080a640ea2f3dbb8376848b7759fb47d9253c8386ae31fe2c5001ddc251134",
+    "firmware/generated/transient-assets-manifest.json": "13bd2ebc4ab1308e9af00354ed4cc15681b1dcc4f1f78335bbaf205d66901efc",
+    "firmware/host/render_transient_renderer.c": "79c09ee0ac64aab48efa9e7f5acfbe21514ddc67fcc2f7f33f4afdf01af8a71f",
+    "firmware/overlay/SDK/apps/watch/e87/e87_renderer.c": "62b966f4560ad91bcb3d7902faafe0df518f8ed4e3a7b57fd90b3712df5dbe40",
+    "firmware/overlay/SDK/apps/watch/e87/e87_transient_renderer.c": "ac92b6218a5a93c76b161196aaa77066aef1ff20a7f3ffd86dfa0e2041d1432a",
+    "firmware/overlay/SDK/apps/watch/include/e87/e87_renderer.h": "932acb0d22b30ee8ad339f2179ec4ad5d0207cbac9fa139efc9d2a5789f3fe8b",
+    "firmware/overlay/SDK/apps/watch/include/e87/e87_state.h": "5beef9cc0d572de835fb461d332e4831dbc49a80a7e2a14f4ee77f573b1c1a6e",
+    "firmware/overlay/SDK/apps/watch/include/e87/e87_transient_renderer.h": "48163699527378739ded592781972a50de898607cb75a59bceb64d67ac01f1d9",
+    "firmware/overlay/SDK/apps/watch/include/e87/e87_types.h": "9060fd7b78fe9d02b95de4662b2e04fc42f8ece6d50b9059b2c0ffe285a6ff3e",
+    "firmware/overlay/SDK/apps/watch/include/e87/e87_ui.h": "da8e9667fb49c1ab8c3987dee873b2737c560f97bd13f09294fcfb10af36d332",
+    "firmware/tools/render-transient-goldens.py": "2c0b6017c835bf3f3344f70c70cf7c58b570c5c48792a482d35583c99f7aff6a"
+  },
+  "linker": {
+    "byteLength": 1336592,
+    "probeArguments": [
+      "/usr/bin/x86_64-linux-gnu-gcc-12",
+      "-B/usr/bin/",
+      "-fuse-ld=bfd",
+      "-print-prog-name=ld"
+    ],
+    "probeStdout": "/usr/bin/ld.bfd\n",
+    "resolved": "/usr/bin/x86_64-linux-gnu-ld.bfd",
+    "sha256": "f6d71a1bcd45764550a42dfaa179bc43b63ee879ec6f875bfd39fca013515da7"
+  },
+  "pillow": {
+    "distribution": "Pillow",
+    "version": "12.2.0",
+    "wheelSha256": "e74473c875d78b8e9d5da2a70f7099549f9eb37ded4e2f6a463e60125bccd176"
+  },
+  "pixelFormat": "RGB565-word-little-endian",
+  "runtimeReference": "127.0.0.1:5001/e87/asset-runtime@sha256:859689ef25f6940e22a5ea2427471596b42bb628bc8d308b5d3334721784d0ea",
+  "scenes": [
+    {
+      "name": "unpaired",
+      "png": "unpaired.png",
+      "pngSha256": "6c872ef46ac6cdbefa5c9164d26ad082bd7c58509f5b35a62adb978bb5afd45b",
+      "rawByteCount": 259200,
+      "rawSha256": "a689c856a99d257a791d15201bd46a2d1d2f5003419cc27a61637a1a4bd841a9"
+    },
+    {
+      "name": "waiting",
+      "png": "waiting.png",
+      "pngSha256": "28ed1a53cebbbfbbf661f44e8b17ad3a8f6c09022f5218551596ae370ab34b00",
+      "rawByteCount": 259200,
+      "rawSha256": "3f3ea7b5b0af60f82c4eee2d0ff03c4dbe65aedda118ef76488098484bf33daa"
+    },
+    {
+      "name": "pairing-060",
+      "png": "pairing-060.png",
+      "pngSha256": "dc5ca17dbe3a6cf9861871a7bbd5adf2b81a3502820055b090c9a1827297aa69",
+      "rawByteCount": 259200,
+      "rawSha256": "0e1d3c9dfa200d60a29c9bc3ddd617fd5061e556276669c097c91e1a82742b6c"
+    },
+    {
+      "name": "pairing-001",
+      "png": "pairing-001.png",
+      "pngSha256": "5a074996462e34ff50f4d5e87a2031e2f7bf5abe3dc7081248f6e5fdce2db544",
+      "rawByteCount": 259200,
+      "rawSha256": "bf4b8f0f286f989b5a104b20a86e3c5c8216bf78039575be52f5f7a902ba29f1"
+    },
+    {
+      "name": "warning-003",
+      "png": "warning-003.png",
+      "pngSha256": "b2cf877438ece8469d7e3d37f43d4a071c30b6ab692c4d3ada285a62d3972ec3",
+      "rawByteCount": 259200,
+      "rawSha256": "30522bfeb122054b8fc21890c78da59dc9a2fdfdcf1a8cde73f7dc29b597aa2d"
+    },
+    {
+      "name": "warning-002",
+      "png": "warning-002.png",
+      "pngSha256": "a9632e07ab7660530b2a068626cc91db090fbac8d41b79695a18f806d118e3b7",
+      "rawByteCount": 259200,
+      "rawSha256": "736e0bc072cec4a123526ba6d1f656a9e3ea1742bc66ed0078aa9e251caaed8f"
+    },
+    {
+      "name": "warning-001",
+      "png": "warning-001.png",
+      "pngSha256": "93d44d8299c118c71fdb14d93796396d86629aad674757afdf1c38576f109534",
+      "rawByteCount": 259200,
+      "rawSha256": "287cfa6c5484c002246e000ed0b7bb75250a8697863e454ee510439618aa9e20"
+    },
+    {
+      "name": "battery-face-000",
+      "png": "battery-face-000.png",
+      "pngSha256": "41ddbb602b145047dd7f4c00cc68db26c7f6bf92ddd9ea9e504b878e0fbfe713",
+      "rawByteCount": 259200,
+      "rawSha256": "3348e07161e0fcda38da665f4961e412b4308195bbfc79d6cdbf4b76cb39a9b7"
+    },
+    {
+      "name": "battery-face-001",
+      "png": "battery-face-001.png",
+      "pngSha256": "7314ce2d338af34ed8ae22b991444b4c48adc350a136155e6a46161179250a41",
+      "rawByteCount": 259200,
+      "rawSha256": "962abae94ac9cff72c1823a299cf6ed32ffddf3565edff1650e56c782959b317"
+    },
+    {
+      "name": "battery-face-050",
+      "png": "battery-face-050.png",
+      "pngSha256": "ea91c997ca207b525d95bb0f5740e1550041c3f558d6cc486e2b58857dd56ee2",
+      "rawByteCount": 259200,
+      "rawSha256": "901faf3dd61c6055c26150d80a1f56b3b6e24895c33a3a743b6fd68a2aa412ed"
+    },
+    {
+      "name": "battery-face-099",
+      "png": "battery-face-099.png",
+      "pngSha256": "c7acff012068dd584c035a77b8c906bb8f49372bbff44503efebdd8279ccb9eb",
+      "rawByteCount": 259200,
+      "rawSha256": "314b5f80326302bcf8b7fe6b5ede92106273ba6aea083adffad43829d80a2cad"
+    },
+    {
+      "name": "battery-face-100",
+      "png": "battery-face-100.png",
+      "pngSha256": "50e2d2a9906b862ed60cfacbea922750d983cbf2d491179be4cd5c517408c64c",
+      "rawByteCount": 259200,
+      "rawSha256": "dcfb9efe937664e6d05c76624eaeb1281b633b4de46ac46c52294c51bc4b2a2f"
+    },
+    {
+      "name": "battery-face-050-charging",
+      "png": "battery-face-050-charging.png",
+      "pngSha256": "6957d018f92cac0a01fe196893a0ef342d1259fc14e342fb10fa02d6a635aed0",
+      "rawByteCount": 259200,
+      "rawSha256": "75a01b8790326b4cd3eaa4d38a5f5f1b5c91f0079be216e32677722e08c4d573"
+    },
+    {
+      "name": "battery-face-100-full",
+      "png": "battery-face-100-full.png",
+      "pngSha256": "e8a150a7fe75656f1560e101eb38ac7544ad24b6df53713a7856e9e62186e779",
+      "rawByteCount": 259200,
+      "rawSha256": "69e1015f8e73170d487f653a368ee6fb18908e37060fbdd2f29bb86b2851d874"
+    },
+    {
+      "name": "battery-stale-037",
+      "png": "battery-stale-037.png",
+      "pngSha256": "fb662994ec8fcb8888c92abf1f4babc5494fe91f4863b571f94274b6a1cd99e5",
+      "rawByteCount": 259200,
+      "rawSha256": "8faf74a43284942475cbc7a80ce295be2ff836b9c481b86a05a3b790a41435cc"
+    },
+    {
+      "name": "battery-fault",
+      "png": "battery-fault.png",
+      "pngSha256": "b1dd28d0339a1e17ce90a9fe38bb511e0def65b30cc0ce419e10122dc01f6c32",
+      "rawByteCount": 259200,
+      "rawSha256": "01d73730601e87cdec333123a3212b0169068db7ad051805c6b359cf939b7434"
+    },
+    {
+      "name": "maintenance-release-valid-050",
+      "png": "maintenance-release-valid-050.png",
+      "pngSha256": "92da4acb4e634c289599370d55f0cd1ea1c9bec6ca64c84b792c41fe0589f0da",
+      "rawByteCount": 259200,
+      "rawSha256": "223f6f584899d92761e96decde613bb52680db0688c6f43d14b4de8fa2f3d8c9"
+    },
+    {
+      "name": "maintenance-waiting-valid-050",
+      "png": "maintenance-waiting-valid-050.png",
+      "pngSha256": "cc9a8b2cb1c992bbfd418d45dff88b0aa0862e657ebe0f9d27d0f8a9a219e50b",
+      "rawByteCount": 259200,
+      "rawSha256": "0ff3e44a43748f1a9595932ee836d737203f11e33b92778147be93ed719132c2"
+    },
+    {
+      "name": "maintenance-ready-valid-050",
+      "png": "maintenance-ready-valid-050.png",
+      "pngSha256": "7035a050b8c671dfeff87cfea529b2369740d1cc01e44f794827f35722a47560",
+      "rawByteCount": 259200,
+      "rawSha256": "36f15eb8c9c27f9ca293234f358ffeacb7825a8574d0045e585f937facf1be49"
+    },
+    {
+      "name": "maintenance-update-000",
+      "png": "maintenance-update-000.png",
+      "pngSha256": "9f4484ae27dd963f81b76729df3022b1ee7fb86a019a3e82ffaa34b636e46f0a",
+      "rawByteCount": 259200,
+      "rawSha256": "aff0e06e36db3e34540321f6a1d667ee5bc87573d7e8b742544727a4e489590b"
+    },
+    {
+      "name": "maintenance-update-001",
+      "png": "maintenance-update-001.png",
+      "pngSha256": "8568df74d1973a1d031564d3c4ef6d3b8ea087205f9977a16e8d906d08de6d17",
+      "rawByteCount": 259200,
+      "rawSha256": "ca3b3cde5e65d421bc75c8ff300ef81b362e9790393cc3706285f5d823000024"
+    },
+    {
+      "name": "maintenance-update-050",
+      "png": "maintenance-update-050.png",
+      "pngSha256": "8ee29709a660fb8c8c682c5ed97155341e8f9b5decb1873ae6a307a52abe7b59",
+      "rawByteCount": 259200,
+      "rawSha256": "d3107b01525995c8b674d70958ca66fb5ca52f27862dc0482d2582054aaa659f"
+    },
+    {
+      "name": "maintenance-update-099",
+      "png": "maintenance-update-099.png",
+      "pngSha256": "385585ab69b77ae3b54549b07e0a75635b3fe4bd85a9fea0c9a03706f6edaabb",
+      "rawByteCount": 259200,
+      "rawSha256": "61e64507698feda4cf954f2dbc9118aca915b73d4ffd87d3524341c3aced767f"
+    },
+    {
+      "name": "maintenance-update-100",
+      "png": "maintenance-update-100.png",
+      "pngSha256": "186f76c1abcb022784c1914c8d67c4d6fda56add31e01a1663180cfc103d262e",
+      "rawByteCount": 259200,
+      "rawSha256": "b5ae556fee9cfee359b84f35b98e358a0402ebf94872c3c13acbfc15072340b4"
+    },
+    {
+      "name": "maintenance-error",
+      "png": "maintenance-error.png",
+      "pngSha256": "18bf46bc4ef2ade107ef81126c68563e2becffaf5a9146380880497bcaa32338",
+      "rawByteCount": 259200,
+      "rawSha256": "d023d021ec901e52a4291f41c56fbcdf48177e9e01501eed7003015089d689c7"
+    },
+    {
+      "name": "maintenance-stale-037",
+      "png": "maintenance-stale-037.png",
+      "pngSha256": "b61f7dc13665f0bec37f3b543082bbb0c73f2beef819fb083fb52f6b710dd911",
+      "rawByteCount": 259200,
+      "rawSha256": "204f1020a890dfb46d3eba591b5595749367e9263187834d8a024239151c2257"
+    },
+    {
+      "name": "maintenance-fault",
+      "png": "maintenance-fault.png",
+      "pngSha256": "69a099caefe04b0bcb5d3d83699545e8340ab85906fb6fea162fdf174818bc39",
+      "rawByteCount": 259200,
+      "rawSha256": "df5496482b216a3fee678548849c1a41465e01233669e2681f4a92b6e733fdf2"
+    },
+    {
+      "name": "recovery-release-valid-050",
+      "png": "recovery-release-valid-050.png",
+      "pngSha256": "92da4acb4e634c289599370d55f0cd1ea1c9bec6ca64c84b792c41fe0589f0da",
+      "rawByteCount": 259200,
+      "rawSha256": "223f6f584899d92761e96decde613bb52680db0688c6f43d14b4de8fa2f3d8c9"
+    }
+  ],
+  "schemaVersion": 1
+}

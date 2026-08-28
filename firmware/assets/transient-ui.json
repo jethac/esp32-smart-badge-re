@@ -1,0 +1,80 @@
+{
+  "batteryOverlay": {
+    "bigGlyphScale": 2,
+    "blackAlpha": 191,
+    "durationMs": 2500
+  },
+  "bolt": {
+    "height": 18,
+    "topOffsetFromBaselineY": -31,
+    "width": 18
+  },
+  "display": {
+    "height": 360,
+    "stripRows": 30,
+    "width": 360
+  },
+  "font": {
+    "advanceScale": 8,
+    "family": "Roboto",
+    "filter": "BOX",
+    "pixelSize": 30,
+    "rasterScale": 8,
+    "weight": 500,
+    "width": 100
+  },
+  "glyphs": " %0123456789ABDEFGHIKLMNOPRSTUWY",
+  "layout": {
+    "battery": {
+      "bigBaselineY": 195,
+      "boltGap": 8,
+      "statusBaselineY": 245
+    },
+    "maintenance": {
+      "batteryBaselineY": 210,
+      "batteryStatusBaselineY": 255,
+      "phaseBaselineY": 145,
+      "progressBaselineY": 300,
+      "titleBaselineY": 105
+    },
+    "pairMe": {
+      "hintBaselineY": 215,
+      "primaryBaselineY": 170
+    },
+    "pairing": {
+      "countdownBaselineY": 220,
+      "countdownGlyphScale": 2,
+      "primaryBaselineY": 165
+    },
+    "updateWarning": {
+      "countdownBaselineY": 240,
+      "countdownGlyphScale": 2,
+      "line1BaselineY": 145,
+      "line2BaselineY": 185
+    },
+    "waiting": {
+      "primaryBaselineY": 190
+    }
+  },
+  "palette": {
+    "background": "#000000",
+    "primary": "#FFFFFF",
+    "secondary": "#BFC3C7"
+  },
+  "schemaVersion": 1,
+  "strings": {
+    "batteryError": "BATTERY ERROR",
+    "batteryStale": "BATTERY OLD",
+    "holdHint": "HOLD BUTTON 1",
+    "maintenanceReady": "READY TO UPDATE",
+    "pairMe": "PAIR ME NOW",
+    "pairing": "PAIRING",
+    "phoneReady": "PHONE READY",
+    "releaseButton": "RELEASE BUTTON",
+    "update": "UPDATE",
+    "updateError": "UPDATE ERROR",
+    "updateWarningLine1": "KEEP HOLDING",
+    "updateWarningLine2": "FOR UPDATE",
+    "waitingForPhone": "WAITING FOR PHONE"
+  }
+}
