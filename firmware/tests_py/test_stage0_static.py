@@ -51,8 +51,10 @@ REQUIRED_TARGET_ARCHIVES = {
     "cpu/br35/liba/cbuf.a",
     "cpu/br35/liba/cfg_tool.a",
     "cpu/br35/liba/crypto_toolbox_Osize.a",
+    "cpu/br35/liba/device.a",
     "cpu/br35/liba/fs.a",
     "cpu/br35/liba/lib_ccm_cipher.a",
+    "cpu/br35/liba/printf.a",
     "cpu/br35/liba/vm.a",
 }
 FORBIDDEN_TARGET_SOURCES = {
