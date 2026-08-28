@@ -18,7 +18,9 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
@@ -67,6 +69,27 @@ public final class StockQixGattTransportTest {
         assertTrue(source.contains("adapter.startWrite"));
         assertTrue(source.contains("adapter.deliverExactFd02Write"));
         assertTrue(source.contains("adapter.deliverNotification"));
+        int registryGate = source.indexOf("recordScannedDevice(scannedDevices");
+        assertTrue(registryGate >= 0);
+        assertTrue(source.indexOf("postCallback(", registryGate) > registryGate);
+    }
+
+    @Test public void scanDeviceRegistryCapsNewAddressesButRefreshesKnownAddresses() {
+        Map<String, Object> devices = new HashMap<String, Object>();
+        Object first = new Object();
+        for (int index = 0; index < StockTransitionController.MAX_CANDIDATES; index++) {
+            assertTrue(StockQixGattTransport.recordScannedDevice(
+                    devices, String.valueOf(index), index == 0 ? first : new Object()));
+        }
+        assertEquals(StockTransitionController.MAX_CANDIDATES, devices.size());
+
+        Object refreshed = new Object();
+        assertTrue(StockQixGattTransport.recordScannedDevice(devices, "0", refreshed));
+        assertSame(refreshed, devices.get("0"));
+        assertFalse(StockQixGattTransport.recordScannedDevice(
+                devices, "overflow", new Object()));
+        assertEquals(StockTransitionController.MAX_CANDIDATES, devices.size());
+        assertFalse(devices.containsKey("overflow"));
     }
 
     @Test public void androidImportsAreConfinedToTransportAndNoNormalOrAarTypesLeakIn()
