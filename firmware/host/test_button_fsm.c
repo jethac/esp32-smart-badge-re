@@ -377,7 +377,7 @@ E87_TEST(ambiguous_requires_stable_none_rearm)
         UINT32_C(2999), UINT32_C(7000), UINT32_C(10000)
     };
     static const uint32_t ambiguous_actions[] = {
-        E87_ACTION_TAP_BATTERY,
+        E87_ACTION_NONE,
         E87_ACTION_OPEN_PAIRING | E87_ACTION_UPDATE_WARNING |
             E87_ACTION_END_UPDATE_WARNING,
         E87_ACTION_OPEN_PAIRING | E87_ACTION_UPDATE_WARNING |
@@ -475,6 +475,90 @@ E87_TEST(ambiguous_requires_stable_none_rearm)
                       e87_button_step(&fsm, UINT32_C(63000),
                                       E87_KEY_BUTTON1));
     E87_ASSERT_TRUE(fsm.private_rearm_required);
+}
+
+E87_TEST(button1_prethreshold_ambiguous_aborts_without_tap_and_rearms)
+{
+    struct e87_button_fsm fsm = fresh_button();
+
+    E87_ASSERT_EQ_U32(E87_ACTION_NONE,
+                      e87_button_step(&fsm, UINT32_C(100),
+                                      E87_KEY_BUTTON1));
+    E87_ASSERT_EQ_U32(E87_ACTION_NONE,
+                      e87_button_step(&fsm, UINT32_C(3099),
+                                      E87_KEY_AMBIGUOUS));
+    E87_ASSERT_TRUE(!fsm.private_button1_down);
+    E87_ASSERT_TRUE(!fsm.private_pairing_active);
+    E87_ASSERT_TRUE(fsm.private_rearm_required);
+    E87_ASSERT_EQ_U32(E87_ACTION_NONE,
+                      e87_button_step(&fsm, UINT32_C(3100),
+                                      E87_KEY_BUTTON1));
+    E87_ASSERT_EQ_U32(E87_ACTION_NONE,
+                      e87_button_step(&fsm, UINT32_C(3101),
+                                      E87_KEY_BUTTON2));
+    E87_ASSERT_TRUE(fsm.private_rearm_required);
+    E87_ASSERT_EQ_U32(E87_ACTION_NONE,
+                      e87_button_step(&fsm, UINT32_C(3102),
+                                      E87_KEY_NONE));
+    E87_ASSERT_TRUE(!fsm.private_rearm_required);
+    E87_ASSERT_EQ_U32(E87_ACTION_NONE,
+                      e87_button_step(&fsm, UINT32_C(3103),
+                                      E87_KEY_BUTTON1));
+    E87_ASSERT_EQ_U32(E87_ACTION_TAP_BATTERY,
+                      e87_button_step(&fsm, UINT32_C(3104),
+                                      E87_KEY_NONE));
+}
+
+E87_TEST(direct_button_changes_abort_at_2999_preserve_3000_and_rearm)
+{
+    struct e87_button_fsm fsm = fresh_button();
+
+    E87_ASSERT_EQ_U32(E87_ACTION_NONE,
+                      e87_button_step(&fsm, UINT32_C(1000),
+                                      E87_KEY_BUTTON1));
+    E87_ASSERT_EQ_U32(E87_ACTION_NONE,
+                      e87_button_step(&fsm, UINT32_C(3999),
+                                      E87_KEY_BUTTON2));
+    E87_ASSERT_TRUE(fsm.private_rearm_required);
+    E87_ASSERT_TRUE(!fsm.private_button1_down);
+    E87_ASSERT_TRUE(!fsm.private_button2_down);
+    E87_ASSERT_EQ_U32(E87_ACTION_NONE,
+                      e87_button_step(&fsm, UINT32_C(4000),
+                                      E87_KEY_BUTTON1));
+    E87_ASSERT_EQ_U32(E87_ACTION_NONE,
+                      e87_button_step(&fsm, UINT32_C(4001),
+                                      E87_KEY_NONE));
+    E87_ASSERT_EQ_U32(E87_ACTION_SLEEP_TOGGLE,
+                      e87_button_step(&fsm, UINT32_C(4002),
+                                      E87_KEY_BUTTON2));
+
+    fsm = fresh_button();
+    E87_ASSERT_EQ_U32(E87_ACTION_NONE,
+                      e87_button_step(&fsm, UINT32_C(5000),
+                                      E87_KEY_BUTTON1));
+    E87_ASSERT_EQ_U32(E87_ACTION_OPEN_PAIRING,
+                      e87_button_step(&fsm, UINT32_C(8000),
+                                      E87_KEY_BUTTON2));
+    E87_ASSERT_TRUE(fsm.private_pairing_active);
+    E87_ASSERT_TRUE(fsm.private_rearm_required);
+    E87_ASSERT_EQ_U32(E87_ACTION_NONE,
+                      e87_button_step(&fsm, UINT32_C(8001),
+                                      E87_KEY_NONE));
+
+    fsm = fresh_button();
+    E87_ASSERT_EQ_U32(E87_ACTION_SLEEP_TOGGLE,
+                      e87_button_step(&fsm, UINT32_C(9000),
+                                      E87_KEY_BUTTON2));
+    E87_ASSERT_EQ_U32(E87_ACTION_NONE,
+                      e87_button_step(&fsm, UINT32_C(9001),
+                                      E87_KEY_BUTTON1));
+    E87_ASSERT_TRUE(fsm.private_rearm_required);
+    E87_ASSERT_TRUE(!fsm.private_button1_down);
+    E87_ASSERT_TRUE(!fsm.private_button2_down);
+    E87_ASSERT_EQ_U32(E87_ACTION_NONE,
+                      e87_button_step(&fsm, UINT32_C(9002),
+                                      E87_KEY_NONE));
+    E87_ASSERT_TRUE(!fsm.private_rearm_required);
 }
 
 E87_TEST(button2_emits_one_semantic_toggle_per_press)
@@ -654,7 +738,7 @@ E87_TEST(button_action_order_is_total_and_b1_to_b2_requires_rearm)
         UINT32_C(2999), UINT32_C(7000), UINT32_C(10000)
     };
     static const uint32_t transition_masks[] = {
-        E87_ACTION_TAP_BATTERY,
+        E87_ACTION_NONE,
         E87_ACTION_OPEN_PAIRING | E87_ACTION_UPDATE_WARNING |
             E87_ACTION_END_UPDATE_WARNING,
         E87_ACTION_OPEN_PAIRING | E87_ACTION_UPDATE_WARNING |
@@ -854,6 +938,8 @@ static const struct e87_test_case button_cases[] = {
     E87_TEST_CASE(button_thresholds_survive_uint32_wrap),
     E87_TEST_CASE(pairing_expiry_survives_uint32_wrap),
     E87_TEST_CASE(ambiguous_requires_stable_none_rearm),
+    E87_TEST_CASE(button1_prethreshold_ambiguous_aborts_without_tap_and_rearms),
+    E87_TEST_CASE(direct_button_changes_abort_at_2999_preserve_3000_and_rearm),
     E87_TEST_CASE(button2_emits_one_semantic_toggle_per_press),
     E87_TEST_CASE(button_has_no_software_16_second_action_and_handles_nulls),
     E87_TEST_CASE(button_view_reports_exact_pairing_countdown_without_mutation),

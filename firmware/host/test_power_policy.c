@@ -329,8 +329,8 @@ E87_TEST(manual_sleep_emits_exact_two_phase_order)
         E87_POWER_COMMAND_WAIT_LCD_IDLE
     };
     static const enum e87_power_command second_phase[] = {
-        E87_POWER_COMMAND_PANEL_SLEEP,
         E87_POWER_COMMAND_BACKLIGHT_OFF,
+        E87_POWER_COMMAND_PANEL_SLEEP,
         E87_POWER_COMMAND_BLE_STOP_DISCONNECT,
         E87_POWER_COMMAND_ARM_SHARED_LADDER_WAKE,
         E87_POWER_COMMAND_ENTER_LOW_POWER
@@ -370,6 +370,66 @@ E87_TEST(manual_sleep_emits_exact_two_phase_order)
     }
     E87_ASSERT_EQ_U32(E87_POWER_STATE_ASLEEP, policy.private_state);
     E87_ASSERT_TRUE(policy.private_external_power_online);
+}
+
+E87_TEST(sleep_darkens_before_panel_once_and_wake_restores_light_last)
+{
+    static const enum e87_power_command sleep_order[] = {
+        E87_POWER_COMMAND_BACKLIGHT_OFF,
+        E87_POWER_COMMAND_PANEL_SLEEP,
+        E87_POWER_COMMAND_BLE_STOP_DISCONNECT,
+        E87_POWER_COMMAND_ARM_SHARED_LADDER_WAKE,
+        E87_POWER_COMMAND_ENTER_LOW_POWER
+    };
+    static const enum e87_power_command wake_order[] = {
+        E87_POWER_COMMAND_DISPLAY_EXIT_SLEEP,
+        E87_POWER_COMMAND_REDRAW,
+        E87_POWER_COMMAND_BACKLIGHT_ON,
+        E87_POWER_COMMAND_BLE_START
+    };
+    struct e87_power_policy policy;
+    struct fake_sink sink;
+    struct e87_power_event event;
+    size_t index;
+
+    E87_ASSERT_TRUE(init_policy(&policy, &sink, false));
+    event = power_event(E87_POWER_EVENT_MANUAL_SLEEP, false,
+                        E87_POWER_WAKE_NONE);
+    E87_ASSERT_EQ_U32(E87_POWER_RESULT_WAITING_FOR_LCD,
+                      accept_step(&policy, &sink, &event));
+    event.type = E87_POWER_EVENT_LCD_IDLE;
+    E87_ASSERT_EQ_U32(E87_POWER_RESULT_ASLEEP,
+                      accept_step(&policy, &sink, &event));
+    E87_ASSERT_EQ_U32(sizeof(sleep_order) / sizeof(sleep_order[0]),
+                      step_command_count(&sink));
+    for (index = 0U; index < sizeof(sleep_order) / sizeof(sleep_order[0]);
+         index += 1U) {
+        E87_ASSERT_EQ_U32(sleep_order[index],
+                          sink.commands[sink.step_start + index]);
+    }
+
+    E87_ASSERT_EQ_U32(E87_POWER_RESULT_NO_CHANGE,
+                      accept_step(&policy, &sink, &event));
+    E87_ASSERT_EQ_U32(UINT32_C(0), step_command_count(&sink));
+
+    event.type = E87_POWER_EVENT_GPIO_WAKE;
+    E87_ASSERT_EQ_U32(E87_POWER_RESULT_WAITING_FOR_WAKE_CLASSIFICATION,
+                      accept_step(&policy, &sink, &event));
+    E87_ASSERT_EQ_U32(UINT32_C(1), step_command_count(&sink));
+    E87_ASSERT_EQ_U32(E87_POWER_COMMAND_RESUME_ADC,
+                      sink.commands[sink.step_start]);
+
+    event.type = E87_POWER_EVENT_WAKE_CLASSIFIED;
+    event.wake_classification = E87_POWER_WAKE_BUTTON2;
+    E87_ASSERT_EQ_U32(E87_POWER_RESULT_ACTIVE,
+                      accept_step(&policy, &sink, &event));
+    E87_ASSERT_EQ_U32(sizeof(wake_order) / sizeof(wake_order[0]),
+                      step_command_count(&sink));
+    for (index = 0U; index < sizeof(wake_order) / sizeof(wake_order[0]);
+         index += 1U) {
+        E87_ASSERT_EQ_U32(wake_order[index],
+                          sink.commands[sink.step_start + index]);
+    }
 }
 
 E87_TEST(gpio_wake_waits_and_only_b2_restores_ui_then_ble)
@@ -681,6 +741,7 @@ static const struct e87_test_case power_policy_cases[] = {
     E87_TEST_CASE(plugged_boot_and_charger_events_stay_active),
     E87_TEST_CASE(charger_events_never_preempt_any_ui_phase),
     E87_TEST_CASE(manual_sleep_emits_exact_two_phase_order),
+    E87_TEST_CASE(sleep_darkens_before_panel_once_and_wake_restores_light_last),
     E87_TEST_CASE(gpio_wake_waits_and_only_b2_restores_ui_then_ble),
     E87_TEST_CASE(non_b2_and_noise_rearm_without_display_backlight_or_ble),
     E87_TEST_CASE(duplicate_and_inapplicable_events_are_idempotent),

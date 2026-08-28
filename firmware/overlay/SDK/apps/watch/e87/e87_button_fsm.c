@@ -122,7 +122,8 @@ uint32_t e87_button_step(struct e87_button_fsm *fsm,
             actions |= finish_button1(fsm, now_ms);
         } else if (sample == E87_KEY_BUTTON2 ||
                    sample == E87_KEY_AMBIGUOUS) {
-            actions |= finish_button1(fsm, now_ms);
+            actions |= advance_button1(fsm, now_ms);
+            actions |= abort_button1(fsm);
             fsm->private_rearm_required = true;
         } else {
             actions |= abort_button1(fsm);
