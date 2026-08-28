@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "evidenceId": "E87-S0-LINK-CLOSURE",
+  "sdkCommit": "d0167685d032d745d88fe50233302edd46941622",
+  "clangVersion": "4.0.1",
+  "qualificationArtifact": {
+    "sourceCommit": "e2bbef2daf19837652d3b566305e86f6e980950a",
+    "buildTag": "E2BBEF2D",
+    "elfSha256": "5bf595efe57d8f1e397a03abf5395de0503b2fd5a06cdcad93e4ff971bf78c2a",
+    "elfSize": 2596828,
+    "mapSha256": "85afcbb99355559694258c13e302662d0ec91cfff465fc979342b09b511d7265",
+    "mapSize": 207206,
+    "resolutionSha256": "7debceead388594c38473bf31053adfc7a08053b72e246ece8aac741bdcb624d",
+    "resolutionSize": 1006294,
+    "objectListSha256": "c27b43fcfa8809d505cefd648aa4790710f9f23d2714a0fa311482025a978af2",
+    "objectListSize": 778,
+    "appBinSha256": "1ccf13fc6ebeffb6e2f3a8fb131892016558d766ad607f5a321eeedd079295d8",
+    "appBinSize": 181696,
+    "linkLogSha256": "60ee5c7600d757c1e3545b012ad74665ec1819fb181f169ac3beee515d95f830",
+    "buildMode": "VENDOR_MAKE_EXPLICIT_LINK_TARGET_NO_POST",
+    "postLinkStatus": "NOT_INVOKED_BY_EXPLICIT_LINK_TARGET"
+  },
+  "sourceObjects": [
+    "objs/apps/common/debug/debug.c.o",
+    "objs/apps/common/debug/debug_uart_config.c.o",
+    "objs/apps/common/perf_counter/perf_counter.c.o",
+    "objs/apps/common/update/update.c.o",
+    "objs/apps/watch/app_main.c.o",
+    "objs/apps/watch/board/br35/board_e87_1542/board_e87_1542.c.o",
+    "objs/apps/watch/e87/e87_stage0_adv.c.o",
+    "objs/apps/watch/e87/e87_stage0_app.c.o",
+    "objs/apps/watch/e87/e87_stage0_ble.c.o",
+    "objs/apps/watch/e87/e87_stage0_platform_config.c.o",
+    "objs/apps/watch/log_config/app_config.c.o",
+    "objs/apps/watch/log_config/lib_btctrler_config.c.o",
+    "objs/apps/watch/log_config/lib_btstack_config.c.o",
+    "objs/apps/watch/log_config/lib_driver_config.c.o",
+    "objs/apps/watch/log_config/lib_system_config.c.o",
+    "objs/cpu/br35/power/power_app.c.o",
+    "objs/cpu/br35/setup.c.o",
+    "objs/cpu/config/lib_power_config.c.o",
+    "objs/cpu/power/msg.c.o"
+  ],
+  "archives": [
+    {
+      "path": "cpu/br35/liba/cpu.a",
+      "sha256": "787b6fc0913a0a8a634ee8c7606d5e4a68dc5604d8feacf806fd60dc1e2fc8ca",
+      "role": "PINNED_PLATFORM_DRIVER"
+    },
+    {
+      "path": "cpu/br35/liba/system.a",
+      "sha256": "3b00ce29bf38c11707554449f6a4d9afaebc267ca9cba3dde8f7f8d0f4f09141",
+      "role": "PINNED_OS_RUNTIME"
+    },
+    {
+      "path": "cpu/br35/liba/btstack.a",
+      "sha256": "4a5c48ba0658647ecde1a59c7032448eeda1bdfe4a3899dd14903b5d75e8347d",
+      "role": "PINNED_RUNTIME_GATED_BT_HOST"
+    },
+    {
+      "path": "cpu/br35/liba/btctrler.a",
+      "sha256": "7b6d18d9589aa5990731cd7a92124b2ba1d9330b71359938eb9a711da15b1f2e",
+      "role": "PINNED_VENDOR_CONTROLLER"
+    },
+    {
+      "path": "cpu/br35/liba/libc.a",
+      "sha256": "f7d8d0b20e688ab682864face6ddec8e6fa87bf5c8c7dfd527d4c42257e0fb64",
+      "role": "PINNED_SDK_LIBC"
+    },
+    {
+      "path": "cpu/br35/liba/cbuf.a",
+      "sha256": "03740c7da23a02570ed618b144eca607373ae8debb374ed15e3c3840ad0e3bb8",
+      "role": "PINNED_BTSTACK_BUFFER"
+    },
+    {
+      "path": "cpu/br35/liba/cfg_tool.a",
+      "sha256": "545df929e1e05c17e978156a3a959cb07744bbecceef30b305f96606b21e2f04",
+      "role": "IMMUTABLE_BOOT_SYSCFG_SEAM"
+    },
+    {
+      "path": "cpu/br35/liba/crypto_toolbox_Osize.a",
+      "sha256": "b16901cea79a369ad5f8db918c7799b5965b3013be986f31f24e5cc09c607b8f",
+      "role": "PINNED_CONTROLLER_CRYPTO"
+    },
+    {
+      "path": "cpu/br35/liba/device.a",
+      "sha256": "e6cad5ce44970000c1631275f6b2175a7c68a0f191a2c66af8dee4c0d9f8fb3e",
+      "role": "IMMUTABLE_BOOT_DEVICE_SEAM"
+    },
+    {
+      "path": "cpu/br35/liba/fs.a",
+      "sha256": "61251cf9ba9e654247004be2af7debf555779ea3021eac464802c197864dbe53",
+      "role": "IMMUTABLE_BOOT_SDFILE_RESFILE_SEAM"
+    },
+    {
+      "path": "cpu/br35/liba/lib_ccm_cipher.a",
+      "sha256": "bb3accd5d94fe58e61dcfeff2fb73eeeebc7a129fbeb5f474b5eb6c9d7cb43d2",
+      "role": "PINNED_CONTROLLER_CCM"
+    },
+    {
+      "path": "cpu/br35/liba/printf.a",
+      "sha256": "58cef0141f5220726a16fcd7b23d672a402ea6ce77156039404d4703d750bfef",
+      "role": "PINNED_VENDOR_DIAGNOSTIC_LEAF"
+    },
+    {
+      "path": "cpu/br35/liba/vm.a",
+      "sha256": "bebc7934c785e75da2cb216a6150992126798a7abfd3936c500add6ee46f9900",
+      "role": "IMMUTABLE_BOOT_VM_BTIF_SEAM"
+    },
+    {
+      "path": "toolchain/lib/r3-large/libm.a",
+      "sha256": "96bc6239ab76d5f7186781bc5612534c05dc1b49a2bb4ec4b1c2a160447d3816",
+      "role": "PINNED_TOOLCHAIN_RUNTIME"
+    },
+    {
+      "path": "toolchain/lib/r3-large/libc.a",
+      "sha256": "9421760d0e9e8fdc283d8a2bbb9754aa3a846cafe98974b91d14b30f4d2a23a3",
+      "role": "PINNED_TOOLCHAIN_RUNTIME"
+    },
+    {
+      "path": "toolchain/lib/r3-large/libcompiler-rt.a",
+      "sha256": "d91de93147d28e47deb9537c7b7b8d9d01ce7d1640eee955e2ae344d7107a6b0",
+      "role": "PINNED_TOOLCHAIN_RUNTIME"
+    }
+  ],
+  "archiveLoadOrder": [
+    "cpu/br35/liba/cpu.a",
+    "cpu/br35/liba/system.a",
+    "cpu/br35/liba/btstack.a",
+    "cpu/br35/liba/btctrler.a",
+    "cpu/br35/liba/libc.a",
+    "cpu/br35/liba/cbuf.a",
+    "cpu/br35/liba/cfg_tool.a",
+    "cpu/br35/liba/crypto_toolbox_Osize.a",
+    "cpu/br35/liba/device.a",
+    "cpu/br35/liba/fs.a",
+    "cpu/br35/liba/lib_ccm_cipher.a",
+    "cpu/br35/liba/printf.a",
+    "cpu/br35/liba/vm.a",
+    "toolchain/lib/r3-large/libm.a",
+    "toolchain/lib/r3-large/libc.a",
+    "toolchain/lib/r3-large/libm.a",
+    "toolchain/lib/r3-large/libcompiler-rt.a"
+  ],
+  "mapContract": {
+    "archiveInclusionRowCount": 303,
+    "archiveInclusionRowsSha256": "5d94797fcc83b031ef37ea0ffa71608ef4f584006955b2da5001e49bc38433b5",
+    "btstackObjectCount": 52,
+    "btstackObjectsSha256": "da2b1917a129d4d17a18c07f3d4bdfa0ef58cd094152f1c79a4e9cc412fd27a5",
+    "btctrlerObjectCount": 135,
+    "btctrlerObjectsSha256": "f220b6a2c24e120b162d2919ec89dfef5e4e25c2db843b6b595aa41c88172ef1",
+    "requiredProvenance": [
+      {
+        "archiveMember": "cpu/br35/liba/btstack.a(btstack_task.c.o)",
+        "referrer": "O:objs/apps/watch/e87/e87_stage0_app.c.o",
+        "symbol": "btstack_init"
+      },
+      {
+        "archiveMember": "cpu/br35/liba/btstack.a(btstack_main.c.o)",
+        "referrer": "A:cpu/br35/liba/btstack.a(btstack_task.c.o)",
+        "symbol": "btstack_mem_init"
+      },
+      {
+        "archiveMember": "cpu/br35/liba/btctrler.a(RF.c.o)",
+        "referrer": "O:objs/apps/watch/e87/e87_stage0_app.c.o",
+        "symbol": "bt_pll_para"
+      }
+    ],
+    "disabledUpdate": {
+      "sourceObject": "objs/apps/common/update/update.c.o",
+      "section": ".update.text",
+      "size": 4,
+      "symbol": "update_result_get"
+    }
+  },
+  "policy": {
+    "runtimeGatedVendorObjects": "ALLOWED_ONLY_FROM_EXACT_PINNED_BTSTACK_AND_BTCTRLR_ARCHIVES",
+    "immutableBootSeamArchives": [
+      "cpu/br35/liba/cfg_tool.a",
+      "cpu/br35/liba/device.a",
+      "cpu/br35/liba/fs.a",
+      "cpu/br35/liba/vm.a"
+    ],
+    "applicationFilesystemRoute": "FORBIDDEN",
+    "forbiddenArchives": [
+      "cpu/br35/liba/aec.a",
+      "cpu/br35/liba/alpay_iot_vendor.a",
+      "cpu/br35/liba/fmna_stack.a",
+      "cpu/br35/liba/gpu.a",
+      "cpu/br35/liba/jlui.a",
+      "cpu/br35/liba/lvgl_v8.a",
+      "cpu/br35/liba/media.a",
+      "cpu/br35/liba/quickjs.a",
+      "cpu/br35/liba/rcsp_stack.a",
+      "cpu/br35/liba/update.a"
+    ],
+    "forbiddenSourceObjects": [
+      "objs/apps/common/config/bt_profile_config.c.o",
+      "objs/apps/watch/ble/ble_adv.c.o",
+      "objs/apps/watch/ble/bt_ble.c.o",
+      "objs/apps/watch/log_config/lib_jlui_config.c.o",
+      "objs/apps/watch/message/adapter/btstack.c.o",
+      "objs/apps/watch/mode/bt/bt.c.o",
+      "objs/apps/watch/mode/bt/bt_event_func.c.o"
+    ]
+  }
+}

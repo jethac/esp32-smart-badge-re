@@ -141,6 +141,26 @@ class Stage0TargetTests(unittest.TestCase):
         self.assertEqual(artifact["appBinSize"], 181696)
         self.assertEqual(artifact["buildMode"], "VENDOR_MAKE_EXPLICIT_LINK_TARGET_NO_POST")
         self.assertEqual(
+            evidence["mapContract"]["requiredProvenance"],
+            [
+                {
+                    "archiveMember": "cpu/br35/liba/btstack.a(btstack_task.c.o)",
+                    "referrer": "O:objs/apps/watch/e87/e87_stage0_app.c.o",
+                    "symbol": "btstack_init",
+                },
+                {
+                    "archiveMember": "cpu/br35/liba/btstack.a(btstack_main.c.o)",
+                    "referrer": "A:cpu/br35/liba/btstack.a(btstack_task.c.o)",
+                    "symbol": "btstack_mem_init",
+                },
+                {
+                    "archiveMember": "cpu/br35/liba/btctrler.a(RF.c.o)",
+                    "referrer": "O:objs/apps/watch/e87/e87_stage0_app.c.o",
+                    "symbol": "bt_pll_para",
+                },
+            ],
+        )
+        self.assertEqual(
             evidence["policy"]["immutableBootSeamArchives"],
             [
                 "cpu/br35/liba/cfg_tool.a",

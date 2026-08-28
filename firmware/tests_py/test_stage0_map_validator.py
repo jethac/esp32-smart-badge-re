@@ -165,7 +165,7 @@ class Stage0MapValidatorTests(unittest.TestCase):
                             "cpu/br35/liba/btstack.a(btstack_task.c.o)"
                         ),
                         "referrer": (
-                            "objs/apps/watch/e87/e87_stage0_app.c.o"
+                            "O:objs/apps/watch/e87/e87_stage0_app.c.o"
                         ),
                         "symbol": "btstack_init",
                     },
@@ -173,7 +173,9 @@ class Stage0MapValidatorTests(unittest.TestCase):
                         "archiveMember": (
                             "cpu/br35/liba/btstack.a(btstack_main.c.o)"
                         ),
-                        "referrer": "btstack_task.c.o",
+                        "referrer": (
+                            "A:cpu/br35/liba/btstack.a(btstack_task.c.o)"
+                        ),
                         "symbol": "btstack_mem_init",
                     },
                 ],
@@ -304,7 +306,7 @@ class Stage0MapValidatorTests(unittest.TestCase):
         self.rewrite_map(b"btstack_main.c.o", b"gatt_profile_drift.c.o")
         result = self.run_validator()
         self.assertEqual(result.returncode, 2)
-        self.assertIn("inclusion rows", result.stderr)
+        self.assertIn("inclusion graph", result.stderr)
 
     def test_btstack_root_provenance_is_exact(self) -> None:
         contract = self.evidence["mapContract"]
