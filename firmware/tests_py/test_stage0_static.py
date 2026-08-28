@@ -18,6 +18,7 @@ PATCH_TARGETS = {
     "SDK/apps/watch/app_main.c",
     "SDK/build/genFileList.c",
     "SDK/build/Makefile.mk",
+    "SDK/cpu/br35/sdk_ld.c",
 }
 REQUIRED_TARGET_SOURCES = {
     "apps/watch/app_main.c",
@@ -51,15 +52,19 @@ def read(path: Path) -> str:
 
 
 def added_section(patch: str, target: str) -> str:
-    marker = f"diff --git a/{target} b/{target}\n"
-    start = patch.index(marker) + len(marker)
-    next_diff = patch.find("\ndiff --git ", start)
-    section = patch[start:] if next_diff < 0 else patch[start:next_diff]
+    section = patch_section(patch, target)
     return "\n".join(
         line[1:]
         for line in section.splitlines()
         if line.startswith("+") and not line.startswith("+++")
     )
+
+
+def patch_section(patch: str, target: str) -> str:
+    marker = f"diff --git a/{target} b/{target}\n"
+    start = patch.index(marker) + len(marker)
+    next_diff = patch.find("\ndiff --git ", start)
+    return patch[start:] if next_diff < 0 else patch[start:next_diff]
 
 
 def between(text: str, start: str, end: str) -> str:
@@ -73,7 +78,7 @@ class Stage0StaticTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.patch = read(PATCH)
 
-    def test_patch_touches_only_the_five_frozen_sdk_targets(self) -> None:
+    def test_patch_touches_only_the_six_frozen_sdk_targets(self) -> None:
         targets = set(
             re.findall(r"^diff --git a/(\S+) b/\1$", self.patch, re.M)
         )
@@ -150,6 +155,34 @@ class Stage0StaticTests(unittest.TestCase):
         self.assertNotIn(f"+\t{option} \\", self.patch)
         added = added_section(self.patch, "SDK/build/Makefile.mk")
         self.assertNotIn(option, added)
+
+    def test_stage0_linker_keeps_layout_but_omits_generated_extern_roots(self) -> None:
+        self.assertIn(
+            "diff --git a/SDK/cpu/br35/sdk_ld.c b/SDK/cpu/br35/sdk_ld.c\n",
+            self.patch,
+        )
+        section = patch_section(self.patch, "SDK/cpu/br35/sdk_ld.c")
+        self.assertRegex(
+            section,
+            re.compile(
+                r"^ EXTERN\(\n"
+                r" _start\n"
+                r"\+#ifndef CONFIG_BOARD_E87_1542_STAGE0_H\n"
+                r" #include \"sdk_used_list\.c\"\n"
+                r"\+#endif\n"
+                r" \);$",
+                re.M,
+            ),
+        )
+        self.assertEqual(section.count('#include "sdk_used_list.c"'), 1)
+        for vendor_layout_token in ("ENTRY(_start)", "MEMORY", "SECTIONS"):
+            self.assertNotRegex(
+                section,
+                re.compile(
+                    rf"^[+-].*{re.escape(vendor_layout_token)}", re.M
+                ),
+                vendor_layout_token,
+            )
 
 
     def test_generated_file_list_has_a_closed_stage0_branch(self) -> None:
@@ -392,7 +425,10 @@ class Stage0StaticTests(unittest.TestCase):
             for path in sorted((OVERLAY / "e87").glob("e87_stage0_*.c"))
         )
         patch_added = "\n".join(
-            added_section(self.patch, target) for target in PATCH_TARGETS
+            added_section(self.patch, target)
+            for target in set(
+                re.findall(r"^diff --git a/(\S+) b/\1$", self.patch, re.M)
+            )
         )
         for forbidden in (
             "ble_op_set_tx_power",
