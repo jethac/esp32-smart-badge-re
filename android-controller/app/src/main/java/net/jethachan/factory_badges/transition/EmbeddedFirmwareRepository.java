@@ -3,22 +3,12 @@ package net.jethachan.factory_badges.transition;
 import android.content.Context;
 import android.content.res.AssetManager;
 import java.io.IOException;
+import java.io.InputStream;
 
-/**
- * Fail-closed seam for the generated embedded release.
- *
- * <p>The current build intentionally contains no release. Even if a canonical index appears,
- * bytes remain unavailable until the authoritative package validators are integrated here.
- */
+/** Fail-closed source of firmware bytes revalidated from the immutable APK asset tree. */
 public final class EmbeddedFirmwareRepository implements TransitionArtifactProvider {
-    private static final String ASSET_DIRECTORY = "e87";
-    private static final String INDEX_FILENAME = "default-release.json";
-
-    interface IndexProbe {
-        boolean canonicalIndexPresent() throws IOException;
-    }
-
-    private final IndexProbe indexProbe;
+    private final TransitionArtifactValidator.AssetSource source;
+    private final TransitionArtifactValidator validator;
 
     public EmbeddedFirmwareRepository(Context context) {
         if (context == null) {
@@ -29,33 +19,36 @@ public final class EmbeddedFirmwareRepository implements TransitionArtifactProvi
             throw new IllegalArgumentException("application context must not be null");
         }
         final AssetManager assets = applicationContext.getAssets();
-        indexProbe = new IndexProbe() {
-            @Override public boolean canonicalIndexPresent() throws IOException {
-                String[] names = assets.list(ASSET_DIRECTORY);
-                if (names == null) return false;
-                for (String name : names) {
-                    if (INDEX_FILENAME.equals(name)) return true;
-                }
-                return false;
+        if (assets == null) {
+            throw new IllegalArgumentException("application assets must not be null");
+        }
+        source = new TransitionArtifactValidator.AssetSource() {
+            @Override public String[] list(String path) throws IOException {
+                return assets.list(path);
+            }
+
+            @Override public InputStream open(String path) throws IOException {
+                return assets.open(path, AssetManager.ACCESS_STREAMING);
             }
         };
+        validator = new TransitionArtifactValidator();
     }
 
-    EmbeddedFirmwareRepository(IndexProbe indexProbe) {
-        if (indexProbe == null) {
-            throw new IllegalArgumentException("index probe must not be null");
+    EmbeddedFirmwareRepository(TransitionArtifactValidator.AssetSource source) {
+        if (source == null) {
+            throw new IllegalArgumentException("asset source must not be null");
         }
-        this.indexProbe = indexProbe;
+        this.source = source;
+        validator = new TransitionArtifactValidator();
     }
 
     @Override public LoadResult load() {
-        final boolean present;
         try {
-            present = indexProbe.canonicalIndexPresent();
-        } catch (IOException | RuntimeException failure) {
+            return LoadResult.ready(validator.validate(source));
+        } catch (TransitionArtifactValidator.MissingIndexException missing) {
+            return LoadResult.unavailable(Status.NOT_PACKAGED);
+        } catch (IOException | RuntimeException invalid) {
             return LoadResult.unavailable(Status.INVALID_PACKAGE);
         }
-        return LoadResult.unavailable(present
-                ? Status.VALIDATOR_NOT_INTEGRATED : Status.NOT_PACKAGED);
     }
 }
