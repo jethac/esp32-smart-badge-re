@@ -50,6 +50,9 @@ public final class MaintenanceResourcesSourceTest {
                 .getAttributeNS(ANDROID, "enabled"));
         assertEquals("false", byId(document, "rewrite_button")
                 .getAttributeNS(ANDROID, "enabled"));
+        assertEquals("ScrollView", document.getDocumentElement().getTagName());
+        assertEquals("LinearLayout", byId(document, "candidate_list").getTagName());
+        assertEquals(0, document.getElementsByTagName("ListView").getLength());
     }
 
     @Test public void stringsNeverCallTransportAcceptanceSuccess() throws Exception {
@@ -60,6 +63,14 @@ public final class MaintenanceResourcesSourceTest {
         assertTrue(xml.contains(">Not available until custom recovery is hardware-proven.<"));
         assertFalse(xml.contains(">Transition succeeded<"));
         assertFalse(xml.contains(">Firmware update succeeded<"));
+    }
+
+    @Test public void byteCountsUseSingularAndPluralResources() throws Exception {
+        Document document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(
+                Paths.get("app/src/main/res/values/strings.xml").toFile());
+
+        assertPluralHasOneAndOther(document, "artifact_identity");
+        assertPluralHasOneAndOther(document, "transition_progress_format");
     }
 
     private static Element byId(Document document, String wanted) {
@@ -73,5 +84,21 @@ public final class MaintenanceResourcesSourceTest {
         }
         assertNotNull(wanted, null);
         throw new AssertionError(wanted);
+    }
+
+    private static void assertPluralHasOneAndOther(Document document, String name) {
+        NodeList plurals = document.getElementsByTagName("plurals");
+        for (int index = 0; index < plurals.getLength(); index++) {
+            Element plural = (Element) plurals.item(index);
+            if (!name.equals(plural.getAttribute("name"))) continue;
+            Set<String> quantities = new LinkedHashSet<String>();
+            NodeList items = plural.getElementsByTagName("item");
+            for (int itemIndex = 0; itemIndex < items.getLength(); itemIndex++) {
+                quantities.add(((Element) items.item(itemIndex)).getAttribute("quantity"));
+            }
+            assertEquals(new LinkedHashSet<String>(Arrays.asList("one", "other")), quantities);
+            return;
+        }
+        throw new AssertionError("missing plurals " + name);
     }
 }
