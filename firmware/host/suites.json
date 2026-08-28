@@ -13,6 +13,28 @@
         "sources": ["firmware/overlay/SDK/apps/watch/e87/e87_battery.c"]
       }
     ],
+    "ble": [
+      {
+        "name": "normal-gatt-control",
+        "test": "firmware/host/test_ble_control.c",
+        "sources": [
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_control.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_gatt_db.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_state.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_build_info.c"
+        ]
+      },
+      {
+        "name": "bond-owner-policy",
+        "test": "firmware/host/test_bond_policy.c",
+        "sources": ["firmware/overlay/SDK/apps/watch/e87/e87_bond_policy.c"]
+      },
+      {
+        "name": "asynchronous-mode-fsm",
+        "test": "firmware/host/test_ble_mode_fsm.c",
+        "sources": ["firmware/overlay/SDK/apps/watch/e87/e87_ble_mode_fsm.c"]
+      }
+    ],
     "button": [
       {
         "name": "button-fsm",
