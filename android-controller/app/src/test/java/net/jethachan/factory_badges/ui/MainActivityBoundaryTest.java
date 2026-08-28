@@ -56,7 +56,8 @@ public final class MainActivityBoundaryTest {
                 "net.jethachan.factory_badges.sync.BadgeSyncService"));
         assertEquals(allowed, source.imports());
         assertFalse(source.code.matches("(?s).*(androidx|compose|material|ViewModel|"
-                + "WorkManager|StatePacketCodec|Maintenance|Canvas|Bitmap|WebView).*"));
+                + "WorkManager|StatePacketCodec|Canvas|Bitmap|WebView).*"));
+        assertFalse(source.code.contains("net.jethachan.factory_badges.transition"));
     }
 
     @Test public void onCreateBindsExactViewsAndUsesStrictRestoreDecoder() throws Exception {
@@ -261,6 +262,12 @@ public final class MainActivityBoundaryTest {
         assertEquals(1, count(source.method("onSyncClicked"), "presenter.onSyncPressed()"));
         assertEquals(1, count(source.method("onStopSyncClicked"),
                 "presenter.onStopPressed()"));
+        String maintenance = source.method("onMaintenanceClicked");
+        assertEquals(1, count(maintenance,
+                "new Intent(MainActivity.this, MaintenanceActivity.class)"));
+        assertEquals(1, count(maintenance, "startActivity("));
+        assertFalse(maintenance.matches("(?s).*(scanner\\.start|bindService|startService|"
+                + "startForegroundService|syncNow|StockTransition).*"));
     }
 
     @Test public void androidImportsAndSuppressionsStayInsideReviewedBoundary() throws Exception {
@@ -429,8 +436,9 @@ public final class MainActivityBoundaryTest {
             assertFalse(owner, body.matches("(?s).*(scanner\\.start|enableIntent|"
                     + "startForegroundService|syncNow\\().*"));
         }
-        assertFalse(source.code.matches("(?s).*(MaintenanceActivity|E87 UPDATE|"
-                + "com\\.jieli|StatePacketCodec|SharedPreferences|SQLite|FileOutputStream).*"));
+        assertFalse(source.code.matches("(?s).*(E87 UPDATE|com\\.jieli|StatePacketCodec|"
+                + "SharedPreferences|SQLite|FileOutputStream).*"));
+        assertFalse(source.code.contains("net.jethachan.factory_badges.transition"));
     }
 
     @Test public void outerClassExposesOnlyRequiredLifecycleEntryPoints() throws Exception {
@@ -462,7 +470,7 @@ public final class MainActivityBoundaryTest {
         "connection_detail_value", "sync_pair_guidance", "local_warning_value",
         "notification_warning_value", "day_label", "day_value", "day_seek",
         "week_label", "week_value", "week_seek", "credit_label", "credit_value",
-        "last_sync_value", "sync_button", "stop_sync_button"
+        "last_sync_value", "sync_button", "stop_sync_button", "maintenance_button"
     };
 
     private static void assertFrameworkFree(Class<?> type) {
