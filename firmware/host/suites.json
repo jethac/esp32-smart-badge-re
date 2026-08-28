@@ -50,6 +50,16 @@
         ]
       }
     ],
+    "maintenance": [
+      {
+        "name": "rcsp-maintenance",
+        "test": "firmware/host/test_maintenance.c",
+        "sources": [
+          "firmware/overlay/SDK/apps/watch/e87/e87_maintenance.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_rcsp_profile.c"
+        ]
+      }
+    ],
     "power": [
       {
         "name": "power-policy",
