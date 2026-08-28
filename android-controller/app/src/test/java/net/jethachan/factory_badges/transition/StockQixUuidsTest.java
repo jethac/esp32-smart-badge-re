@@ -15,5 +15,7 @@ public final class StockQixUuidsTest {
                 StockQixUuids.FD02);
         assertEquals(UUID.fromString("c2e6fd03-e966-1000-8000-bef9c223df6a"),
                 StockQixUuids.FD03);
+        assertEquals(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"),
+                StockQixUuids.CCCD);
     }
 }
