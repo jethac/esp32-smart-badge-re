@@ -1,8 +1,8 @@
 diff --git a/SDK/apps/watch/app_main.c b/SDK/apps/watch/app_main.c
-index eb881b5..11a1c66 100644
+index eb881b5..4c6da69 100644
 --- a/SDK/apps/watch/app_main.c
 +++ b/SDK/apps/watch/app_main.c
-@@ -1 +1,68 @@
+@@ -1 +1,73 @@
 +#include "app_config.h"
 +
 +#ifdef CONFIG_BOARD_E87_1542_STAGE0_H
@@ -24,6 +24,11 @@ index eb881b5..11a1c66 100644
 +};
 +
 +APP_VAR app_var;
++
++int eSystemConfirmStopStatus(void)
++{
++    return 0;
++}
 +
 +int *__errno(void)
 +{
@@ -186,10 +191,10 @@ index 920e7bd..5c8fa1a 100644
 +
  #include "ui_app_def.h"
 diff --git a/SDK/build/Makefile.mk b/SDK/build/Makefile.mk
-index 8b6e87e..90f4d3b 100644
+index 8b6e87e..a584222 100644
 --- a/SDK/build/Makefile.mk
 +++ b/SDK/build/Makefile.mk
-@@ -859,201 +859,318 @@
+@@ -859,201 +859,326 @@
  include build/fileList.mk
 -
 +
@@ -242,6 +247,8 @@ index 8b6e87e..90f4d3b 100644
 +# E87_STAGE0_REQUIRED_SOURCES_BEGIN
 +E87_STAGE0_REQUIRED_SOURCES := \
 +	apps/common/debug/debug.c \
++	apps/common/debug/debug_uart_config.c \
++	apps/common/perf_counter/perf_counter.c \
 +	apps/common/update/update.c \
 +	apps/watch/app_main.c \
 +	apps/watch/board/br35/board_e87_1542/board_e87_1542.c \
@@ -254,7 +261,9 @@ index 8b6e87e..90f4d3b 100644
 +	apps/watch/log_config/lib_btstack_config.c \
 +	apps/watch/log_config/lib_driver_config.c \
 +	apps/watch/log_config/lib_system_config.c \
++	cpu/br35/power/power_app.c \
 +	cpu/br35/setup.c \
++	cpu/config/lib_power_config.c \
 +	cpu/power/msg.c
 +# E87_STAGE0_REQUIRED_SOURCES_END
 +c_SRC_FILES := $(E87_STAGE0_REQUIRED_SOURCES)
@@ -665,7 +674,11 @@ index 8b6e87e..90f4d3b 100644
 +	cpu/br35/liba/btctrler.a \
 +	cpu/br35/liba/libc.a \
 +	cpu/br35/liba/cbuf.a \
-+	cpu/br35/liba/cfg_tool.a
++	cpu/br35/liba/cfg_tool.a \
++	cpu/br35/liba/crypto_toolbox_Osize.a \
++	cpu/br35/liba/fs.a \
++	cpu/br35/liba/lib_ccm_cipher.a \
++	cpu/br35/liba/vm.a
 +
 +LFLAGS := \
 +	--plugin-opt=-pi32v2-always-use-itblock=false \
@@ -743,3 +756,13 @@ index 3f28ea4..8df4e2d 100644
  #include "sdk_used_list.c"
 +#endif
  );
+diff --git a/SDK/cpu/br35/power/power_app.c b/SDK/cpu/br35/power/power_app.c
+index f1e027c..8ffc7b5 100644
+--- a/SDK/cpu/br35/power/power_app.c
++++ b/SDK/cpu/br35/power/power_app.c
+@@ -147,3 +147,5 @@ void power_early_flowing()
+     // 默认关闭长按复位0，由key_driver配置
++#ifndef CONFIG_BOARD_E87_1542_STAGE0_H
+     gpio_longpress_pin0_reset_config(PINR_DEFAULT_IO, 0, 0, 1, 1);
++#endif
+     //长按复位1默认配置2s，写保护

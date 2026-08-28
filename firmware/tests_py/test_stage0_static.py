@@ -262,7 +262,7 @@ class Stage0StaticTests(unittest.TestCase):
             section,
             re.compile(
                 r"^\+#ifndef CONFIG_BOARD_E87_1542_STAGE0_H\n"
-                r" gpio_longpress_pin0_reset_config\(PINR_DEFAULT_IO, 0, 0, 1, 1\);\n"
+                r"     gpio_longpress_pin0_reset_config\(PINR_DEFAULT_IO, 0, 0, 1, 1\);\n"
                 r"\+#endif$",
                 re.M,
             ),
