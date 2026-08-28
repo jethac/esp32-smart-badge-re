@@ -278,6 +278,31 @@ public final class StockTransitionControllerTest {
         assertEquals(1, harness.listener.candidates.size());
     }
 
+    @Test public void indefiniteUnfilteredScanCapsOwnedAndSurfacedCandidates() {
+        Harness harness = new Harness(new byte[] {1, 2, 3});
+        harness.controller.startScan();
+        harness.fifo.drain();
+        List<StockGattDriver.Peer> emitted = new ArrayList<StockGattDriver.Peer>();
+        for (int index = 0; index <= StockTransitionController.MAX_CANDIDATES; index++) {
+            StockGattDriver.Peer candidate = peer(
+                    String.format("02:00:00:00:00:%02X", index));
+            emitted.add(candidate);
+            harness.driver.emitScanResult(
+                    harness.driver.scanGeneration, harness.driver.scanToken, candidate);
+        }
+
+        harness.fifo.drain();
+
+        assertEquals(StockTransitionController.MAX_CANDIDATES,
+                harness.listener.candidates.size());
+        StockGattDriver.Peer overflow = emitted.get(StockTransitionController.MAX_CANDIDATES);
+        assertFalse(harness.listener.candidates.contains(overflow));
+
+        harness.controller.connect(overflow, 6, 1);
+        harness.fifo.drain();
+        assertLastFailure(harness, StockQixTransferMachine.FailureCode.INVALID_STATE);
+    }
+
     @Test public void cancelAndCloseHonorThePreAndPostC1LifecycleSplit() {
         Harness preC1 = new Harness(new byte[] {1, 2, 3});
         preC1.controller.startScan();
