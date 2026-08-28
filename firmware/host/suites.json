@@ -35,6 +35,13 @@
         "sources": ["firmware/overlay/SDK/apps/watch/e87/e87_ble_mode_fsm.c"]
       }
     ],
+    "charge": [
+      {
+        "name": "charge-adapter",
+        "test": "firmware/host/test_charge_adapter.c",
+        "sources": ["firmware/overlay/SDK/apps/watch/e87/e87_charge_adapter.c"]
+      }
+    ],
     "button": [
       {
         "name": "button-fsm",
