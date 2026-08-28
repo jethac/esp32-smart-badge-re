@@ -175,5 +175,13 @@
             android:layout_marginTop="8dp"
             android:minHeight="48dp"
             android:text="@string/stop_sync" />
+
+        <Button
+            android:id="@+id/maintenance_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:minHeight="48dp"
+            android:text="@string/open_maintenance" />
     </LinearLayout>
 </ScrollView>

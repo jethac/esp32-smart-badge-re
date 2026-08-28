@@ -61,6 +61,7 @@ public final class MainActivity extends Activity {
     private Button chooseBadgeButton;
     private Button syncButton;
     private Button stopSyncButton;
+    private Button maintenanceButton;
 
     private MainUiPresenter presenter;
     private Handler mainHandler;
@@ -275,6 +276,7 @@ public final class MainActivity extends Activity {
         lastSyncValue = findViewById(R.id.last_sync_value);
         syncButton = findViewById(R.id.sync_button);
         stopSyncButton = findViewById(R.id.stop_sync_button);
+        maintenanceButton = findViewById(R.id.maintenance_button);
         daySeek.setKeyProgressIncrement(1);
         weekSeek.setKeyProgressIncrement(1);
 
@@ -288,6 +290,9 @@ public final class MainActivity extends Activity {
         });
         stopSyncButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { onStopSyncClicked(); }
+        });
+        maintenanceButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { onMaintenanceClicked(); }
         });
 
         boolean dayPresent = savedInstanceState != null
@@ -411,6 +416,11 @@ public final class MainActivity extends Activity {
 
     private void onStopSyncClicked() {
         presenter.onStopPressed();
+    }
+
+    private void onMaintenanceClicked() {
+        Intent intent = new Intent(MainActivity.this, MaintenanceActivity.class);
+        startActivity(intent);
     }
 
     @SuppressLint("MissingPermission")

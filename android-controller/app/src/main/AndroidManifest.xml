@@ -34,6 +34,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".ui.MaintenanceActivity"
+            android:exported="false" />
         <service
             android:name=".sync.BadgeSyncService"
             android:exported="false"
