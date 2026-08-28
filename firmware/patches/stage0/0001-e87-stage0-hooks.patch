@@ -186,10 +186,10 @@ index 920e7bd..5c8fa1a 100644
 +
  #include "ui_app_def.h"
 diff --git a/SDK/build/Makefile.mk b/SDK/build/Makefile.mk
-index 8b6e87e..0a48e71 100644
+index 8b6e87e..90f4d3b 100644
 --- a/SDK/build/Makefile.mk
 +++ b/SDK/build/Makefile.mk
-@@ -859,201 +859,311 @@
+@@ -859,201 +859,318 @@
  include build/fileList.mk
 -
 +
@@ -241,16 +241,21 @@ index 8b6e87e..0a48e71 100644
 +
 +# E87_STAGE0_REQUIRED_SOURCES_BEGIN
 +E87_STAGE0_REQUIRED_SOURCES := \
++	apps/common/debug/debug.c \
++	apps/common/update/update.c \
 +	apps/watch/app_main.c \
 +	apps/watch/board/br35/board_e87_1542/board_e87_1542.c \
 +	apps/watch/e87/e87_stage0_adv.c \
 +	apps/watch/e87/e87_stage0_app.c \
 +	apps/watch/e87/e87_stage0_ble.c \
++	apps/watch/e87/e87_stage0_platform_config.c \
 +	apps/watch/log_config/app_config.c \
 +	apps/watch/log_config/lib_btctrler_config.c \
 +	apps/watch/log_config/lib_btstack_config.c \
 +	apps/watch/log_config/lib_driver_config.c \
-+	apps/watch/log_config/lib_system_config.c
++	apps/watch/log_config/lib_system_config.c \
++	cpu/br35/setup.c \
++	cpu/power/msg.c
 +# E87_STAGE0_REQUIRED_SOURCES_END
 +c_SRC_FILES := $(E87_STAGE0_REQUIRED_SOURCES)
 +S_SRC_FILES :=
@@ -658,7 +663,9 @@ index 8b6e87e..0a48e71 100644
 +	cpu/br35/liba/system.a \
 +	cpu/br35/liba/btstack.a \
 +	cpu/br35/liba/btctrler.a \
-+	cpu/br35/liba/libc.a
++	cpu/br35/liba/libc.a \
++	cpu/br35/liba/cbuf.a \
++	cpu/br35/liba/cfg_tool.a
 +
 +LFLAGS := \
 +	--plugin-opt=-pi32v2-always-use-itblock=false \
