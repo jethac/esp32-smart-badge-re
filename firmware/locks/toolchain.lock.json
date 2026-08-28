@@ -1,0 +1,132 @@
+{
+  "archive": {
+    "filename": "jieli-linux-toolchains-20250805.1.tar.xz",
+    "sha256": "F686586BCFB45E0F0BB27FD2B39C7A7F313CB4F0E88A66A14DA621FFA8225958"
+  },
+  "hostTools": {
+    "env": {
+      "path": "/usr/bin/env",
+      "sha256": "85036540673319C6C2F54233FD2B9E45A8A71246B51CC96C4E6AB8EE6C419EB0",
+      "version": "8.32"
+    },
+    "gcc": {
+      "path": "/usr/bin/gcc-11",
+      "sha256": "821AF3C74506283C179CA413BB33E6B528805A4DD8A5C09DF125E5AD560A9E89",
+      "version": "11.4.0"
+    },
+    "git": {
+      "path": "/usr/bin/git",
+      "sha256": "587EF21868C948B883993E23209B86A72A6DDC06AAB1545C697FFC31075ACD4A",
+      "version": "2.34.1"
+    },
+    "ld": {
+      "path": "/usr/bin/x86_64-linux-gnu-ld.bfd",
+      "sha256": "58937FC20C21E147883B4FDAA0FC7438A8E8F2BB886CFCAA4896100CA91139E7",
+      "version": "2.38"
+    },
+    "make": {
+      "path": "/usr/bin/make",
+      "sha256": "92F646030615CD98490A68A94C0AEFD87B552BE3158B941C02E43B0BFDB576DB",
+      "version": "4.3"
+    },
+    "python": {
+      "path": "/usr/bin/python3.11",
+      "sha256": "C4B3F4386C93758043A4E772574BFBD6B0E5E4CE8D50AF17F6FFEEB4B1A6BE5B",
+      "version": "3.11.15"
+    },
+    "python3": {
+      "path": "/usr/bin/python3",
+      "resolvedPath": "/usr/bin/python3.10",
+      "sha256": "7D51CD6B48B521277F5CAA4610A82126E315FA2BE4DF069823A8B1EEB5BD4A86",
+      "symlinkTarget": "python3.10",
+      "version": "3.10.12"
+    }
+  },
+  "runtime": {
+    "controlledPathTemplate": "${TOOL_ROOT}/pi32v2/bin:/home/jethac/.local/share/e87-dev/jieli-post-build:/usr/bin:/bin",
+    "elfInterpreter": {
+      "path": "/lib64/ld-linux-x86-64.so.2",
+      "sha256": "8D06F393F4A93BCF9B81145A259524D66A95522A646BF8D7E05B6FFDF2E63DCC"
+    }
+  },
+  "schema": "e87-stage0-toolchain-lock-v1",
+  "sdk": {
+    "commit": "d0167685d032d745d88fe50233302edd46941622",
+    "tree": "854734595be49510aca5afb89f5885e8bce6a00f"
+  },
+  "target": {
+    "architecture": "pi32v2",
+    "chip": "AC707N",
+    "cpu": "r3",
+    "entryAddress": "0x0C000100",
+    "family": "BR35"
+  },
+  "tools": {
+    "ar": {
+      "byteLength": 744888,
+      "installRelativePath": "pi32v2/bin/ar",
+      "mode": "0755",
+      "sha256": "CAD18239D47EE1439DBE1D2C2892D4C4BDB868BEF68F08242766DF7AE333A84C"
+    },
+    "clang": {
+      "installRelativePath": "common/bin/clang",
+      "sha256": "42B94F9E11140B0FCAB8F807B2872AD245B8EECA03A2D792F8706C5A3A35D34C"
+    },
+    "ld": {
+      "installRelativePath": "pi32v2/bin/ld",
+      "sha256": "FD61AFF15616BB6F6B58FD2E9EDE7AF741C7BF05FACB3E0CB3D3C9817C268FD9"
+    },
+    "linkVersion": {
+      "byteLength": 2121360,
+      "installRelativePath": "pi32v2/bin/link-version",
+      "mode": "0755",
+      "resolvedInstallRelativePath": "common/bin/link-version",
+      "sha256": "3129FCC8FCCD70F7B229026CB9ACB324A616F5D19953E5ED5D14BEF35BF81D56",
+      "symlinkTarget": "../../common/bin/link-version"
+    },
+    "llvmGold": {
+      "byteLength": 17646856,
+      "installRelativePath": "pi32v2/bin/LLVMgold.so",
+      "mode": "0755",
+      "resolvedInstallRelativePath": "common/bin/LLVMgold.so",
+      "sha256": "B91F4509C885DB84B0FA09C06C6E43F773DB9E47593C86FCF92BDFB65CEF2120",
+      "symlinkTarget": "../../common/bin/LLVMgold.so"
+    },
+    "ltoAr": {
+      "byteLength": 524,
+      "installRelativePath": "pi32v2/bin/lto-ar",
+      "mode": "0755",
+      "resolvedInstallRelativePath": "common/bin/lto-ar",
+      "sha256": "4F8470410C9DFF9059FF595A2206257EAE505D9FE4C7EE5926C3119262E99E68",
+      "symlinkTarget": "../../common/bin/lto-ar"
+    },
+    "ltoWrapper": {
+      "byteLength": 2097,
+      "installRelativePath": "pi32v2/bin/lto-wrapper",
+      "mode": "0775",
+      "resolvedInstallRelativePath": "common/bin/lto-wrapper",
+      "sha256": "777F7A173E9E1B801C73945DE3D5888708F278E7B5242AFE8B277ABE1761BC0E",
+      "symlinkTarget": "../../common/bin/lto-wrapper"
+    },
+    "nm": {
+      "installRelativePath": "pi32v2/bin/nm",
+      "sha256": "32BEE027A324BD4D561079C943D94C53FECE2BFB7F1E12B5D7CE7CC7737C6CE4"
+    },
+    "objcopy": {
+      "installRelativePath": "common/bin/objcopy",
+      "sha256": "A941EAB0DD62D51DA635BE7834FC34D4765DBF421D00599F3A5081D42D416502"
+    },
+    "objdump": {
+      "installRelativePath": "common/bin/objdump",
+      "sha256": "CFFC304E1A9BE5DAC22984A6AD48E81EF82B17166FD8864C251CF635C9663B73"
+    },
+    "objsizedump": {
+      "installRelativePath": "common/bin/objsizedump",
+      "sha256": "07AC5172C736EB6A8662413CFBDA9B964D025635FB6C4A71985F2B4965DFC44D"
+    },
+    "strip": {
+      "installRelativePath": "pi32v2/bin/strip",
+      "sha256": "60906528ABA3115D2E4DF838B3B6C4166714F2C476EBC7037177B40E04DCF459"
+    }
+  }
+}

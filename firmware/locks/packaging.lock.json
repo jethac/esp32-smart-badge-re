@@ -1,0 +1,68 @@
+{
+  "archive": {
+    "filename": "jieli-linux-post-build-tools-20260728.1.tar.xz",
+    "sha256": "F4A458738C5EEC32E78377C76B346BCAC1CD515B03EDA2B7EB11AB183298A858"
+  },
+  "isdArgv": [
+    "-tonorflash",
+    "-dev",
+    "br35",
+    "-boot",
+    "0x102600",
+    "-div8",
+    "-wait",
+    "300",
+    "-uboot",
+    "uboot.boot",
+    "-app",
+    "app.bin",
+    "-res",
+    "cfg_tool.bin",
+    "p11_code.bin",
+    "stream.bin",
+    "config.dat",
+    "-flash-params",
+    "flash_params_v3.bin",
+    "-output-fw",
+    "jl_isd.fw",
+    "-output-ufw",
+    "update.ufw"
+  ],
+  "nativeOutputs": [
+    "jl_isd.bin",
+    "jl_isd.fw",
+    "update.ufw"
+  ],
+  "qix": {
+    "headerBytes": 27,
+    "magicHex": "BCAF01",
+    "payloadCrc": "CRC16_CCITT_FALSE",
+    "payloadCrcSeed": 65535,
+    "version": "11.1.0.3"
+  },
+  "schema": "e87-stage0-packaging-lock-v1",
+  "tools": {
+    "fwAdd": {
+      "installRelativePath": "fw_add",
+      "invocation": "FORBIDDEN",
+      "sha256": "E79DA301B6B47233B1466BF8DAA64D8DCCB72A239BEC3C83F634469131ACA16C"
+    },
+    "isdDownload": {
+      "build": "c45787bd64f17e6756779a37cf5266b940f9d175",
+      "installRelativePath": "isd_download",
+      "sha256": "11849221C3E5E89D31E6FCEF52FE1DB28C2C5D322CDB919E954CCA2A5043EF87",
+      "version": "4.2.79"
+    },
+    "ufwMaker": {
+      "installRelativePath": "ufw_maker",
+      "sha256": "039D761CA4170F1E5658B868C963E8D43651000368BE55E892CD0BD941B553C6",
+      "version": "1.1.14"
+    }
+  },
+  "ufwMakerArgv": [
+    "--fw",
+    "jl_isd.fw",
+    "--output",
+    "independently-made.ufw"
+  ]
+}

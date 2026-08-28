@@ -1,0 +1,99 @@
+{
+  "jieliNewFirmware": {
+    "chipKey": "0x9847",
+    "entryAddress": "0x0C000100",
+    "format": "jl-new-fw",
+    "referenceToolCommit": "0a5b12db0ef38f3042acffbe2452730a37fd2405"
+  },
+  "qixGolden": {
+    "payloadCrc16": "0xB501",
+    "sha256": "14484147053903F879D0C24ACBAB6A564F5CC8F039CACCBB30821012DF645D32",
+    "size": 1080387,
+    "version": "11.1.0.2"
+  },
+  "referenceFiles": {
+    "canonical-jl-unpack/files/app.bin": {
+      "byteLength": 995584,
+      "role": "GOLDEN_APP_ONLY",
+      "sha256": "A38B77E27B1DC73CAE0FBD8A7C4E3A04C64FF393FB4F27BC92A7578336BE0147"
+    },
+    "canonical-jl-unpack/files/cfg_tool.bin": {
+      "byteLength": 180,
+      "role": "PACKAGE_RESOURCE",
+      "sha256": "CEC4551FA08F3ED70225095ACBD6CD5584E5EAB9CA418ED37F27102F66CD6833"
+    },
+    "canonical-jl-unpack/files/config.dat": {
+      "byteLength": 352,
+      "role": "PACKAGE_RESOURCE",
+      "sha256": "29EA517C67EB53D76D2ABE2C867C8F5A797C87ED506F1C7F2E7F2133782D75C4"
+    },
+    "canonical-jl-unpack/files/p11_code.bin": {
+      "byteLength": 10536,
+      "role": "PACKAGE_RESOURCE",
+      "sha256": "E23867E2E411BB8713CB5E698BA4BDBCD63F062E9C0381CCBA6B122D5F222FED"
+    },
+    "canonical-jl-unpack/files/stream.bin": {
+      "byteLength": 4426,
+      "role": "PACKAGE_RESOURCE",
+      "sha256": "F1422559A23576C05591FDF1A51C5B011BEC3F6D753217B7E450CE3D43C22553"
+    },
+    "canonical-jl-unpack/top/uboot.boot": {
+      "byteLength": 3551,
+      "role": "PACKAGE_BOOT",
+      "sha256": "1858B5FB78E35F0E13D17905AA9B582B74EA1546661550C9EA7E3913D809BD39"
+    },
+    "container/payload.ufw": {
+      "byteLength": 1080360,
+      "role": "GOLDEN_UFW_ONLY",
+      "sha256": "ECDFAA06377A00056ADB15D3486A4B059ACDE762C0F4A2BC8DCE43E0D120A80B"
+    },
+    "items/03_params_flash.bin": {
+      "byteLength": 2420,
+      "role": "PACKAGE_FLASH_PARAMS",
+      "sha256": "7E27AE860FFFE505813057AC481AD7AA262574718E6C50E9F4420EED0696B6F7"
+    },
+    "items/04_isd_config.ini": {
+      "byteLength": 1657,
+      "role": "PACKAGE_PLAINTEXT_INI",
+      "sha256": "CEC1973E50FB7A3D74D04D6340C671A443D50C538C272E1B14567C71F9AED47A"
+    },
+    "items/06_ota.bin": {
+      "byteLength": 23688,
+      "role": "PACKAGE_OTA",
+      "sha256": "91662F33DD1DC7C7DF0134876F697F0ADA0B63923890E7F60D0A063D6D19E2A9"
+    },
+    "manifest.json": {
+      "byteLength": 18797,
+      "role": "REFERENCE_MANIFEST",
+      "sha256": "01FBB801B9C408F6BE2F885A92DDC561151FB4A70450F37F39C6C56F25222678"
+    }
+  },
+  "resetPolicy": {
+    "disabledLine": "RESET = PB07_00_0;",
+    "inputRelativePath": "items/04_isd_config.ini",
+    "refusedBinaryPropertyPath": "canonical-jl-unpack/top/isd_config.ini",
+    "requiredInputLine": "RESET = PB07_08_0;"
+  },
+  "schema": "e87-stage0-model1552-package-lock-v1",
+  "sdkLoader": {
+    "byteLength": 27328,
+    "sdkRelativePath": "SDK/cpu/br35/tools/br35loader.bin",
+    "sha256": "1295A01D5A89AD42E9EDA6B87ACFE7D543AB68293D4087C3DDA9BF9AB472DAE1"
+  },
+  "ufwGolden": {
+    "chip": "AC707N",
+    "formatVersion": 4,
+    "memberNames": [
+      "flash.bin",
+      "info.log",
+      "uboot.version",
+      "params_flash.bin",
+      "isd_config.ini",
+      "v_ota.bin",
+      "ota.bin",
+      "farg.cfg",
+      "blimit.bin",
+      "tail.bin"
+    ]
+  }
+}
