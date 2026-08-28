@@ -32,6 +32,13 @@ REQUIRED_TARGET_SOURCES = {
     "apps/watch/log_config/lib_driver_config.c",
     "apps/watch/log_config/lib_system_config.c",
 }
+INITIAL_TARGET_ARCHIVES = {
+    "cpu/br35/liba/cpu.a",
+    "cpu/br35/liba/system.a",
+    "cpu/br35/liba/btstack.a",
+    "cpu/br35/liba/btctrler.a",
+    "cpu/br35/liba/libc.a",
+}
 FORBIDDEN_TARGET_SOURCES = {
     "apps/watch/mode/bt/bt.c",
     "apps/watch/mode/bt/bt_event_func.c",
@@ -183,6 +190,34 @@ class Stage0StaticTests(unittest.TestCase):
                 ),
                 vendor_layout_token,
             )
+
+    def test_stage0_final_link_flags_start_from_the_exact_core_archives(self) -> None:
+        added = added_section(self.patch, "SDK/build/Makefile.mk")
+        self.assertIn("# E87_STAGE0_FINAL_LFLAGS_BEGIN\n", added)
+        block = between(
+            added,
+            "# E87_STAGE0_FINAL_LFLAGS_BEGIN\n",
+            "# E87_STAGE0_FINAL_LFLAGS_END",
+        )
+        actual = set(
+            re.findall(r"(?:^|\s)([A-Za-z0-9_./+-]+\.a)(?:\s|$)", block)
+        )
+        self.assertEqual(actual, INITIAL_TARGET_ARCHIVES)
+        self.assertIn("LFLAGS := \\", block)
+        self.assertIn("--start-group", block)
+        self.assertIn("--end-group", block)
+        self.assertNotIn("--whole-archive", block)
+        for forbidden in (
+            "rcsp_stack.a",
+            "media.a",
+            "aec.a",
+            "quickjs.a",
+            "jlui.a",
+            "lvgl_v8.a",
+            "upay_t_head_v2",
+            "libstdc++",
+        ):
+            self.assertNotIn(forbidden, block)
 
 
     def test_generated_file_list_has_a_closed_stage0_branch(self) -> None:
