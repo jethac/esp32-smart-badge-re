@@ -6,6 +6,10 @@
 **Status:** unattempted. This is a plan, not a result. Read the whole
 "Brick risk" section before you write a single byte to the device.
 
+For static analysis of ZRun's Android ARM64 authentication library, use
+[the Ghidra ARM64 runbook](GHIDRA-ARM64-RUNBOOK.md). It is a local,
+non-device-analysis workflow and does not alter the OTA findings below.
+
 > **One-line summary:** In theory yes, via JieLi's RCSP-over-BLE OTA path — the
 > same protocol JieLi's own `Android-JL_OTA` / `iOS-JL_OTA` libraries speak. In
 > practice it is unproven on this badge, the AC697 is poorly supported by the
