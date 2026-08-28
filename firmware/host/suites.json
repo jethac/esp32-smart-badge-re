@@ -6,6 +6,13 @@
     "firmware/generated"
   ],
   "suites": {
+    "battery": [
+      {
+        "name": "battery-policy",
+        "test": "firmware/host/test_battery.c",
+        "sources": ["firmware/overlay/SDK/apps/watch/e87/e87_battery.c"]
+      }
+    ],
     "button": [
       {
         "name": "button-fsm",
@@ -28,6 +35,13 @@
         "name": "buffer-budget",
         "test": "firmware/host/test_harness.c",
         "sources": []
+      }
+    ],
+    "power": [
+      {
+        "name": "power-policy",
+        "test": "firmware/host/test_power_policy.c",
+        "sources": ["firmware/overlay/SDK/apps/watch/e87/e87_power_policy.c"]
       }
     ],
     "recovery": [
