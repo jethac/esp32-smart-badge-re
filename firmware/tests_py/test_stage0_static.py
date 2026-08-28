@@ -21,23 +21,30 @@ PATCH_TARGETS = {
     "SDK/cpu/br35/sdk_ld.c",
 }
 REQUIRED_TARGET_SOURCES = {
+    "apps/common/debug/debug.c",
+    "apps/common/update/update.c",
     "apps/watch/app_main.c",
     "apps/watch/board/br35/board_e87_1542/board_e87_1542.c",
     "apps/watch/e87/e87_stage0_adv.c",
     "apps/watch/e87/e87_stage0_app.c",
     "apps/watch/e87/e87_stage0_ble.c",
+    "apps/watch/e87/e87_stage0_platform_config.c",
     "apps/watch/log_config/app_config.c",
     "apps/watch/log_config/lib_btctrler_config.c",
     "apps/watch/log_config/lib_btstack_config.c",
     "apps/watch/log_config/lib_driver_config.c",
     "apps/watch/log_config/lib_system_config.c",
+    "cpu/br35/setup.c",
+    "cpu/power/msg.c",
 }
-INITIAL_TARGET_ARCHIVES = {
+REQUIRED_TARGET_ARCHIVES = {
     "cpu/br35/liba/cpu.a",
     "cpu/br35/liba/system.a",
     "cpu/br35/liba/btstack.a",
     "cpu/br35/liba/btctrler.a",
     "cpu/br35/liba/libc.a",
+    "cpu/br35/liba/cbuf.a",
+    "cpu/br35/liba/cfg_tool.a",
 }
 FORBIDDEN_TARGET_SOURCES = {
     "apps/watch/mode/bt/bt.c",
@@ -202,7 +209,7 @@ class Stage0StaticTests(unittest.TestCase):
         actual = set(
             re.findall(r"(?:^|\s)([A-Za-z0-9_./+-]+\.a)(?:\s|$)", block)
         )
-        self.assertEqual(actual, INITIAL_TARGET_ARCHIVES)
+        self.assertEqual(actual, REQUIRED_TARGET_ARCHIVES)
         self.assertIn("LFLAGS := \\", block)
         self.assertIn("--start-group", block)
         self.assertIn("--end-group", block)
@@ -218,6 +225,15 @@ class Stage0StaticTests(unittest.TestCase):
             "libstdc++",
         ):
             self.assertNotIn(forbidden, block)
+
+    def test_stage0_platform_policy_tu_is_data_only_and_owned(self) -> None:
+        policy = OVERLAY / "e87/e87_stage0_platform_config.c"
+        self.assertTrue(policy.is_file(), policy)
+        source = read(policy)
+        self.assertIn("const int CONFIG_CPU_UNMASK_IRQ_ENABLE = 0;", source)
+        self.assertIn("const u8 btstack_emitter_support = 0;", source)
+        self.assertNotIn("config_stack_modules", source)
+        self.assertNotRegex(source, re.compile(r"^[A-Za-z_].*\([^;]*\)\s*\{", re.M))
 
 
     def test_generated_file_list_has_a_closed_stage0_branch(self) -> None:
