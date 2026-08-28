@@ -21,6 +21,7 @@ from e87_embed import (
     _sha,
     validate_release,
 )
+from e87_surface import RECEIPT_NAME as SURFACE_RECEIPT_NAME, validate_surface
 
 
 APPLICATION_ID = "net.jethachan.factory_badges"
@@ -50,6 +51,8 @@ FORBIDDEN_APP_REFERENCES = (
     "Ldalvik/system/PathClassLoader",
     "BluetoothOTAManager",
 )
+SURFACE_RECEIPT = Path(__file__).resolve().with_name(SURFACE_RECEIPT_NAME)
+SOURCE_ROOT = Path(__file__).resolve().parents[1] / "app/src/main/java"
 
 
 def _regular_absolute(path: Path, label: str, *, executable: bool = False) -> Path:
@@ -215,13 +218,15 @@ def _audit_manifest_tree(output: str) -> None:
         raise ValidationError("maintenance activity has an intent filter")
 
 
-def _audit_dex(output: str, dex_entries: tuple[str, ...]) -> None:
+def _audit_dex(output: str, dex_entries: tuple[str, ...],
+               authorized_descriptors: tuple[str, ...]) -> None:
     opened = tuple(re.findall(
         r"(?m)^Opened '.*:([^/:']+\.dex)', DEX version '[0-9]+'$", output))
     if opened != dex_entries:
         raise ValidationError("dexdump did not inspect the complete closed DEX inventory")
     blocks = re.split(r"(?m)(?=^Class #[0-9]+\s+-)", output)
     app_classes = 0
+    descriptors: list[str] = []
     for block in blocks:
         descriptor = re.search(r"Class descriptor\s+: '([^']+)'", block)
         if descriptor is None:
@@ -232,12 +237,16 @@ def _audit_dex(output: str, dex_entries: tuple[str, ...]) -> None:
         if not name.startswith(APP_DESCRIPTOR_PREFIX):
             raise ValidationError("APK contains a class outside the closed controller namespace")
         app_classes += 1
+        descriptors.append(name)
         for token in FORBIDDEN_APP_REFERENCES:
             if token in block:
                 raise ValidationError(
                     f"application class {name} references forbidden surface {token}")
     if app_classes == 0:
         raise ValidationError("DEX audit found no controller application classes")
+    if (len(descriptors) != len(set(descriptors))
+            or tuple(sorted(descriptors)) != authorized_descriptors):
+        raise ValidationError("APK class descriptors differ from the reviewed closed surface")
 
 
 def audit_apk(apk: Path, release_root: Path, aapt: Path, dexdump: Path) -> dict[str, object]:
@@ -245,6 +254,7 @@ def audit_apk(apk: Path, release_root: Path, aapt: Path, dexdump: Path) -> dict[
     aapt = _regular_absolute(aapt, "aapt", executable=True)
     dexdump = _regular_absolute(dexdump, "dexdump", executable=True)
     release = validate_release(Path(release_root))
+    authorized_descriptors = validate_surface(SURFACE_RECEIPT, SOURCE_ROOT)
     projection, tree_digest, dex_entries = _audit_zip(apk, release)
     min_sdk, target_sdk = _audit_badging(
         _run(aapt, ["dump", "badging", os.fspath(apk)], "aapt badging"))
@@ -253,10 +263,16 @@ def audit_apk(apk: Path, release_root: Path, aapt: Path, dexdump: Path) -> dict[
     _audit_manifest_tree(_run(
         aapt, ["dump", "xmltree", os.fspath(apk), "AndroidManifest.xml"],
         "aapt manifest"))
-    _audit_dex(_run(dexdump, ["-d", os.fspath(apk)], "dexdump"), dex_entries)
+    _audit_dex(
+        _run(dexdump, ["-d", os.fspath(apk)], "dexdump"),
+        dex_entries,
+        authorized_descriptors,
+    )
     return {
         "applicationId": APPLICATION_ID,
         "apkSha256": _sha(apk.read_bytes()),
+        "authorizedClassCount": len(authorized_descriptors),
+        "authorizedSurfaceSha256": _sha(SURFACE_RECEIPT.read_bytes()),
         "buildId": release.receipt["buildId"],
         "chip": release.receipt["chip"],
         "embeddedContent": projection,

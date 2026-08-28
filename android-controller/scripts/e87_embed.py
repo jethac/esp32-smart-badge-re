@@ -23,7 +23,7 @@ PROVENANCE_SCHEMA_ID = "e87-android-embed-provenance-v1"
 CHIP = "AC707N"
 PROFILE = "E87-JD9855-R1"
 LAYOUT = "SINGLE_BANK"
-QIX_VERSION = "11.1.0.3"
+MIN_QIX_VERSION = (11, 1, 0, 4)
 RECEIPT_KEYS = {
     "buildId", "chip", "files", "labEligible", "layout", "profile",
     "qixVersion", "releaseEligible", "releaseRoot", "schemaId",
@@ -41,7 +41,9 @@ FIXED_FILENAMES = {
 HEX32 = re.compile(r"[0-9A-F]{32}\Z")
 HEX64 = re.compile(r"[0-9A-F]{64}\Z")
 SEMVER = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
-QIX_FILENAME = re.compile(r"E87-11\.1\.0\.3-([0-9A-F]{8}|[0-9A-F]{32})\.qix\Z")
+QIX_VERSION_PATTERN = re.compile(
+    r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\."
+    r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
 BARE_FILENAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 MAX_RECEIPT = 256 * 1024
 MAX_MANIFEST = 256 * 1024
@@ -172,8 +174,16 @@ def _validate_receipt(files: dict[str, bytes]) -> ValidatedRelease:
         raise ValidationError("handoff profile is not E87-JD9855-R1")
     if receipt["layout"] != LAYOUT:
         raise ValidationError("handoff layout is not SINGLE_BANK")
-    if receipt["qixVersion"] != QIX_VERSION:
-        raise ValidationError("handoff Qix version is not 11.1.0.3")
+    qix_version = receipt["qixVersion"]
+    qix_match = (QIX_VERSION_PATTERN.fullmatch(qix_version)
+                 if isinstance(qix_version, str) else None)
+    qix_parts = tuple(int(part) for part in qix_match.groups()) if qix_match else ()
+    if (qix_match is None or len(qix_version.encode("ascii")) > 10
+            or any(part > 255 for part in qix_parts)
+            or qix_parts < MIN_QIX_VERSION):
+        raise ValidationError(
+            "handoff Qix version must be canonical, fit the header, and be newer than "
+            "sacrificial 11.1.0.3")
     if _require_bool(receipt["labEligible"], "labEligible") is not True:
         raise ValidationError("handoff is not explicitly lab eligible")
     _require_bool(receipt["releaseEligible"], "releaseEligible")
@@ -204,8 +214,11 @@ def _validate_receipt(files: dict[str, bytes]) -> ValidatedRelease:
         if role in FIXED_FILENAMES and filename != FIXED_FILENAMES[role]:
             raise ValidationError(f"unexpected filename for role {role}")
         if role == "qix":
-            qix_match = QIX_FILENAME.fullmatch(filename)
-            if qix_match is None or qix_match.group(1) not in (build_id[:8], build_id):
+            expected_names = {
+                f"E87-{qix_version}-{build_id[:8]}.qix",
+                f"E87-{qix_version}-{build_id}.qix",
+            }
+            if filename not in expected_names:
                 raise ValidationError("Qix filename does not bind the expected build ID")
         length = record["length"]
         if not isinstance(length, int) or isinstance(length, bool) or length <= 0:

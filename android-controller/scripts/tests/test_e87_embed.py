@@ -15,8 +15,8 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "prepare-e87-firmware.py"
 BUILD_ID = "00112233445566778899AABBCCDDEEFF"
-QIX_VERSION = "11.1.0.3"
-QIX_NAME = "E87-11.1.0.3-00112233.qix"
+QIX_VERSION = "11.1.0.4"
+QIX_NAME = "E87-11.1.0.4-00112233.qix"
 ROLE_NAMES = (
     ("appBin", "app.bin"),
     ("jlIsdFw", "jl_isd.fw"),
@@ -99,7 +99,8 @@ class ReleaseFixture:
         (self.root / "e87-android-embed.json").write_bytes(canonical(self.receipt))
 
     def refresh_hashes(self) -> None:
-        ordinary = [name for _, name in ROLE_NAMES if name != "SHA256SUMS"]
+        ordinary = [record["filename"] for record in self.receipt["files"]
+                    if record["role"] != "sha256Sums"]
         sums = "".join(
             f"{sha((self.root / name).read_bytes())} *{name}\n"
             for name in sorted(ordinary)
@@ -110,6 +111,18 @@ class ReleaseFixture:
             record["length"] = len(data)
             record["sha256"] = sha(data)
         self.write_receipt()
+
+    def set_qix_version(self, version: str) -> None:
+        record = next(record for record in self.receipt["files"]
+                      if record["role"] == "qix")
+        old_path = self.root / record["filename"]
+        new_name = f"E87-{version}-{BUILD_ID[:8]}.qix"
+        payload = (self.root / "update.ufw").read_bytes()
+        old_path.unlink()
+        (self.root / new_name).write_bytes(qix(payload, version=version))
+        record["filename"] = new_name
+        self.receipt["qixVersion"] = version
+        self.refresh_hashes()
 
 
 class EmbedToolTest(unittest.TestCase):
@@ -234,6 +247,18 @@ class EmbedToolTest(unittest.TestCase):
                 self.release.receipt[field] = value
                 self.release.write_receipt()
                 self.assert_rejected()
+
+    def test_receipt_supplied_future_qix_version_is_header_and_filename_bound(self) -> None:
+        self.release.set_qix_version("11.1.0.5")
+
+        result = self.run_prepare()
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_consumed_sacrificial_qix_version_is_below_the_supported_floor(self) -> None:
+        self.release.set_qix_version("11.1.0.3")
+
+        self.assert_rejected("newer than sacrificial")
 
     def test_file_records_reject_role_order_duplicates_names_lengths_and_hashes(self) -> None:
         original = json.loads(json.dumps(self.release.receipt))

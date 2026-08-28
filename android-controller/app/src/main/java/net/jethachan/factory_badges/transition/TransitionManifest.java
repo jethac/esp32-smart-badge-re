@@ -15,7 +15,7 @@ public final class TransitionManifest {
     private static final String CHIP = "AC707N";
     private static final String PROFILE = "E87-JD9855-R1";
     private static final String LAYOUT = "SINGLE_BANK";
-    private static final String QIX_VERSION = "11.1.0.3";
+    private static final int[] MIN_QIX_VERSION = new int[] {11, 1, 0, 4};
     private static final String[] ROLE_ORDER = new String[] {
             "appBin", "jlIsdFw", "updateUfw", "qix", "manifest", "sha256Sums"
     };
@@ -31,8 +31,9 @@ public final class TransitionManifest {
             "(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)");
     private static final Pattern BARE_FILENAME = Pattern.compile(
             "[A-Za-z0-9][A-Za-z0-9._-]*");
-    private static final Pattern QIX_FILENAME = Pattern.compile(
-            "E87-11\\.1\\.0\\.3-([0-9A-F]{8}|[0-9A-F]{32})\\.qix");
+    private static final Pattern QIX_VERSION = Pattern.compile(
+            "(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\."
+            + "(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)");
     private static final long MAX_ARTIFACT = 32L * 1024L * 1024L;
     private static final long MAX_MANIFEST = 256L * 1024L;
     private static final long MAX_SHA256SUMS = 16L * 1024L;
@@ -57,14 +58,16 @@ public final class TransitionManifest {
     }
 
     private final String semver;
+    private final String qixVersion;
     private final String releaseRoot;
     private final boolean releaseEligible;
     private final byte[] buildId;
     private final List<FileRecord> files;
 
-    private TransitionManifest(String semver, String releaseRoot, boolean releaseEligible,
-            byte[] buildId, List<FileRecord> files) {
+    private TransitionManifest(String semver, String qixVersion, String releaseRoot,
+            boolean releaseEligible, byte[] buildId, List<FileRecord> files) {
         this.semver = semver;
+        this.qixVersion = qixVersion;
         this.releaseRoot = releaseRoot;
         this.releaseEligible = releaseEligible;
         this.buildId = Arrays.copyOf(buildId, buildId.length);
@@ -87,9 +90,8 @@ public final class TransitionManifest {
         if (!LAYOUT.equals(string(root, "layout"))) {
             throw new IllegalArgumentException("handoff layout is not SINGLE_BANK");
         }
-        if (!QIX_VERSION.equals(string(root, "qixVersion"))) {
-            throw new IllegalArgumentException("handoff Qix version is unsupported");
-        }
+        String qixVersion = string(root, "qixVersion");
+        requireSupportedQixVersion(qixVersion);
         if (!bool(root, "labEligible")) {
             throw new IllegalArgumentException("handoff is not explicitly lab eligible");
         }
@@ -139,7 +141,7 @@ public final class TransitionManifest {
             if (!BARE_FILENAME.matcher(filename).matches()) {
                 throw new IllegalArgumentException("handoff filename is not bare");
             }
-            requireRoleFilename(role, filename, buildIdHex);
+            requireRoleFilename(role, filename, buildIdHex, qixVersion);
             long length = integer(record, "length");
             long cap = "manifest".equals(role) ? MAX_MANIFEST
                     : ("sha256Sums".equals(role) ? MAX_SHA256SUMS : MAX_ARTIFACT);
@@ -153,13 +155,14 @@ public final class TransitionManifest {
             records.add(new FileRecord(role, filename, (int) length, decodeHex(digest)));
         }
         return new TransitionManifest(
-                semver, releaseRoot, releaseEligible, decodeHex(buildIdHex), records);
+                semver, qixVersion, releaseRoot, releaseEligible,
+                decodeHex(buildIdHex), records);
     }
 
     public String chip() { return CHIP; }
     public String profile() { return PROFILE; }
     public String layout() { return LAYOUT; }
-    public String qixVersion() { return QIX_VERSION; }
+    public String qixVersion() { return qixVersion; }
     public String semver() { return semver; }
     public String releaseRoot() { return releaseRoot; }
     public boolean releaseEligible() { return releaseEligible; }
@@ -173,7 +176,8 @@ public final class TransitionManifest {
         throw new IllegalArgumentException("unknown handoff file role");
     }
 
-    private static void requireRoleFilename(String role, String filename, String buildId) {
+    private static void requireRoleFilename(
+            String role, String filename, String buildId, String qixVersion) {
         String expected = null;
         if ("appBin".equals(role)) expected = "app.bin";
         if ("jlIsdFw".equals(role)) expected = "jl_isd.fw";
@@ -184,11 +188,35 @@ public final class TransitionManifest {
             throw new IllegalArgumentException("handoff role has an unexpected filename");
         }
         if ("qix".equals(role)) {
-            Matcher match = QIX_FILENAME.matcher(filename);
-            if (!match.matches()
-                    || !(buildId.substring(0, 8).equals(match.group(1))
-                    || buildId.equals(match.group(1)))) {
+            String stem = "E87-" + qixVersion + "-";
+            if (!(filename.equals(stem + buildId.substring(0, 8) + ".qix")
+                    || filename.equals(stem + buildId + ".qix"))) {
                 throw new IllegalArgumentException("Qix filename differs from build identity");
+            }
+        }
+    }
+
+    private static void requireSupportedQixVersion(String value) {
+        Matcher match = QIX_VERSION.matcher(value);
+        if (!match.matches() || value.length() > 10) {
+            throw new IllegalArgumentException("handoff Qix version is not canonical");
+        }
+        int[] parts = new int[4];
+        for (int index = 0; index < parts.length; index++) {
+            try {
+                parts[index] = Integer.parseInt(match.group(index + 1));
+            } catch (NumberFormatException error) {
+                throw new IllegalArgumentException("handoff Qix version component is invalid", error);
+            }
+            if (parts[index] > 255) {
+                throw new IllegalArgumentException("handoff Qix version component exceeds byte");
+            }
+        }
+        for (int index = 0; index < parts.length; index++) {
+            if (parts[index] > MIN_QIX_VERSION[index]) return;
+            if (parts[index] < MIN_QIX_VERSION[index]) {
+                throw new IllegalArgumentException(
+                        "handoff Qix version is not newer than sacrificial 11.1.0.3");
             }
         }
     }

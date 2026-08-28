@@ -18,7 +18,7 @@ import java.util.Set;
 
 final class EmbeddedReleaseTestFixture implements TransitionArtifactValidator.AssetSource {
     static final String BUILD_ID = "00112233445566778899AABBCCDDEEFF";
-    static final String QIX_NAME = "E87-11.1.0.3-00112233.qix";
+    static final String QIX_NAME = "E87-11.1.0.4-00112233.qix";
     static final String RELEASE_ROOT = "E87-JD9855-R1/0.1.0/" + BUILD_ID;
     static final String PREFIX = "e87/" + RELEASE_ROOT + "/";
 
@@ -83,7 +83,7 @@ final class EmbeddedReleaseTestFixture implements TransitionArtifactValidator.As
                 .append("  \"labEligible\": true,\n")
                 .append("  \"layout\": \"SINGLE_BANK\",\n")
                 .append("  \"profile\": \"E87-JD9855-R1\",\n")
-                .append("  \"qixVersion\": \"11.1.0.3\",\n")
+                .append("  \"qixVersion\": \"11.1.0.4\",\n")
                 .append("  \"releaseEligible\": false,\n")
                 .append("  \"releaseRoot\": \"").append(RELEASE_ROOT).append("\",\n")
                 .append("  \"schemaId\": \"e87-android-embed-v1\",\n")
@@ -117,7 +117,7 @@ final class EmbeddedReleaseTestFixture implements TransitionArtifactValidator.As
         header[0] = (byte) 0xBC;
         header[1] = (byte) 0xAF;
         header[2] = 1;
-        byte[] version = ascii("11.1.0.3");
+        byte[] version = ascii("11.1.0.4");
         System.arraycopy(version, 0, header, 3, version.length);
         putU32(header, 13, payload.length);
         int crc = crc16(payload);

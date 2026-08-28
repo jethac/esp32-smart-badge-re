@@ -36,14 +36,25 @@ XMLTREE = """N: android=http://schemas.android.com/apk/res/android
         A: android:name(0x01010003)="net.jethachan.factory_badges.ui.MaintenanceActivity"
         A: android:exported(0x01010010)=(type 0x12)0x0
 """
-DEXDUMP = """Opened '/tmp/controller.apk:classes.dex', DEX version '039'
-Class #0            -
-  Class descriptor  : 'Lnet/jethachan/factory_badges/ui/MainActivity;'
-  Superclass        : 'Landroid/app/Activity;'
-Class #1            -
-  Class descriptor  : 'Lnet/jethachan/factory_badges/transition/StockQixTransferMachine;'
-  Superclass        : 'Ljava/lang/Object;'
-"""
+SURFACE = json.loads((Path(__file__).resolve().parents[1]
+                      / "e87-authorized-app-surface.json").read_bytes())
+AUTHORIZED_DESCRIPTORS = tuple(SURFACE["classDescriptors"])
+
+
+def make_dexdump(*, multidex: bool = False) -> str:
+    opened = "Opened '/tmp/controller.apk:classes.dex', DEX version '039'\n"
+    if multidex:
+        opened += "Opened '/tmp/controller.apk:classes2.dex', DEX version '039'\n"
+    blocks = "".join(
+        f"Class #{index}            -\n"
+        f"  Class descriptor  : '{descriptor}'\n"
+        "  Superclass        : 'Ljava/lang/Object;'\n"
+        for index, descriptor in enumerate(AUTHORIZED_DESCRIPTORS)
+    )
+    return opened + blocks
+
+
+DEXDUMP = make_dexdump()
 
 
 class VerifyApkTest(unittest.TestCase):
@@ -139,8 +150,10 @@ class VerifyApkTest(unittest.TestCase):
         self.assertEqual(self.release.receipt["buildId"], value["buildId"])
         self.assertTrue(value["labEligible"])
         self.assertFalse(value["releaseEligible"])
-        self.assertEqual("11.1.0.3", value["qixVersion"])
+        self.assertEqual("11.1.0.4", value["qixVersion"])
         self.assertEqual(self.release.receipt["releaseRoot"], value["releaseRoot"])
+        self.assertEqual(len(AUTHORIZED_DESCRIPTORS), value["authorizedClassCount"])
+        self.assertRegex(value["authorizedSurfaceSha256"], r"^[0-9A-F]{64}$")
         self.assertNotIn(os.fspath(self.base), receipt.read_text(encoding="ascii"))
         self.assertEqual(
             json.dumps(value, ensure_ascii=True, allow_nan=False, indent=2,
@@ -164,11 +177,7 @@ class VerifyApkTest(unittest.TestCase):
 
     def test_audit_accepts_contiguous_multidex_only_when_every_dex_is_scanned(self) -> None:
         self.write_apk(extra={"classes2.dex": b"second dex"})
-        dump = DEXDUMP + """Opened '/tmp/controller.apk:classes2.dex', DEX version '039'
-Class #2            -
-  Class descriptor  : 'Lnet/jethachan/factory_badges/transition/SecondDexMarker;'
-  Superclass        : 'Ljava/lang/Object;'
-"""
+        dump = make_dexdump(multidex=True)
 
         result = self.verify(dexdump=self.make_tool("dexdump", dump))
 
@@ -222,7 +231,8 @@ Class #2            -
                 self.assertEqual(2, result.returncode, result.stdout + result.stderr)
 
         unapproved_namespace = DEXDUMP + """Class #2            -
-  Class descriptor  : 'Lexample/hidden/TransferClient;'
+  Class descriptor  : 'Lnet/jethachan/factory_badges/hidden/TransferClient;'
+  type              : 'Landroid/bluetooth/BluetoothGatt;'
   Superclass        : 'Ljava/lang/Object;'
 """
         result = self.verify(

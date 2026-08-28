@@ -263,6 +263,11 @@ public final class MainActivityBoundaryTest {
         assertEquals(1, count(source.method("onStopSyncClicked"),
                 "presenter.onStopPressed()"));
         String maintenance = source.method("onMaintenanceClicked");
+        assertTrue(maintenance.contains(
+                "if (!MaintenanceEntryGate.canEnter(getApplicationContext())) return;"));
+        assertOrder(maintenance, "MaintenanceEntryGate.canEnter(",
+                "new Intent(MainActivity.this, MaintenanceActivity.class)",
+                "startActivity(intent)");
         assertEquals(1, count(maintenance,
                 "new Intent(MainActivity.this, MaintenanceActivity.class)"));
         assertEquals(1, count(maintenance, "startActivity("));

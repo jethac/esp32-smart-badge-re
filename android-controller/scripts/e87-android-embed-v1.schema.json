@@ -23,7 +23,7 @@
     "labEligible": {"const": true},
     "layout": {"const": "SINGLE_BANK"},
     "profile": {"const": "E87-JD9855-R1"},
-    "qixVersion": {"const": "11.1.0.3"},
+    "qixVersion": {"maxLength": 10, "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$", "type": "string"},
     "releaseEligible": {"type": "boolean"},
     "releaseRoot": {"pattern": "^E87-JD9855-R1/[0-9]+\\.[0-9]+\\.[0-9]+/[0-9A-F]{32}$", "type": "string"},
     "schemaId": {"const": "e87-android-embed-v1"},

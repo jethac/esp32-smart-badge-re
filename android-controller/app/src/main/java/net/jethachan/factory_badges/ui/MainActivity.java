@@ -419,6 +419,7 @@ public final class MainActivity extends Activity {
     }
 
     private void onMaintenanceClicked() {
+        if (!MaintenanceEntryGate.canEnter(getApplicationContext())) return;
         Intent intent = new Intent(MainActivity.this, MaintenanceActivity.class);
         startActivity(intent);
     }

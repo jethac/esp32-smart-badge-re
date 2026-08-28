@@ -8,11 +8,11 @@ The handoff directory is closed and contains exactly:
 - `app.bin`
 - `jl_isd.fw`
 - `update.ufw`
-- one Qix named `E87-11.1.0.3-<BUILD-ID-PREFIX-OR-FULL>.qix`
+- one Qix named `E87-<QIX-VERSION>-<BUILD-ID-PREFIX-OR-FULL>.qix`
 - `manifest.json`
 - `SHA256SUMS`
 
-The receipt must bind chip `AC707N`, profile `E87-JD9855-R1`, layout `SINGLE_BANK`, a canonical three-part firmware semver, a 16-byte uppercase hexadecimal build ID, Qix version `11.1.0.3`, and explicit `labEligible: true`. `releaseEligible` is independent and must also be an explicit Boolean. The six `files` records appear in role order `appBin`, `jlIsdFw`, `updateUfw`, `qix`, `manifest`, `sha256Sums`; every record binds the bare filename, positive byte length, and uppercase SHA-256.
+The receipt must bind chip `AC707N`, profile `E87-JD9855-R1`, layout `SINGLE_BANK`, a canonical three-part firmware semver, a 16-byte uppercase hexadecimal build ID, a canonical four-part Qix version, and explicit `labEligible: true`. Qix `11.1.0.3` was consumed by the sacrificial Stage-0 transfer, so Android accepts `11.1.0.4` or later (numeric tuple order) and binds that receipt value to both the Qix header and filename. `releaseEligible` is independent and must also be an explicit Boolean. The six `files` records appear in role order `appBin`, `jlIsdFw`, `updateUfw`, `qix`, `manifest`, `sha256Sums`; every record binds the bare filename, positive byte length, and uppercase SHA-256.
 
 `SHA256SUMS` contains the other five delivery files, sorted by ordinal filename, as uppercase `HASH *filename` lines. The receipt itself is canonical `json.dumps(..., ensure_ascii=True, allow_nan=False, indent=2, sort_keys=True) + "\\n"`. The committed JSON Schema documents the surface; `e87_embed.py` is the executable authority and additionally enforces field relationships, file caps, exact inventory, symlink rejection, Qix magic/type/version/reserved bytes/length/CRC, and byte-for-byte equality between the Qix payload and `update.ufw`.
 
@@ -50,6 +50,17 @@ Before installation, audit the exact APK and create a path-independent, create-o
   --dexdump /absolute/path/to/android-sdk/build-tools/34.0.0/dexdump \
   --receipt /absolute/new/path/apk-audit.json
 ```
+
+The APK audit also validates `scripts/e87-authorized-app-surface.json`. That committed review receipt closes both the complete production Java source inventory with per-file SHA-256 hashes and the complete allowed DEX class-descriptor inventory. Any production source/class change therefore fails the audit until a newly built APK is used to create a separate candidate receipt and that receipt diff is independently reviewed:
+
+```sh
+/usr/bin/python3.11 scripts/generate-authorized-surface.py \
+  --apk /absolute/path/to/rebuilt-app-labQualified.apk \
+  --dexdump /absolute/path/to/android-sdk/build-tools/34.0.0/dexdump \
+  --output /absolute/new/path/e87-authorized-app-surface.json
+```
+
+The generator is deliberately create-only. It does not authorize a change by itself and the committed receipt must never be refreshed merely to make an unexpected APK pass.
 
 Installation and installed-byte verification require the Redmi's explicit `adb` serial. Both commands re-run the complete offline audit before contacting that serial, and every `adb` invocation includes `-s <serial>`:
 

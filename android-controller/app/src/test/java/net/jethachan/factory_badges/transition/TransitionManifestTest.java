@@ -18,7 +18,7 @@ public final class TransitionManifestTest {
         assertEquals("E87-JD9855-R1", manifest.profile());
         assertEquals("SINGLE_BANK", manifest.layout());
         assertEquals("0.1.0", manifest.semver());
-        assertEquals("11.1.0.3", manifest.qixVersion());
+        assertEquals("11.1.0.4", manifest.qixVersion());
         assertEquals(EmbeddedReleaseTestFixture.RELEASE_ROOT, manifest.releaseRoot());
         assertArrayEquals(hex(EmbeddedReleaseTestFixture.BUILD_ID), manifest.buildId());
         assertEquals(6, manifest.files().size());
@@ -57,7 +57,7 @@ public final class TransitionManifestTest {
                 valid.replace("\"labEligible\": true", "\"labEligible\": false"),
                 valid.replace(EmbeddedReleaseTestFixture.BUILD_ID,
                         EmbeddedReleaseTestFixture.BUILD_ID.toLowerCase()),
-                valid.replace("\"qixVersion\": \"11.1.0.3\"",
+                valid.replace("\"qixVersion\": \"11.1.0.4\"",
                         "\"qixVersion\": \"11.1.0.2\""),
                 valid.replace("\"semver\": \"0.1.0\"", "\"semver\": \"01.1.0\""),
         };
@@ -76,6 +76,21 @@ public final class TransitionManifestTest {
         assertArrayEquals(hex(EmbeddedReleaseTestFixture.BUILD_ID), manifest.buildId());
         assertThrows(UnsupportedOperationException.class,
                 () -> manifest.files().clear());
+    }
+
+    @Test public void receiptSuppliedFutureQixVersionIsAcceptedButConsumedFloorIsNot() {
+        EmbeddedReleaseTestFixture fixture = new EmbeddedReleaseTestFixture();
+        String valid = new String(fixture.receiptBytes(), StandardCharsets.US_ASCII);
+
+        TransitionManifest future = TransitionManifest.parse(
+                valid.replace("11.1.0.4", "11.1.0.5")
+                        .getBytes(StandardCharsets.US_ASCII));
+
+        assertEquals("11.1.0.5", future.qixVersion());
+        assertThrows(IllegalArgumentException.class,
+                () -> TransitionManifest.parse(
+                        valid.replace("11.1.0.4", "11.1.0.3")
+                                .getBytes(StandardCharsets.US_ASCII)));
     }
 
     private static byte[] hex(String value) {
