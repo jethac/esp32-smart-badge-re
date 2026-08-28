@@ -90,7 +90,7 @@ transport, not panel, calibration, partition, power, or resource compatibility.
 | Build info | `e87d0003-7a1b-4c62-9f0b-5d9c01a70735`, exactly 40 bytes |
 | State | Day/Week `0..100`, credit exactly 1727 cents, complete idempotent snapshot; no sequence/CRC |
 | Pairing | Just Works; one owner; new peer only in physical 60-second window |
-| Button 1 | tap battery; 3 s pair; 7 s warning; 10 s app maintenance; hung runtime PB08 reset at 16 s |
+| Button 1 | tap battery; 3 s pair; 7 s warning; 10 s app maintenance; hung-runtime PB07 PINR0 reset at 16 s |
 | Button 2 | only ordinary sleep/wake control; no inactivity timeout |
 | Charging | electrical charge/safety retained; no stock charge page/mode or charger-triggered sleep |
 | Maintenance | `E87 UPDATE`; AE00; AE01 write-without-response; AE02 notify plus CCCD; physical/RCSP-authenticated gate |
@@ -393,17 +393,32 @@ color bars under current limiting and logic capture.
 
 ### 5.5 Buttons and PINR
 
-Model-1552 configuration uses one PB08 ADC ladder: pull-up 1000, scale 4096,
-nominal resistors 100/330, predicted keys near 372/1016 and both near 292.
-Configuration is **PROVEN for 1552**; model-1542 electrical clusters and physical
-labels are **UNVERIFIED**. Measure released, each key, and both keys across
-units, voltage, and temperature. Stock aliases the chord to key 0; custom E87
-maps the measured both-buttons cluster to `AMBIGUOUS` and has no `CHORD` enum.
+The decoded model-1552 configuration uses one PB07 ADC ladder: pull-up 1000,
+scale 4096, nominal resistors 100/330, predicted single-button values near
+372/1016, and both-buttons near 292. The configuration and PB07 selection are
+**PROVEN for model 1552**; the calculated centers are **INFERRED**. The actual
+ADC pin, distributions, and physical button labels remain **UNVERIFIED for
+model 1542** and must be measured across units, voltage, and temperature.
+Stock aliases the chord to key 0; custom E87 maps the measured both-buttons
+cluster to `AMBIGUOUS` and has no `CHORD` enum.
 
-PB07 and PB08 are sequential PINR0 owners: packaged PB07/8 s, early disable,
-then stock PB08/8 s. E87 disables inherited PB07 and stock PB08/8 s, then custom
-code owns PB08/16 s. Verify generated INI, packed `cfg_tool.bin`, runtime API
-argument, and physical behavior.
+The model-1552 `CFG_ADKEY_ID` payload selects `io_uuid = 0x4F49`, which maps to
+`IO_PORTB_07`; `0x4F4A` maps to PB08. The board adapter must accept the GPADC
+input only when `adc_io2ch(IO_PORTB_07) == 0x0002030D` exactly. PB08 returns
+`UINT32_MAX` in the pinned implementation. A range test, `!= 0xFF`, or merely
+`!= UINT32_MAX` is not an acceptable channel check.
+
+Model 1552 uses one sequential PB07/PINR0 owner: the stock package requests
+PB07/8 s, early power setup disables PINR0, and stock AD-key initialization
+re-arms PB07/8 s. Custom E87 instead emits `RESET = PB07_00_0;`, disables the
+stock AD-key long-press setup, and directly owns PB07/PINR0 at runtime with a
+16-second fallback. The runtime call's fifth argument is the full GPIO-mode
+enum, not a boolean: use `PORT_INPUT_PULLUP_100K` / `0x12`, matching the pinned
+AD-key path. Passing `1` selects `PORT_OUTPUT_HIGH` and is forbidden. The PB07
+qualification accepts only the `DRIVER_IO2CH` returned-`u32` route and exact
+`0x0002030D` equality; void/self-asserted internal-signal evidence is not
+sufficient. Verify the generated INI, packed `cfg_tool.bin`, exact
+runtime API argument, reset cause, and physical model-1542 behavior.
 
 
 ## 6. Firmware architecture and source layout
@@ -483,7 +498,7 @@ Recommended ownership:
 | `e87_button_fsm` | debouncing and tap/hold classification | stock reset callbacks |
 | `e87_power_policy` | active/manual-sleep transitions | charger UI |
 | `e87_charge_adapter` | external-power and charge-state inputs | an automatic charge page |
-| `e87_recovery` | PB08 16-second pin-reset and reset-source route | normal semantic writes |
+| `e87_recovery` | board-neutral PINR0 16-second policy and reset-source route | normal semantic writes |
 | `e87_maintenance` | separately gated update service | normal-mode reachability |
 | platform adapters | vendor SDK calls and ISR/callback translation | business policy |
 
@@ -743,7 +758,7 @@ First ownership requires the physical pairing window and encrypted bonding;
 later control is restricted to that bond. Button 1 opens the 60-second window at
 three seconds. Accept a replacement only within it, and remove the old bond only
 after the replacement succeeds. Advertising is bounded and deterministic, with
-no silent takeover. The 16-second PB08 reset is hung-runtime recovery, not bond
+no silent takeover. The 16-second PB07 PINR0 reset is hung-runtime recovery, not bond
 deletion. BLE loss preserves the last metrics/face and changes only connectivity.
 
 Build-info is readable only after encryption. Test every stack-supported fragment
@@ -754,16 +769,20 @@ logical value. Manifest, package, firmware, and evidence use the same `buildId`.
 
 ### 9.1 One ADC ladder, explicit classifiers
 
-Model-1552 evidence places the two-button ladder on PB08 with pull-up 1000 and
+Model-1552 evidence places the two-button ladder on PB07 with pull-up 1000 and
 ADC scale 4096. Stock values imply 100/330-ohm legs, single-button samples near
-372/1016, and both buttons near 292. These are starting evidence, not calibrated
-1542 thresholds. Measure idle, each/both buttons, temperature, battery voltage,
-and charging distributions before freezing guarded windows.
+372/1016, and both buttons near 292. PB07 selection is proven only for the
+decoded model-1552 artifact; the centers, model-1542 ADC pin, distributions,
+and physical Button 1/Button 2 mapping require measurement. Before sampling,
+the board adapter must require
+`adc_io2ch(IO_PORTB_07) == 0x0002030D` exactly; PB08 is not an ADC substitute.
 
-Stock uses PB07/eight-second then PB08/eight-second paths. Custom firmware
-disables both and owns PB08 with a 16-second fallback keyed to measured Button 1.
-Healthy runtime handles ten seconds, disarms pin reset, waits for release, then
-re-arms it; hung runtime reaches reset at 16 seconds.
+Decoded stock model 1552 configures one PB07/PINR0 facility sequentially:
+package PB07/8 s, early disable, then runtime PB07/8 s. Custom firmware emits
+`RESET = PB07_00_0;`, disables stock AD-key long press, and directly owns
+PB07/PINR0 with a 16-second fallback associated with the measured Button 1.
+Healthy runtime handles ten seconds, disarms PINR0, waits for release, and
+re-arms PB07/PINR0; a hung runtime reaches reset at 16 seconds.
 
 The debounced public classifier outputs exactly `NONE`, `B1`, `B2`,
 or `AMBIGUOUS`. The calibrated both-buttons cluster maps to `AMBIGUOUS`; there is
@@ -781,11 +800,11 @@ sleep once. Button 2 has no hold action, and `AMBIGUOUS` begins no action.
 
 Maintain a separate maintenance-release latch. A maintenance request may occur
 only after the normal-mode stop operation succeeds, debouncing observes stable
-`NONE`, and the PB08 16-second fallback re-arm succeeds. `B1`, `B2`,
+`NONE`, and the PB07 PINR0 16-second fallback re-arm succeeds. `B1`, `B2`,
 `AMBIGUOUS`, any undefined/out-of-window classifier result, and any direct
 known-class change revoke that latch. Neither `AMBIGUOUS` nor a direct-change
 termination can recover it; recovery requires a new stable `NONE` observation
-and successful PB08 re-arm after the normal-mode stop.
+and successful PB07 PINR0 re-arm after the normal-mode stop.
 
 V1 gestures:
 
@@ -799,10 +818,10 @@ V1 gestures:
 - terminate the hold from 7,000 through 9,999 ms: cancel the warning/countdown,
   do not enter maintenance, and restore the same still-running pairing window;
 - cross ten seconds in a healthy runtime: latch maintenance intent once, disarm
-  PB08 reset, and show `READY TO UPDATE — RELEASE BUTTON`; request application
+  PB07 PINR0, and show `READY TO UPDATE — RELEASE BUTTON`; request application
   maintenance only after normal-mode stop succeeds, stable `NONE` qualifies the
-  release, and PB08 fallback re-arm succeeds;
-- continue holding Button 1 to 16 seconds only when runtime is hung: PB08 resets,
+  release, and PB07 PINR0 fallback re-arm succeeds;
+- continue holding Button 1 to 16 seconds only when runtime is hung: PB07 PINR0 resets,
   and the early reset-source path enters maintenance;
 - Button 2 tap: enter manual sleep from active operation, or wake and redraw
   from manual sleep.
@@ -956,7 +975,7 @@ face, bond, or accepted metrics.
 Normal and maintenance modes are separate security surfaces. Healthy runtime
 enters application maintenance only after Button 1 crosses three-second pairing,
 seven-second warning, and ten-second entry. Hung runtime may reach the 16-second
-PB08 reset; the earliest application checks `P33_PPINR_RST` and enters
+PB07 PINR0 reset; the earliest application checks `P33_PPINR_RST` and enters
 maintenance before normal resources. Both routes use the same held Button 1, not
 a chord. Maintenance has a distinct identity/service and times out or reboots if
 no authorized operation begins. No normal GATT write may enter maintenance, and
@@ -1518,7 +1537,7 @@ Host tests should use pure modules or fakes for SDK adapters. At minimum:
 | no inactivity timeout | advance fake time for battery and external-power modes | no automatic presentation transition | `host/power-policy.xml` |
 | manual sleep | charger insert/remove and reconnect permutations in both presentation states | only Button 2 or safety policy changes presentation | `host/power-matrix.json` |
 | charger bounce | rapid duplicate/bounced edge sequences | idempotent, metrics/bond/latch unchanged | `host/charger-fuzz.json` |
-| button state machine | calibrated windows including both-buttons→`AMBIGUOUS`; stable `NONE`/`AMBIGUOUS` and direct B1↔B2 terminations; inject B1/B2/AMBIGUOUS/undefined after candidate release; normal-stop and PB08 re-arm failures; 2999/3000, 6999/7000, 9999/10000, and 15999/16000 ms | `AMBIGUOUS`/direct change only terminate; maintenance requires successful normal stop, stable NONE, and successful re-arm; B1/B2/AMBIGUOUS/undefined revoke release latch; direct B1→B2 cannot toggle sleep until stable NONE then fresh B2; hung reset requires uninterrupted B1 | `host/button-vectors.csv` |
+| button state machine | calibrated windows including both-buttons→`AMBIGUOUS`; stable `NONE`/`AMBIGUOUS` and direct B1↔B2 terminations; inject B1/B2/AMBIGUOUS/undefined after candidate release; normal-stop and PINR0 re-arm failures; 2999/3000, 6999/7000, 9999/10000, and 15999/16000 ms | `AMBIGUOUS`/direct change only terminate; maintenance requires successful normal stop, stable NONE, and successful re-arm; B1/B2/AMBIGUOUS/undefined revoke release latch; direct B1→B2 cannot toggle sleep until stable NONE then fresh B2; hung reset requires uninterrupted B1 | `host/button-vectors.csv` |
 | battery filter | put 4095 then >4095 in each of all eight positions; test boot/no-history, valid→invalid→valid state transitions, permutations, duplicate extrema, maximum sum, all 11 knots, every interval, and half-rounding | out-of-domain rejects the whole batch without clamping; `UNAVAILABLE_FAULT` and `INVALID_STALE` block maintenance; the latter preserves only the last valid RAM percentage; exact uint32 formulas and rounding otherwise | `host/battery-vectors.csv` |
 | strip renderer | sentinel scenes; independent Day/Week values 0, 1, and 100; exact icon/palette/track words; alpha/dim vectors; strip bounds, clipping, callback reorder | fixed icon positions; exact zero-progress tints and black inside active caps at 1..100; 23 strips; exact source-over then RGB565 truncation; stable hashes | `host/renders/*.rgb565`, `host/renders/*.png`, hashes |
 | asset generation | lock parser rejects every unhashed/transitive/wrong-tag wheel and native mismatch; two network-disabled clean generations | `--require-hashes`, `--no-index`, `--network=none`; exact wheel/native receipt and byte-identical assets | `host/assets.sha256`, provenance/native receipt JSON |
@@ -1644,7 +1663,7 @@ Each row needs timestamped observation, firmware build ID, unit ID, fixture/supp
 | charge-through soak | eight hours, instrumented USB/cell/thermal logging, BLE heartbeat | normal face/BLE continuous, no inactivity sleep, no resets | any numeric or qualitative stop in section 9.5 |
 | unplug/replug | perform during active and manual sleep | active keeps face/BLE/state; sleeping remains asleep; no timeout starts | metrics/bond/latch loss or charge page |
 | cold boot | remove/restore power under controlled conditions | waiting state, not stale semantic metrics | fabricated restoration or boot loop |
-| recovery entry | healthy 10-second Button 1 flow, deliberately hung 16-second PB08 flow, reset-cause capture, and near-miss releases | both documented routes enter application maintenance and re-entry is repeatable | wrong reset cause, ordinary gesture entry, or failure to disarm/re-arm PB08 safely |
+| recovery entry | healthy 10-second Button 1 flow, deliberately hung 16-second PB07 PINR0 flow, reset-cause capture, and near-miss releases | both documented routes enter application maintenance and re-entry is repeatable | wrong reset cause, ordinary gesture entry, or failure to disarm/re-arm PB07 PINR0 safely |
 | malformed package | use non-writing validator path or sacrificial fixture | all corrupt/forbidden cases rejected before erase | any flash mutation |
 | recovery package | sacrificial unit, current-limited fixture, validated package | repeatable restore/re-entry and post-boot build identity | uncertain target/range, power instability, loss of recovery |
 | post-handoff resume | interrupt Bluetooth, app process, and phone power one at a time only at protocol-defined resumable phases | immutable same-hash resume, correct loader record, final build-info match | badge power cut at unproved commit, wrong-hash resume, lost record, or false success |
@@ -1775,8 +1794,8 @@ The labels below separate decisions, stock-family facts, and target validation.
 | no full framebuffer and no PSRAM dependency | **PROVEN — v1 design constraint** | map parser and runtime high-water evidence required |
 | model-1552 contains the recorded JD9855 descriptor/init blob | **PROVEN — that stock image only** | blob address, length, digest, and tail were observed |
 | exact 1542 panel pins, mode, timings, offsets, orientation, order, and TE | **UNVERIFIED** | qualify electrically; never fill with guessed values |
-| PB08 stock ladder and predicted ADC centers | **PROVEN/INFERRED — model-1552 electrical model** | calibrate distributions on exact target before thresholds |
-| PB07/PB08 stock hold paths exist as described | **PROVEN — analyzed stock package** | confirm custom disables both and owns 16-second recovery |
+| PB07 AD-key selection/config and predicted ADC centers | PB07 mapping/config **PROVEN — decoded model 1552**; centers **INFERRED**; physical model 1542 **UNVERIFIED** | require `adc_io2ch(IO_PORTB_07) == 0x0002030D` exactly, then calibrate distributions and physical labels on the target |
+| sequential PB07/PINR0 package, early-disable, and stock runtime phases | **PROVEN — analyzed model-1552 package/config/SDK**; physical model 1542 **UNVERIFIED** | custom package must prove `RESET = PB07_00_0;`, disable stock AD-key long press, and directly own PB07/PINR0 at 16 seconds |
 | battery conversion/filter behavior | **PROVEN — normative v1 algorithm**; exact analog calibration **UNVERIFIED** | host vectors plus DMM/reference-load measurements |
 | no inactivity timeout, active charge-through, Button 2 manual sleep, no stock gauge | **PROVEN — normative v1** | host event matrix and eight-hour hardware soak required |
 | charger callbacks, debounce/hysteresis, retention behavior, thermal/current envelope | **UNVERIFIED — exact target** | staged instrumented tests and section 9.5 stop limits |

@@ -528,9 +528,13 @@ For a custom image, choose and verify one of these policies:
   (disable) and `UINT32_MAX` (leave unchanged), they can fall through to a raw
   shift. The board adapter must therefore exact-allowlist those five mappings.
   Do not try to encode runtime 16 as a package RESET token. The
-  measured-profile board adapter call is
-  `gpio_longpress_pin0_reset_config(IO_PORTB_07, 0, 16, 1, 1)`; the inspected
-  implementation encodes active-low, `release = 1` PINR16 as `0x43`.
+  qualified-profile board adapter call is
+  `gpio_longpress_pin0_reset_config(IO_PORTB_07, 0, 16, 1,
+  PORT_INPUT_PULLUP_100K)`. Despite the header's `pull_enable` parameter name,
+  the inspected implementation passes argument 5 directly to `gpio_set_mode`:
+  `PORT_INPUT_PULLUP_100K` is exactly `0x12`, whereas `1` is
+  `PORT_OUTPUT_HIGH`. The implementation encodes active-low, `release = 1`
+  PINR16 as `0x43`.
   Confirm the final INI, config record, runtime call argument, reset cause, and
   physical behavior before enabling updates.
 - **Any alternate reset pin:** treat it as a new board-profile hypothesis. PB08

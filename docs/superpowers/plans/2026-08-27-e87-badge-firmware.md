@@ -16,7 +16,7 @@
 - Normal BLE accepts only the exact eight-byte no-sequence v1 snapshot and acknowledges duplicates without redrawing.
 - Renderer uses no full framebuffer, heap allocation, floating point, `libm`, PSRAM, filesystem, stock UI, JLUI, LVGL, touch, audio, or stock `UIRES`.
 - One aligned stock strip buffer is `360*30*2 = 0x5460` and fits the existing `0x6000` linker tail for serial bring-up. Exact stock double buffering is `2*0x5460 = 0xA8C0`; enabling callback streaming requires a larger, independently map-proven reservation.
-- Button 1 fires tap, pairing, warning, and maintenance at release-before-3s, 3s, 7s, and 10s; PB08/16s pin-reset recovery is an early-boot fallback. Button 2 is the only ordinary sleep control.
+- Button 1 fires tap, pairing, warning, and maintenance at release-before-3s, 3s, 7s, and 10s; PB07/PINR0 16-second recovery is an early-boot fallback. Button 2 is the only ordinary sleep control.
 - Charger electrical detection/start/full/close and safety remain enabled. The E87 application never selects `ID_WINDOW_BATCHARGE`, `ID_WINDOW_BEDSIDE_WATCH`, `IDLE_MODE_CHARGE`, or charger-triggered soft-off; Button 2 never calls `charge_close()`.
 - V1 is single-bank only. A physical gesture never calls `update_mode_api_v2()`; only the official verified-loader handler may call it after a nonzero loader address and power/profile gates pass.
 - Only bond ownership and its crash-safe owner record persist. Day, Week, credit, face pixels, visible state, and `manual_sleep` remain RAM-only.
@@ -182,7 +182,7 @@ git commit -m "feat(firmware): add semantic state contract"
 - Test: `firmware/host/test_recovery.c`
 
 **Interfaces:**
-- Consumes: stable raw PB08 key class and unsigned monotonic milliseconds.
+- Consumes: stable board-profile key class and unsigned monotonic milliseconds.
 - Produces: one-shot action bits and an early PINR recovery route independent of filesystem/UI.
 
 - [ ] **Step 1: Write exact boundary and release tests**
@@ -201,15 +201,26 @@ enum e87_button_action {
 };
 ```
 
-Treat `NONE`/`AMBIGUOUS` as release; button 2 emits one toggle on stable press and has no hold action.
+Treat only stable `NONE` as safe release. `AMBIGUOUS` or a direct B1↔B2 change
+terminates the hold and locks out new actions until a fresh stable `NONE`;
+Button 2 emits one toggle on a fresh stable press and has no hold action.
 
 - [ ] **Step 3: Write recovery call-order tests**
 
-Inject reset causes and fake GPIO/WDT calls. `P33_PPINR_RST` must latch after `boot_power_init`, disarm PINR, initialize only clock/GPIO/ADC/WDT, feed WDT until button release, arm PB08/16, then request maintenance. Other reset causes take normal boot.
+Inject reset causes and fake GPIO/WDT calls. `P33_PPINR_RST` must latch after
+`boot_power_init`, disarm PINR0, initialize only clock/GPIO/ADC/WDT, feed WDT
+until button release, request a 16-second PINR0 re-arm, then request maintenance.
+Other reset causes take normal boot.
 
 - [ ] **Step 4: Implement recovery adapter**
 
-Healthy 10s handling disarms PINR with time zero, closes normal BLE asynchronously, waits for release while feeding WDT, calls `gpio_longpress_pin0_reset_config(IO_PORTB_08, 0, 16, 1, 1)`, then starts maintenance.
+Healthy 10s handling disarms PINR with time zero, closes normal BLE
+asynchronously, waits for release while feeding WDT, calls
+`gpio_longpress_pin0_reset_config(IO_PORTB_07, 0, 16, 1,
+PORT_INPUT_PULLUP_100K)`, then starts
+maintenance. The measured-profile board adapter is eligible only when
+`adc_io2ch(IO_PORTB_07) == 0x0002030D` exactly; it rejects PB08, sentinels,
+neighboring values, and range-based acceptance.
 
 - [ ] **Step 5: Run and commit**
 
@@ -548,7 +559,16 @@ git commit -m "feat(firmware): add physically gated RCSP maintenance"
 
 - [ ] **Step 1: Write board/config negative tests**
 
-Require BLE-only stack, no Classic/SPP/TWS/UI/LVGL/touch/PSRAM/audio/storage/demos, charge enabled/power-on enabled, no automatic shutdown, single-bank, packaged reset disabled, runtime PB08/16, and a serial-probe `CONFIG_LCD_BUF_STATIC_RAM_LEN=0x6000` containing one `0x5460` buffer despite UI macros being zero. A build enabling exact-stock callback double buffering must instead prove at least `0xA8C0` without overlapping heap, stacks, or update scratch.
+Require BLE-only stack, no Classic/SPP/TWS/UI/LVGL/touch/PSRAM/audio/storage/demos,
+charge enabled/power-on enabled, no automatic shutdown, and single-bank layout.
+Require packaged `RESET = PB07_00_0;`, stock AD-key long press disabled, the exact
+runtime call `gpio_longpress_pin0_reset_config(IO_PORTB_07, 0, 16, 1,
+PORT_INPUT_PULLUP_100K)` (`PORT_INPUT_PULLUP_100K == 0x12`, while `1` is
+output-high), and exact GPADC acceptance `adc_io2ch(IO_PORTB_07) == 0x0002030D`; reject sentinel,
+neighboring, and range-matched channel values. Require a serial-probe
+`CONFIG_LCD_BUF_STATIC_RAM_LEN=0x6000` containing one `0x5460` buffer despite UI
+macros being zero. A build enabling exact-stock callback double buffering must
+instead prove at least `0xA8C0` without overlapping heap, stacks, or update scratch.
 
 The board profile must identify the recovered model-1552 JD9855 descriptor and callbacks as `INFERRED` for model 1542, include every rail/reset/backlight/DBI field used by target compilation, and set `labEligible: true` but `releaseEligible: false`. No inferred electrical field may silently acquire a `CONFIRMED` status; only the hardware ladder can make that transition.
 

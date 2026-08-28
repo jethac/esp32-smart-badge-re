@@ -360,8 +360,11 @@ seconds; it does not let stock AD-key initialization install the model-1552
 eight-second policy. Runtime 16 seconds is used because the PINR implementation
 accepts it even though the package RESET grammar only accepts `00/01/02/04/08`.
 The measured-profile board adapter uses
-`gpio_longpress_pin0_reset_config(IO_PORTB_07, 0, 16, 1, 1)`; the inspected
-implementation encodes active-low, `release = 1` PINR16 as `0x43`.
+`gpio_longpress_pin0_reset_config(IO_PORTB_07, 0, 16, 1,
+PORT_INPUT_PULLUP_100K)`; argument 5 is passed directly to `gpio_set_mode`, so
+the exact numeric value is `0x12`. The old value `1` selects
+`PORT_OUTPUT_HIGH`. The inspected implementation encodes active-low,
+`release = 1` PINR16 as `0x43`.
 The adapter exact-allowlists the implementation's explicit 1/2/4/8/16-second
 mappings. Time 0 disables PINR0 and `UINT32_MAX` leaves it unchanged; other
 values outside the explicit set are not generally rejected and can fall through

@@ -218,14 +218,14 @@ E87_TEST(normal_boot_disarms_then_arms_exactly_16_not_8)
     struct fake_sink sink;
 
     E87_ASSERT_TRUE(init_recovery(&fsm, &sink));
-    E87_ASSERT_EQ_U32(UINT32_C(16), E87_KEY_RESET_HOLD_SECONDS);
+    E87_ASSERT_EQ_U32(UINT32_C(16), E87_PINR_RESET_HOLD_SECONDS);
     E87_ASSERT_EQ_U32(UINT32_C(5000), E87_NORMAL_STOP_TIMEOUT_MS);
     E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_NORMAL_BOOT,
                       boot_normal(&fsm, &sink));
     E87_ASSERT_EQ_U32(UINT32_C(2), step_command_count(&sink));
-    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_DISARM_KEY_RESET,
+    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_DISARM_PINR_RESET,
                       sink.commands[sink.step_start]);
-    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                       sink.commands[sink.step_start + 1U]);
     E87_ASSERT_EQ_U32(E87_RESET_OWNERSHIP_UNKNOWN,
                       sink.ownership_before[sink.step_start]);
@@ -266,7 +266,7 @@ E87_TEST(only_exact_pinr_cause_takes_early_route)
         if (causes[index] == E87_RESET_CAUSE_P33_PPINR) {
             E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_WAITING,
                               e87_recovery_step(&fsm, &boot));
-            E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_DISARM_KEY_RESET,
+            E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_DISARM_PINR_RESET,
                               sink.commands[sink.step_start]);
             E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_FEED_WATCHDOG,
                               sink.commands[sink.step_start + 1U]);
@@ -277,9 +277,9 @@ E87_TEST(only_exact_pinr_cause_takes_early_route)
         } else {
             E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_NORMAL_BOOT,
                               e87_recovery_step(&fsm, &boot));
-            E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_DISARM_KEY_RESET,
+            E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_DISARM_PINR_RESET,
                               sink.commands[sink.step_start]);
-            E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+            E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                               sink.commands[sink.step_start + 1U]);
             E87_ASSERT_EQ_U32(E87_RECOVERY_STATE_NORMAL,
                               fsm.private_state);
@@ -303,9 +303,9 @@ E87_TEST(only_exact_pinr_cause_takes_early_route)
         E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_MAINTENANCE_REQUESTED,
                           e87_recovery_step(&fsm, &released));
         E87_ASSERT_EQ_U32(UINT32_C(3), step_command_count(&sink));
-        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_DISARM_KEY_RESET,
+        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_DISARM_PINR_RESET,
                           sink.commands[sink.step_start]);
-        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                           sink.commands[sink.step_start + 1U]);
         E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_REQUEST_MAINTENANCE,
                           sink.commands[sink.step_start + 2U]);
@@ -387,7 +387,7 @@ E87_TEST(pinr_requires_valid_none_for_release)
         E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_MAINTENANCE_REQUESTED,
                           e87_recovery_step(&fsm, &release));
         E87_ASSERT_EQ_U32(UINT32_C(2), step_command_count(&sink));
-        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                           sink.commands[sink.step_start]);
         E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_REQUEST_MAINTENANCE,
                           sink.commands[sink.step_start + 1U]);
@@ -416,7 +416,7 @@ E87_TEST(pinr_release_arms_then_requests_maintenance)
     E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_MAINTENANCE_REQUESTED,
                       e87_recovery_step(&fsm, &release));
     E87_ASSERT_EQ_U32(UINT32_C(2), step_command_count(&sink));
-    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                       sink.commands[sink.step_start]);
     E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_REQUEST_MAINTENANCE,
                       sink.commands[sink.step_start + 1U]);
@@ -445,7 +445,7 @@ E87_TEST(healthy_entry_disarms_requests_stop_then_feeds)
                       begin_healthy(&fsm, &sink, E87_KEY_BUTTON1,
                                     UINT32_C(12345)));
     E87_ASSERT_EQ_U32(UINT32_C(3), step_command_count(&sink));
-    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_DISARM_KEY_RESET,
+    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_DISARM_PINR_RESET,
                       sink.commands[sink.step_start]);
     E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_REQUEST_NORMAL_STOP,
                       sink.commands[sink.step_start + 1U]);
@@ -525,7 +525,7 @@ E87_TEST(healthy_stop_at_or_before_timeout_allows_late_release)
         E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_MAINTENANCE_REQUESTED,
                           e87_recovery_step(&fsm, &event));
         E87_ASSERT_EQ_U32(UINT32_C(2), step_command_count(&sink));
-        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                           sink.commands[sink.step_start]);
         E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_REQUEST_MAINTENANCE,
                           sink.commands[sink.step_start + 1U]);
@@ -569,7 +569,7 @@ E87_TEST(healthy_release_before_stop_waits)
     E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_MAINTENANCE_REQUESTED,
                       e87_recovery_step(&fsm, &event));
     E87_ASSERT_EQ_U32(UINT32_C(2), step_command_count(&sink));
-    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                       sink.commands[sink.step_start]);
     E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_REQUEST_MAINTENANCE,
                       sink.commands[sink.step_start + 1U]);
@@ -625,7 +625,7 @@ E87_TEST(healthy_release_latch_is_revoked_by_all_repress_classes)
         begin_fake_step(&sink, SIZE_MAX);
         E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_MAINTENANCE_REQUESTED,
                           e87_recovery_step(&fsm, &event));
-        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                           sink.commands[sink.step_start]);
         E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_REQUEST_MAINTENANCE,
                           sink.commands[sink.step_start + 1U]);
@@ -653,7 +653,7 @@ E87_TEST(healthy_completion_arms_then_requests_maintenance_once)
     E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_MAINTENANCE_REQUESTED,
                       e87_recovery_step(&fsm, &event));
     E87_ASSERT_EQ_U32(UINT32_C(2), step_command_count(&sink));
-    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                       sink.commands[sink.step_start]);
     E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_REQUEST_MAINTENANCE,
                       sink.commands[sink.step_start + 1U]);
@@ -717,7 +717,7 @@ E87_TEST(normal_stop_immediate_rejection_enters_fail_safe)
         E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_FAIL_SAFE_REARMED,
                           e87_recovery_step(&fsm, &release));
         E87_ASSERT_EQ_U32(UINT32_C(1), step_command_count(&sink));
-        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                           sink.commands[sink.step_start]);
         E87_ASSERT_EQ_U32(UINT32_C(0),
                           command_occurrences(
@@ -769,7 +769,7 @@ E87_TEST(normal_stop_async_failure_rearms_only_after_release)
     begin_fake_step(&sink, SIZE_MAX);
     E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_FAIL_SAFE_REARMED,
                       e87_recovery_step(&fsm, &event));
-    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                       sink.commands[sink.step_start]);
     E87_ASSERT_EQ_U32(E87_RECOVERY_STATE_FAIL_SAFE_REARMED,
                       fsm.private_state);
@@ -798,7 +798,7 @@ E87_TEST(normal_stop_async_failure_rearms_only_after_release)
     E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_FAIL_SAFE_REARMED,
                       e87_recovery_step(&fsm, &event));
     E87_ASSERT_EQ_U32(UINT32_C(1), step_command_count(&sink));
-    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                       sink.commands[sink.step_start]);
     E87_ASSERT_EQ_U32(UINT32_C(0),
                       command_occurrences(
@@ -851,7 +851,7 @@ E87_TEST(normal_stop_timeout_requires_unstopped_and_is_wrap_safe)
         begin_fake_step(&sink, SIZE_MAX);
         E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_FAIL_SAFE_REARMED,
                           e87_recovery_step(&fsm, &event));
-        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                           sink.commands[sink.step_start]);
         E87_ASSERT_EQ_U32(UINT32_C(0),
                           command_occurrences(
@@ -942,7 +942,7 @@ E87_TEST(fail_safe_never_requests_maintenance)
         begin_fake_step(&sink, SIZE_MAX);
         E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_FAIL_SAFE_REARMED,
                           e87_recovery_step(&fsm, &event));
-        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+        E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                           sink.commands[sink.step_start]);
         E87_ASSERT_EQ_U32(UINT32_C(0),
                           command_occurrences(
@@ -977,7 +977,7 @@ E87_TEST(rearm_rejection_retries_without_false_success)
     E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_FAIL_SAFE_WAITING,
                       e87_recovery_step(&fsm, &event));
     E87_ASSERT_EQ_U32(UINT32_C(1), step_command_count(&sink));
-    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                       sink.commands[sink.step_start]);
     E87_ASSERT_EQ_U32(E87_RECOVERY_STATE_FAIL_SAFE_WAIT_RELEASE,
                       fsm.private_state);
@@ -1001,7 +1001,7 @@ E87_TEST(rearm_rejection_retries_without_false_success)
     begin_fake_step(&sink, SIZE_MAX);
     E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_FAIL_SAFE_REARMED,
                       e87_recovery_step(&fsm, &event));
-    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                       sink.commands[sink.step_start]);
     E87_ASSERT_EQ_U32(E87_RECOVERY_STATE_FAIL_SAFE_REARMED,
                       fsm.private_state);
@@ -1330,10 +1330,10 @@ E87_TEST(all_state_event_cells_match_transition_table)
                 type == E87_RECOVERY_EVENT_BOOT) {
                 expected_count = 2U;
                 E87_ASSERT_EQ_U32(
-                    E87_RECOVERY_COMMAND_DISARM_KEY_RESET,
+                    E87_RECOVERY_COMMAND_DISARM_PINR_RESET,
                     sink.commands[sink.step_start]);
                 E87_ASSERT_EQ_U32(
-                    E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+                    E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                     sink.commands[sink.step_start + 1U]);
                 E87_ASSERT_EQ_U32(E87_RESET_OWNERSHIP_ARMED,
                                   fsm.private_reset_ownership);
@@ -1341,7 +1341,7 @@ E87_TEST(all_state_event_cells_match_transition_table)
                        type == E87_RECOVERY_EVENT_HEALTHY_MAINTENANCE) {
                 expected_count = 3U;
                 E87_ASSERT_EQ_U32(
-                    E87_RECOVERY_COMMAND_DISARM_KEY_RESET,
+                    E87_RECOVERY_COMMAND_DISARM_PINR_RESET,
                     sink.commands[sink.step_start]);
                 E87_ASSERT_EQ_U32(
                     E87_RECOVERY_COMMAND_REQUEST_NORMAL_STOP,
@@ -1426,10 +1426,10 @@ E87_TEST(emit_reentry_is_rejected_without_nested_command)
             E87_ASSERT_TRUE(!fsm.private_in_step);
             if (phase == 0U) {
                 E87_ASSERT_EQ_U32(
-                    E87_RECOVERY_COMMAND_DISARM_KEY_RESET,
+                    E87_RECOVERY_COMMAND_DISARM_PINR_RESET,
                     sink.commands[sink.step_start]);
                 E87_ASSERT_EQ_U32(
-                    E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+                    E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                     sink.commands[sink.step_start + 1U]);
                 E87_ASSERT_EQ_U32(
                     E87_RECOVERY_COMMAND_REQUEST_MAINTENANCE,
@@ -1444,7 +1444,7 @@ E87_TEST(emit_reentry_is_rejected_without_nested_command)
                     sink.ownership_before[sink.step_start + 2U]);
             } else {
                 E87_ASSERT_EQ_U32(
-                    E87_RECOVERY_COMMAND_DISARM_KEY_RESET,
+                    E87_RECOVERY_COMMAND_DISARM_PINR_RESET,
                     sink.commands[sink.step_start]);
                 E87_ASSERT_EQ_U32(
                     E87_RECOVERY_COMMAND_REQUEST_NORMAL_STOP,
@@ -1610,7 +1610,7 @@ E87_TEST(null_zeroed_invalid_inputs_and_undefined_keys_fail_safe)
     begin_fake_step(&sink, SIZE_MAX);
     E87_ASSERT_EQ_U32(E87_RECOVERY_RESULT_FAIL_SAFE_REARMED,
                       e87_recovery_step(&fsm, &event));
-    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S,
+    E87_ASSERT_EQ_U32(E87_RECOVERY_COMMAND_ARM_PINR_RESET_16S,
                       sink.commands[sink.step_start]);
     E87_ASSERT_EQ_U32(UINT32_C(0),
                       command_occurrences(

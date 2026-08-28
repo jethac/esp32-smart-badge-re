@@ -109,7 +109,9 @@ Verify target-side status/CRC where available. Observe a low-risk heartbeat usin
 
 - [ ] **Step 3: Re-enter recovery**
 
-Exercise PB08/16-second early recovery from the heartbeat build and confirm MaskROM identity again. Failure stops the ladder before display power is enabled.
+Using a separately packaged early-recovery probe rather than the no-key
+heartbeat image, exercise PB07/PINR0 16-second early recovery and confirm
+MaskROM identity again. Failure stops the ladder before display power is enabled.
 
 ### Task 4: Validate rails, solid colors, windows, and full renderer
 
@@ -147,7 +149,13 @@ Append hardware evidence for each rail/pin/polarity/timing/DBI field. Create a n
 
 - [ ] **Step 1: Exercise Button 1 boundaries**
 
-Test debounce and release before 3 seconds, 3-second pairing entry, 7-second destructive-warning onset, 10-second maintenance entry, cancellation at every earlier release point, 60-second pairing timeout, 120-second unauthenticated maintenance timeout, and 16-second PB08 reset/recovery.
+Before assigning gestures, require logged
+`adc_io2ch(IO_PORTB_07) == 0x0002030D` and measured model-1542 ADC distributions
+and physical key mapping; abort on any mismatch rather than probing PB08.
+Then test debounce and release before 3 seconds, 3-second pairing entry,
+7-second destructive-warning onset, 10-second maintenance entry, cancellation
+at every earlier release point, 60-second pairing timeout, 120-second
+unauthenticated maintenance timeout, and 16-second PB07/PINR0 reset/recovery.
 
 - [ ] **Step 2: Exercise Button 2 and persistence**
 

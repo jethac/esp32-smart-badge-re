@@ -19,6 +19,13 @@ SDK_COMMIT = "d0167685d032d745d88fe50233302edd46941622"
 SDK_TREE = "854734595be49510aca5afb89f5885e8bce6a00f"
 CHIP_FAMILY = "AC707N/BR35/pi32v2"
 RAW_ROOT = "firmware/board-profiles/evidence/raw"
+PB07_GPIO_TOKEN = "IO_PORTB_07"
+PB07_GPIO_MODE_TOKEN = "PORT_INPUT_PULLUP_100K"
+PB07_PINR_PULL_MODE_ARGUMENT = 0x12
+PB07_ROUTE_KIND = "DRIVER_IO2CH"
+PB07_CHANNEL_TOKEN = "AD_CH_PMU_PADC0"
+PB07_CHANNEL_VALUE = 0x0002030D
+PB07_CHANNEL_ACCEPTANCE_RULE = "EXACT_U32_EQUALITY"
 STATUS_IDENTITIES = {
     "TEST_ONLY": {
         "profile": "TEST-E87-BUTTON-V1",
@@ -29,44 +36,29 @@ STATUS_IDENTITIES = {
             "firmware/board-profiles/evidence/"
             "TEST-E87-BUTTON-V1-driver.json"
         ),
-        "overlay": "firmware/patches/TEST-E87-BUTTON-V1-pb08-gpadc.patch",
+        "overlay": "firmware/patches/TEST-E87-BUTTON-V1-pb07-gpadc.patch",
     },
     "CONFIRMED": {
         "profile": "E87-JD9855-R1",
         "model": "1542",
         "evidence": (
             "firmware/board-profiles/evidence/"
-            "E87-JD9855-R1-pb08-v1.json"
+            "E87-JD9855-R1-pb07-v1.json"
         ),
-        "raw": "E87-JD9855-R1-pb08-v1.csv",
+        "raw": "E87-JD9855-R1-pb07-v1.csv",
         "driver": (
             "firmware/board-profiles/evidence/"
-            "E87-JD9855-R1-pb08-driver-v1.json"
+            "E87-JD9855-R1-pb07-driver-v1.json"
         ),
-        "overlay": "firmware/patches/0002-e87-pb08-gpadc.patch",
+        "overlay": "firmware/patches/0002-e87-pb07-gpadc.patch",
     },
 }
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 UNIT_RE = re.compile(r"^E87-1542-UNIT-[0-9]{2}$")
-CHANNEL_RE = re.compile(r"^[A-Z0-9_]{1,64}$")
 POSIX_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9._/-]{1,256}$")
 DRIVE_RE = re.compile(r"^[A-Za-z]:")
-MODE_TOKENS = {
-    "PORT_INPUT_FLOATING",
-    "PORT_INPUT_PULLUP_10K",
-    "PORT_INPUT_PULLUP_100K",
-    "PORT_INPUT_PULLUP_1M",
-    "PORT_INPUT_PULLDOWN_10K",
-    "PORT_INPUT_PULLDOWN_100K",
-    "PORT_INPUT_PULLDOWN_1M",
-}
-ROUTE_KINDS = {
-    "DRIVER_IO2CH",
-    "REVIEWED_DRIVER_OVERLAY",
-    "INTERNAL_SIGNAL_QUALIFIED",
-}
 FRESH_KINDS = {
     "FRESH_BLOCKING_PRE_OS": "E87_FRESH_BLOCKING_PRE_OS_V1",
     "FRESH_IRQ_TIMER": "E87_FRESH_IRQ_TIMER_GENERATION_V1",
@@ -354,7 +346,7 @@ def validate_capture(
     if status == "CONFIRMED":
         exact_string(
             vector_id,
-            "E87-1542-PB08-CAPTURE-V1",
+            "E87-1542-PB07-CAPTURE-V1",
             "capture.captureVectorId",
         )
     elif IDENTIFIER_RE.fullmatch(vector_id) is None:
@@ -397,6 +389,8 @@ def validate_adc(value: object, status: str) -> dict[str, Any]:
             "routeKind",
             "routeStatus",
             "channelToken",
+            "channelValue",
+            "channelAcceptanceRule",
             "adcMaximum",
             "resolutionBits",
             "referenceMillivolts",
@@ -412,14 +406,26 @@ def validate_adc(value: object, status: str) -> dict[str, Any]:
         },
         "adc",
     )
-    exact_string(adc["gpioToken"], "IO_PORTB_08", "adc.gpioToken")
+    exact_string(adc["gpioToken"], PB07_GPIO_TOKEN, "adc.gpioToken")
     exact_string(adc["gpioSplitToken"], "IO_PORT_SPILT", "adc.gpioSplitToken")
-    enum(adc["gpioModeToken"], MODE_TOKENS, "adc.gpioModeToken")
+    exact_string(
+        adc["gpioModeToken"], PB07_GPIO_MODE_TOKEN, "adc.gpioModeToken"
+    )
     exact_string(adc["gpioFunctionToken"], "PORT_FUNC_GPADC", "adc.gpioFunctionToken")
-    enum(adc["routeKind"], ROUTE_KINDS, "adc.routeKind")
+    exact_string(adc["routeKind"], PB07_ROUTE_KIND, "adc.routeKind")
     exact_string(adc["routeStatus"], status, "adc.routeStatus")
-    if CHANNEL_RE.fullmatch(string(adc["channelToken"], "adc.channelToken")) is None:
-        raise ValidationError("adc.channelToken: invalid token")
+    exact_string(adc["channelToken"], PB07_CHANNEL_TOKEN, "adc.channelToken")
+    integer(
+        adc["channelValue"],
+        PB07_CHANNEL_VALUE,
+        PB07_CHANNEL_VALUE,
+        "adc.channelValue",
+    )
+    exact_string(
+        adc["channelAcceptanceRule"],
+        PB07_CHANNEL_ACCEPTANCE_RULE,
+        "adc.channelAcceptanceRule",
+    )
     bits = integer(adc["resolutionBits"], 8, 15, "adc.resolutionBits")
     maximum = integer(adc["adcMaximum"], 255, 32767, "adc.adcMaximum")
     if maximum != (1 << bits) - 1:
@@ -506,10 +512,19 @@ def validate_pinr(value: object, status: str) -> None:
         "pinr",
     )
     exact_string(pinr["status"], status, "pinr.status")
-    exact_string(pinr["gpioToken"], "IO_PORTB_08", "pinr.gpioToken")
+    exact_string(pinr["gpioToken"], PB07_GPIO_TOKEN, "pinr.gpioToken")
     integer(pinr["activeLevel"], 0, 1, "pinr.activeLevel")
-    enum(pinr["pullModeToken"], MODE_TOKENS, "pinr.pullModeToken")
-    integer(pinr["pullEnableArgument"], 0, 255, "pinr.pullEnableArgument")
+    exact_string(
+        pinr["pullModeToken"],
+        PB07_GPIO_MODE_TOKEN,
+        "pinr.pullModeToken",
+    )
+    integer(
+        pinr["pullEnableArgument"],
+        PB07_PINR_PULL_MODE_ARGUMENT,
+        PB07_PINR_PULL_MODE_ARGUMENT,
+        "pinr.pullEnableArgument",
+    )
     integer(pinr["releaseArgument"], 0, 1, "pinr.releaseArgument")
     integer(pinr["holdSeconds"], 16, 16, "pinr.holdSeconds")
     triggers = pinr["compatibleTriggerSet"]
@@ -584,7 +599,6 @@ def validate_driver_root(
     value: object,
     status: str,
     identity: dict[str, str],
-    route: str,
 ) -> dict[str, Any]:
     driver = exact_keys(
         value,
@@ -605,30 +619,18 @@ def validate_driver_root(
     commit(driver["supportTree"], "driver.supportTree")
     exact_string(driver["evidencePath"], identity["driver"], "driver.evidencePath")
     digest(driver["evidenceSha256"], "driver.evidenceSha256")
-    overlay_path = string(driver["overlayPath"], "driver.overlayPath")
-    overlay_digest = string(driver["overlaySha256"], "driver.overlaySha256")
-    internal_digest = string(
+    exact_string(driver["overlayPath"], "", "driver.overlayPath")
+    exact_string(driver["overlaySha256"], "", "driver.overlaySha256")
+    exact_string(
         driver["internalSignalQualificationSha256"],
+        "",
         "driver.internalSignalQualificationSha256",
     )
-    if route == "DRIVER_IO2CH":
-        if overlay_path or overlay_digest or internal_digest:
-            raise ValidationError("driver: DRIVER_IO2CH route fields must be empty")
-    elif route == "REVIEWED_DRIVER_OVERLAY":
-        exact_string(overlay_path, identity["overlay"], "driver.overlayPath")
-        digest(overlay_digest, "driver.overlaySha256")
-        if internal_digest:
-            raise ValidationError("driver: overlay route internal digest must be empty")
-    else:
-        if overlay_path or overlay_digest:
-            raise ValidationError("driver: internal route overlay fields must be empty")
-        digest(internal_digest, "driver.internalSignalQualificationSha256")
     return driver
 
 
 def validate_qualification(
     value: object,
-    route: str,
     adc: dict[str, Any],
 ) -> None:
     qualification = exact_keys(
@@ -657,22 +659,14 @@ def validate_qualification(
             raise ValidationError(f"qualification.{key}: invalid identifier")
     for key in ("archiveSha256", "memberSha256", "llvmDisassemblySha256"):
         digest(qualification[key], f"qualification.{key}")
-    if route == "INTERNAL_SIGNAL_QUALIFIED":
-        route_return = "VOID_CALL_ISSUED_AFTER_QUALIFICATION"
-        unsupported = "NOT_APPLICABLE_VOID"
-        rollback = "ADC_DELETE_INTERNAL_SIGNAL_REVERSE_DISABLE_FUNCTION_RESTORE_MODE"
-    else:
-        route_return = "U32_CHANNEL_OR_UINT32_MAX"
-        unsupported = "UINT32_MAX"
-        rollback = "ADC_DELETE_DISABLE_FUNCTION_RESTORE_MODE"
     exact_string(
         qualification["routeReturnKind"],
-        route_return,
+        "U32_CHANNEL_OR_UINT32_MAX",
         "qualification.routeReturnKind",
     )
     exact_string(
         qualification["unsupportedRouteValueKind"],
-        unsupported,
+        "UINT32_MAX",
         "qualification.unsupportedRouteValueKind",
     )
     integer(
@@ -696,7 +690,11 @@ def validate_qualification(
         adc["freshSampleEvidenceSha256"],
         "qualification.freshConversionEvidenceSha256",
     )
-    exact_string(qualification["rollbackKind"], rollback, "qualification.rollbackKind")
+    exact_string(
+        qualification["rollbackKind"],
+        "ADC_DELETE_DISABLE_FUNCTION_RESTORE_MODE",
+        "qualification.rollbackKind",
+    )
     digest(qualification["rollbackEvidenceSha256"], "qualification.rollbackEvidenceSha256")
     digest(
         qualification["hardwareQualificationSha256"],
@@ -727,6 +725,8 @@ def validate_projection(
             "routeKind",
             "routeStatus",
             "channelToken",
+            "channelValue",
+            "channelAcceptanceRule",
             "freshSampleKind",
             "freshSampleStatus",
             "freshSampleHook",
@@ -757,6 +757,8 @@ def validate_projection(
         "routeKind",
         "routeStatus",
         "channelToken",
+        "channelValue",
+        "channelAcceptanceRule",
         "freshSampleKind",
         "freshSampleStatus",
         "freshSampleHook",
@@ -778,7 +780,7 @@ def validate_projection(
         root_status,
         "projection.freshSampleStatus",
     )
-    validate_qualification(projection["qualification"], adc["routeKind"], adc)
+    validate_qualification(projection["qualification"], adc)
     return projection
 
 
@@ -939,9 +941,7 @@ def validate_document(
     )
     validate_pinr(root["pinr"], required_status)
     validate_startup(root["startup"], required_status, adc)
-    driver = validate_driver_root(
-        root["driver"], required_status, identity, adc["routeKind"]
-    )
+    driver = validate_driver_root(root["driver"], required_status, identity)
 
     raw_csv_path = resolve_owned(
         raw_root_path, capture["rawCsvPath"], "raw CSV", directory=False
@@ -958,16 +958,6 @@ def validate_document(
     driver_raw = read_regular(driver_path, "driver evidence")
     if sha256(driver_raw) != driver["evidenceSha256"]:
         raise ValidationError("driver evidence: digest mismatch")
-
-    if adc["routeKind"] == "REVIEWED_DRIVER_OVERLAY":
-        overlay_path = resolve_owned(
-            repository_root, driver["overlayPath"], "driver overlay", directory=False
-        )
-        if overlay_path in resolved_files:
-            raise ValidationError("overlay resolves to duplicate evidence target")
-        overlay_raw = read_regular(overlay_path, "driver overlay")
-        if sha256(overlay_raw) != driver["overlaySha256"]:
-            raise ValidationError("driver overlay: digest mismatch")
 
     validate_projection(
         driver_raw,

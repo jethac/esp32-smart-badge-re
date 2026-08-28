@@ -8,6 +8,7 @@ import hashlib
 import itertools
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -22,12 +23,25 @@ PYTHON = Path("/usr/bin/python3.11")
 SDK_COMMIT = "d0167685d032d745d88fe50233302edd46941622"
 SDK_TREE = "854734595be49510aca5afb89f5885e8bce6a00f"
 EVIDENCE_PATH = "firmware/board-profiles/evidence/TEST-E87-BUTTON-V1.json"
+CONFIRMED_EVIDENCE_PATH = (
+    "firmware/board-profiles/evidence/E87-JD9855-R1-pb07-v1.json"
+)
 RAW_ROOT_PATH = "firmware/board-profiles/evidence/raw"
 RAW_CSV_PATH = "TEST-E87-BUTTON-V1.csv"
+CONFIRMED_RAW_CSV_PATH = "E87-JD9855-R1-pb07-v1.csv"
 DRIVER_PATH = (
     "firmware/board-profiles/evidence/TEST-E87-BUTTON-V1-driver.json"
 )
-OVERLAY_PATH = "firmware/patches/TEST-E87-BUTTON-V1-pb08-gpadc.patch"
+CONFIRMED_DRIVER_PATH = (
+    "firmware/board-profiles/evidence/E87-JD9855-R1-pb07-driver-v1.json"
+)
+OVERLAY_PATH = "firmware/patches/TEST-E87-BUTTON-V1-pb07-gpadc.patch"
+GPIO_TOKEN = "IO_PORTB_07"
+GPIO_MODE_TOKEN = "PORT_INPUT_PULLUP_100K"
+PINR_PULL_MODE_ARGUMENT = 0x12
+CHANNEL_TOKEN = "AD_CH_PMU_PADC0"
+CHANNEL_VALUE = 0x0002030D
+CHANNEL_ACCEPTANCE_RULE = "EXACT_U32_EQUALITY"
 STATES = ["NONE", "BUTTON1", "BUTTON2", "BOTH_BUTTONS"]
 TEMPERATURES = [-10, 0, 25, 45]
 SUPPLIES = [3300, 3700, 4200]
@@ -126,6 +140,13 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
         route: str = "DRIVER_IO2CH",
         fresh: str = "FRESH_BLOCKING_PRE_OS",
     ) -> None:
+        self.evidence_file = self.repository / EVIDENCE_PATH
+        self.driver_file = self.repository / DRIVER_PATH
+        self.raw_file = self.repository / RAW_ROOT_PATH / RAW_CSV_PATH
+        self.overlay_file = self.repository / OVERLAY_PATH
+        if not self.overlay_file.exists():
+            self.overlay_file.write_bytes(b"TEST_ONLY reviewed overlay bytes\n")
+
         if hasattr(self, "evidence"):
             del self.evidence
         if self.driver_file.is_symlink() or self.driver_file.is_file():
@@ -171,13 +192,15 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
             "status": "TEST_ONLY",
             "sdkCommit": SDK_COMMIT,
             "sdkTree": SDK_TREE,
-            "gpioToken": "IO_PORTB_08",
+            "gpioToken": GPIO_TOKEN,
             "gpioSplitToken": "IO_PORT_SPILT",
-            "gpioModeToken": "PORT_INPUT_PULLUP_10K",
+            "gpioModeToken": GPIO_MODE_TOKEN,
             "gpioFunctionToken": "PORT_FUNC_GPADC",
             "routeKind": route,
             "routeStatus": "TEST_ONLY",
-            "channelToken": "AD_CH_PB8",
+            "channelToken": CHANNEL_TOKEN,
+            "channelValue": CHANNEL_VALUE,
+            "channelAcceptanceRule": CHANNEL_ACCEPTANCE_RULE,
             "freshSampleKind": fresh,
             "freshSampleStatus": "TEST_ONLY",
             "freshSampleHook": fresh_hook,
@@ -229,13 +252,15 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
                 "notes": "",
             },
             "adc": {
-                "gpioToken": "IO_PORTB_08",
+                "gpioToken": GPIO_TOKEN,
                 "gpioSplitToken": "IO_PORT_SPILT",
-                "gpioModeToken": "PORT_INPUT_PULLUP_10K",
+                "gpioModeToken": GPIO_MODE_TOKEN,
                 "gpioFunctionToken": "PORT_FUNC_GPADC",
                 "routeKind": route,
                 "routeStatus": "TEST_ONLY",
-                "channelToken": "AD_CH_PB8",
+                "channelToken": CHANNEL_TOKEN,
+                "channelValue": CHANNEL_VALUE,
+                "channelAcceptanceRule": CHANNEL_ACCEPTANCE_RULE,
                 "adcMaximum": 1023,
                 "resolutionBits": 10,
                 "referenceMillivolts": 3300,
@@ -265,10 +290,10 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
             },
             "pinr": {
                 "status": "TEST_ONLY",
-                "gpioToken": "IO_PORTB_08",
+                "gpioToken": GPIO_TOKEN,
                 "activeLevel": 0,
-                "pullModeToken": "PORT_INPUT_PULLUP_10K",
-                "pullEnableArgument": 1,
+                "pullModeToken": GPIO_MODE_TOKEN,
+                "pullEnableArgument": PINR_PULL_MODE_ARGUMENT,
                 "releaseArgument": 1,
                 "holdSeconds": 16,
                 "compatibleTriggerSet": ["BUTTON1"],
@@ -315,6 +340,43 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
             },
             "canonicalDigestSha256": "0" * 64,
         }
+        self.write_evidence()
+
+    def reset_confirmed_fixture(self) -> None:
+        self.reset_fixture()
+        self.evidence_file = self.repository / CONFIRMED_EVIDENCE_PATH
+        self.driver_file = self.repository / CONFIRMED_DRIVER_PATH
+        self.raw_file = (
+            self.repository / RAW_ROOT_PATH / CONFIRMED_RAW_CSV_PATH
+        )
+        self.raw_file.write_bytes(self.raw_bytes)
+
+        self.projection["status"] = "CONFIRMED"
+        self.projection["routeStatus"] = "CONFIRMED"
+        self.projection["freshSampleStatus"] = "CONFIRMED"
+
+        self.evidence["status"] = "CONFIRMED"
+        self.evidence["profileId"] = "E87-JD9855-R1"
+        self.evidence["physicalModel"] = "1542"
+        capture = self.evidence["capture"]
+        adc = self.evidence["adc"]
+        pinr = self.evidence["pinr"]
+        startup = self.evidence["startup"]
+        driver = self.evidence["driver"]
+        assert all(
+            isinstance(value, dict)
+            for value in (capture, adc, pinr, startup, driver)
+        )
+        capture["captureVectorId"] = "E87-1542-PB07-CAPTURE-V1"
+        capture["rawCsvPath"] = CONFIRMED_RAW_CSV_PATH
+        capture["rawCsvSha256"] = digest_bytes(self.raw_file.read_bytes())
+        adc["routeStatus"] = "CONFIRMED"
+        adc["freshSampleStatus"] = "CONFIRMED"
+        pinr["status"] = "CONFIRMED"
+        startup["status"] = "CONFIRMED"
+        driver["status"] = "CONFIRMED"
+        driver["evidencePath"] = CONFIRMED_DRIVER_PATH
+        self.write_projection()
         self.write_evidence()
 
     def write_projection(self, raw: bytes | None = None) -> None:
@@ -386,17 +448,10 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
         self.assertEqual(2, result.returncode, (result.stdout, result.stderr))
         self.assertEqual("", result.stdout)
 
-    def test_valid_canonical_minimum_vectors_all_routes_and_freshness(self) -> None:
-        for route, fresh in itertools.product(
-            [
-                "DRIVER_IO2CH",
-                "REVIEWED_DRIVER_OVERLAY",
-                "INTERNAL_SIGNAL_QUALIFIED",
-            ],
-            ["FRESH_BLOCKING_PRE_OS", "FRESH_IRQ_TIMER"],
-        ):
-            with self.subTest(route=route, fresh=fresh):
-                self.reset_fixture(route, fresh)
+    def test_valid_canonical_minimum_vectors_driver_io2ch_and_freshness(self) -> None:
+        for fresh in ["FRESH_BLOCKING_PRE_OS", "FRESH_IRQ_TIMER"]:
+            with self.subTest(fresh=fresh):
+                self.reset_fixture("DRIVER_IO2CH", fresh)
                 first = self.run_validator()
                 second = self.run_validator()
                 expected = self.evidence["canonicalDigestSha256"] + "\n"
@@ -423,6 +478,103 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
                         for left, right in zip(ordered, ordered[1:])
                     )
                 )
+
+    def test_confirmed_pb07_namespace_is_valid(self) -> None:
+        self.reset_confirmed_fixture()
+        result = self.run_validator(
+            evidence=CONFIRMED_EVIDENCE_PATH,
+            profile="E87-JD9855-R1",
+            status="CONFIRMED",
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_pb07_requires_driver_io2ch_returned_u32_route(self) -> None:
+        for route in ["REVIEWED_DRIVER_OVERLAY", "INTERNAL_SIGNAL_QUALIFIED"]:
+            with self.subTest(route=route):
+                self.reset_fixture(route)
+                result = self.run_validator()
+                self.assert_rejected(result)
+                self.assertIn("adc.routeKind", result.stderr)
+
+    def test_pb07_pull_mode_token_and_pinr_argument_are_exactly_cross_bound(self) -> None:
+        wrong_input_mappings = [
+            ("PORT_INPUT_FLOATING", 0x10),
+            ("PORT_INPUT_PULLUP_10K", 0x11),
+            ("PORT_INPUT_PULLUP_1M", 0x13),
+            ("PORT_INPUT_PULLDOWN_10K", 0x21),
+            ("PORT_INPUT_PULLDOWN_100K", 0x22),
+            ("PORT_INPUT_PULLDOWN_1M", 0x23),
+        ]
+        for token, _ in wrong_input_mappings:
+            with self.subTest(adc_token=token):
+                self.reset_fixture()
+                adc = self.evidence["adc"]
+                assert isinstance(adc, dict)
+                adc["gpioModeToken"] = token
+                self.projection["gpioModeToken"] = token
+                self.relink_projection()
+                self.assert_rejected(self.run_validator())
+
+        for token, argument in wrong_input_mappings:
+            with self.subTest(pinr_token=token, pinr_argument=argument):
+                self.reset_fixture()
+                pinr = self.evidence["pinr"]
+                assert isinstance(pinr, dict)
+                pinr["pullModeToken"] = token
+                pinr["pullEnableArgument"] = argument
+                self.write_evidence()
+                self.assert_rejected(self.run_validator())
+
+        wrong_arguments = [
+            0, 1, 2, 0x10, 0x11, 0x13, 0x21, 0x22, 0x23, 0x30
+        ]
+        for argument in wrong_arguments:
+            with self.subTest(pinr_argument=argument):
+                self.reset_fixture()
+                pinr = self.evidence["pinr"]
+                assert isinstance(pinr, dict)
+                pinr["pullEnableArgument"] = argument
+                self.write_evidence()
+                self.assert_rejected(self.run_validator())
+
+        for token, _ in wrong_input_mappings:
+            with self.subTest(pinr_token=token):
+                self.reset_fixture()
+                pinr = self.evidence["pinr"]
+                assert isinstance(pinr, dict)
+                pinr["pullModeToken"] = token
+                self.write_evidence()
+                self.assert_rejected(self.run_validator())
+
+    def test_pb07_documented_runtime_calls_use_exact_100k_mode_not_boolean(self) -> None:
+        documents = [
+            "docs/E87-FIRMWARE-AUTHORING-GUIDE.md",
+            "docs/superpowers/plans/2026-08-27-e87-badge-firmware.md",
+            "docs/superpowers/specs/2026-08-27-e87-local-rendering-trial-design.md",
+        ]
+        exact_call = re.compile(
+            r"gpio_longpress_pin0_reset_config\(IO_PORTB_07, 0, 16, 1,\s*"
+            r"PORT_INPUT_PULLUP_100K\)"
+        )
+        stale_boolean_call = (
+            "gpio_longpress_pin0_reset_config(IO_PORTB_07, 0, 16, 1, 1)"
+        )
+        for relative in documents:
+            with self.subTest(relative=relative):
+                text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+                self.assertNotIn(stale_boolean_call, text)
+                self.assertRegex(text, exact_call)
+
+        authoring = (REPO_ROOT / "docs/E87-FIRMWARE-AUTHORING-GUIDE.md").read_text(
+            encoding="utf-8"
+        )
+        developer = (REPO_ROOT / "docs/E87-FIRMWARE-DEVELOPER-GUIDE.md").read_text(
+            encoding="utf-8"
+        )
+        for text in (authoring, developer):
+            self.assertIn("PORT_INPUT_PULLUP_100K", text)
+            self.assertIn("0x12", text)
+            self.assertIn("PORT_OUTPUT_HIGH", text)
 
     def test_every_root_and_nested_object_rejects_missing_or_unknown_key(self) -> None:
         object_paths = [
@@ -690,13 +842,20 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
 
     def test_adc_numeric_minima_adjacent_values_enums_and_fixed_tokens(self) -> None:
         mutations = [
-            (("adc", "gpioToken"), "IO_PORTB_07"),
+            (("adc", "gpioToken"), "IO_PORTB_08"),
             (("adc", "gpioSplitToken"), "IO_PORT_SPLIT"),
             (("adc", "gpioModeToken"), "PORT_OUTPUT_LOW"),
             (("adc", "gpioFunctionToken"), "PORT_FUNC_UART"),
             (("adc", "routeKind"), "CACHED_ONLY"),
             (("adc", "routeStatus"), "UNCONFIRMED"),
             (("adc", "channelToken"), "bad-channel"),
+            (("adc", "channelToken"), "AD_CH_PB8"),
+            (("adc", "channelValue"), CHANNEL_VALUE - 1),
+            (("adc", "channelValue"), CHANNEL_VALUE + 1),
+            (("adc", "channelValue"), True),
+            (("adc", "channelValue"), float(CHANNEL_VALUE)),
+            (("adc", "channelAcceptanceRule"), "NOT_UINT32_MAX"),
+            (("adc", "channelAcceptanceRule"), "RANGE_INCLUSIVE"),
             (("adc", "resolutionBits"), 7),
             (("adc", "resolutionBits"), 16),
             (("adc", "adcMaximum"), 1022),
@@ -723,6 +882,29 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
                 nested_set(self.evidence, path, value)
                 self.write_evidence()
                 self.assert_rejected(self.run_validator())
+
+    def test_pb07_route_identity_rejects_consistent_root_projection_rebinding(self) -> None:
+        mutations = [
+            ("gpioToken", "IO_PORTB_08"),
+            ("channelToken", "AD_CH_PB8"),
+            ("channelValue", CHANNEL_VALUE - 1),
+            ("channelValue", CHANNEL_VALUE + 1),
+            ("channelAcceptanceRule", "NOT_UINT32_MAX"),
+            ("channelAcceptanceRule", "RANGE_INCLUSIVE"),
+        ]
+        for key, value in mutations:
+            with self.subTest(key=key, value=value):
+                self.reset_fixture()
+                adc = self.evidence["adc"]
+                assert isinstance(adc, dict)
+                adc[key] = value
+                self.projection[key] = value
+                self.relink_projection()
+
+                result = self.run_validator()
+
+                self.assert_rejected(result)
+                self.assertIn(f"adc.{key}", result.stderr)
 
     def test_window_inversion_overlap_touch_gap_outer_and_missing_both_fail(self) -> None:
         mutations = [
@@ -762,7 +944,7 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
             (("physicalMapping", "sleep"), "BUTTON1"),
             (("physicalMapping", "simultaneous"), "CHORD"),
             (("pinr", "status"), "UNCONFIRMED"),
-            (("pinr", "gpioToken"), "IO_PORTB_07"),
+            (("pinr", "gpioToken"), "IO_PORTB_08"),
             (("pinr", "activeLevel"), 2),
             (("pinr", "pullModeToken"), "PORT_OUTPUT_LOW"),
             (("pinr", "pullEnableArgument"), -1),
@@ -833,13 +1015,15 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
         mutations = [
             ("sdkCommit", "3" * 40),
             ("sdkTree", "4" * 40),
-            ("gpioToken", "IO_PORTB_07"),
+            ("gpioToken", "IO_PORTB_08"),
             ("gpioSplitToken", "IO_PORT_SPLIT"),
             ("gpioModeToken", "PORT_INPUT_PULLDOWN_10K"),
             ("gpioFunctionToken", "PORT_FUNC_UART"),
             ("routeKind", "REVIEWED_DRIVER_OVERLAY"),
             ("routeStatus", "CONFIRMED"),
-            ("channelToken", "AD_CH_OTHER"),
+            ("channelToken", "AD_CH_PB8"),
+            ("channelValue", CHANNEL_VALUE - 1),
+            ("channelAcceptanceRule", "NOT_UINT32_MAX"),
             ("freshSampleKind", "FRESH_IRQ_TIMER"),
             ("freshSampleStatus", "CONFIRMED"),
             ("freshSampleHook", "E87_FRESH_IRQ_TIMER_GENERATION_V1"),
@@ -863,6 +1047,10 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
             ("cachedSentinel", True),
             ("cachedSentinel", 65535.0),
             ("channelToken", "Å"),
+            ("channelValue", True),
+            ("channelValue", float(CHANNEL_VALUE)),
+            ("channelValue", CHANNEL_VALUE + 1),
+            ("channelAcceptanceRule", "RANGE_INCLUSIVE"),
         ]:
             with self.subTest(key=key, value=value):
                 self.reset_fixture()
@@ -875,7 +1063,7 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
         self.assert_rejected(self.run_validator())
 
         for bad_path in [
-            "firmware/board-profiles/evidence/E87-JD9855-R1-pb08-driver-v1.json",
+            "firmware/board-profiles/evidence/E87-JD9855-R1-pb07-driver-v1.json",
             "../driver.json",
             "/tmp/driver.json",
             "C:/driver.json",
@@ -1036,7 +1224,7 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
             {"repository_root": "repository", "cwd": self.repository.parent},
             {"repository_root": str(self.repository / ".." / "repository")},
             {"evidence": "TEST-E87-BUTTON-V1.json"},
-            {"evidence": "firmware/board-profiles/evidence/E87-JD9855-R1-pb08-v1.json"},
+            {"evidence": "firmware/board-profiles/evidence/E87-JD9855-R1-pb07-v1.json"},
             {"raw_root": "raw"},
             {"evidence": "/tmp/evidence.json"},
             {"evidence": "C:/evidence.json"},
@@ -1060,6 +1248,62 @@ class ButtonEvidenceValidatorTests(unittest.TestCase):
         alias = self.repository.parent / "repository-alias"
         alias.symlink_to(self.repository, target_is_directory=True)
         self.assert_rejected(self.run_validator(repository_root=str(alias)))
+
+    def test_exact_stale_pb08_namespaces_are_rejected(self) -> None:
+        self.assert_rejected(
+            self.run_validator(
+                evidence=(
+                    "firmware/board-profiles/evidence/"
+                    "E87-JD9855-R1-pb08-v1.json"
+                ),
+                profile="E87-JD9855-R1",
+                status="CONFIRMED",
+            )
+        )
+
+        self.reset_confirmed_fixture()
+        capture = self.evidence["capture"]
+        assert isinstance(capture, dict)
+        capture["rawCsvPath"] = "E87-JD9855-R1-pb08-v1.csv"
+        self.write_evidence()
+        self.assert_rejected(
+            self.run_validator(
+                evidence=CONFIRMED_EVIDENCE_PATH,
+                profile="E87-JD9855-R1",
+                status="CONFIRMED",
+            )
+        )
+
+        self.reset_confirmed_fixture()
+        driver = self.evidence["driver"]
+        assert isinstance(driver, dict)
+        driver["evidencePath"] = (
+            "firmware/board-profiles/evidence/"
+            "E87-JD9855-R1-pb08-driver-v1.json"
+        )
+        self.write_evidence()
+        self.assert_rejected(
+            self.run_validator(
+                evidence=CONFIRMED_EVIDENCE_PATH,
+                profile="E87-JD9855-R1",
+                status="CONFIRMED",
+            )
+        )
+
+        for stale_overlay in [
+            "firmware/patches/TEST-E87-BUTTON-V1-pb08-gpadc.patch",
+            "firmware/patches/0002-e87-pb08-gpadc.patch",
+        ]:
+            with self.subTest(stale_overlay=stale_overlay):
+                self.reset_fixture()
+                driver = self.evidence["driver"]
+                assert isinstance(driver, dict)
+                driver["overlayPath"] = stale_overlay
+                driver["overlaySha256"] = digest_label("stale overlay")
+                self.projection["overlayPath"] = stale_overlay
+                self.projection["overlaySha256"] = driver["overlaySha256"]
+                self.relink_projection()
+                self.assert_rejected(self.run_validator())
 
     def test_json_paths_reject_bad_spelling_type_missing_nonregular_and_symlink(self) -> None:
         for path, value in [
