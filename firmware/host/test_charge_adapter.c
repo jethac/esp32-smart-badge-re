@@ -820,28 +820,42 @@ E87_TEST(retry_publish_failure_reentry_and_pending_strengthening_are_exact)
         {E87_CHARGE_EVENT_CHARGE_FULL, UINT8_C(1)},
         {E87_CHARGE_EVENT_LDO5V_OFF, UINT8_C(0)}
     };
+    static const bool before_effect[] = {false, true};
     static const uint8_t strengthen_raw[] = {UINT8_C(0), UINT8_C(1)};
-    struct fixture retry_publish;
     struct fixture reentry;
     size_t index;
 
-    E87_ASSERT_TRUE(fixture_init(&retry_publish));
-    retry_publish.reject_close = true;
-    E87_ASSERT_EQ_U32(E87_CHARGE_RESULT_PENDING_CLOSE,
-                      e87_charge_adapter_step(&retry_publish.adapter,
-                                              &observations[0]));
-    assert_pending_candidate(&retry_publish, true, E87_CHARGE_PHASE_FULL);
-    retry_publish.reject_close = false;
-    retry_publish.reject_publish = true;
-    E87_ASSERT_EQ_U32(E87_CHARGE_RESULT_ERROR,
-                      e87_charge_adapter_retry_pending_close(
-                          &retry_publish.adapter));
-    assert_callback_counts(&retry_publish, 2U, 2U, 1U, 1U);
-    assert_trace(&retry_publish, 3U, TRACE_EMIT_CLOSE, TRACE_EMIT_CLOSE);
-    E87_ASSERT_EQ_U32(TRACE_PUBLISH, retry_publish.trace[2]);
-    E87_ASSERT_TRUE(!e87_charge_adapter_has_pending_close(
-        &retry_publish.adapter));
-    assert_snapshot(&retry_publish, false, E87_CHARGE_PHASE_UNKNOWN);
+    for (index = 0U; index < sizeof(before_effect) / sizeof(before_effect[0]);
+         index += 1U) {
+        struct fixture retry_publish;
+
+        E87_ASSERT_TRUE(fixture_init(&retry_publish));
+        retry_publish.reject_close = true;
+        E87_ASSERT_EQ_U32(E87_CHARGE_RESULT_PENDING_CLOSE,
+                          e87_charge_adapter_step(&retry_publish.adapter,
+                                                  &observations[0]));
+        assert_pending_candidate(&retry_publish, true, E87_CHARGE_PHASE_FULL);
+        assert_snapshot(&retry_publish, false, E87_CHARGE_PHASE_UNKNOWN);
+        retry_publish.reject_close = false;
+        retry_publish.reject_publish = true;
+        retry_publish.reject_before_effect = before_effect[index];
+        E87_ASSERT_EQ_U32(E87_CHARGE_RESULT_ERROR,
+                          e87_charge_adapter_retry_pending_close(
+                              &retry_publish.adapter));
+        assert_callback_counts(&retry_publish, 2U, 2U, 1U,
+                               before_effect[index] ? 0U : 1U);
+        assert_trace(&retry_publish, 3U, TRACE_EMIT_CLOSE, TRACE_EMIT_CLOSE);
+        E87_ASSERT_EQ_U32(TRACE_PUBLISH, retry_publish.trace[2]);
+        E87_ASSERT_TRUE(!e87_charge_adapter_has_pending_close(
+            &retry_publish.adapter));
+        assert_snapshot(&retry_publish, false, E87_CHARGE_PHASE_UNKNOWN);
+        retry_publish.reject_publish = false;
+        E87_ASSERT_EQ_U32(E87_CHARGE_RESULT_ERROR,
+                          e87_charge_adapter_retry_pending_close(
+                              &retry_publish.adapter));
+        assert_callback_counts(&retry_publish, 2U, 2U, 1U,
+                               before_effect[index] ? 0U : 1U);
+    }
 
     E87_ASSERT_TRUE(fixture_init(&reentry));
     reentry.reject_close = true;
@@ -849,7 +863,7 @@ E87_TEST(retry_publish_failure_reentry_and_pending_strengthening_are_exact)
                       e87_charge_adapter_step(&reentry.adapter,
                                               &observations[0]));
     reentry.reject_close = false;
-    reentry.reenter_emit = true;
+    reentry.reenter_publish = true;
     reentry.nested = observations[1];
     E87_ASSERT_EQ_U32(E87_CHARGE_RESULT_SNAPSHOT_UPDATED,
                       e87_charge_adapter_retry_pending_close(&reentry.adapter));
@@ -857,6 +871,10 @@ E87_TEST(retry_publish_failure_reentry_and_pending_strengthening_are_exact)
     assert_callback_counts(&reentry, 2U, 2U, 1U, 1U);
     assert_trace(&reentry, 3U, TRACE_EMIT_CLOSE, TRACE_EMIT_CLOSE);
     E87_ASSERT_EQ_U32(TRACE_PUBLISH, reentry.trace[2]);
+    E87_ASSERT_TRUE(snapshot_equal(
+        &(const struct e87_charge_snapshot) {true, E87_CHARGE_PHASE_FULL},
+        &reentry.publications[0]));
+    E87_ASSERT_TRUE(!e87_charge_adapter_has_pending_close(&reentry.adapter));
     assert_snapshot(&reentry, true, E87_CHARGE_PHASE_FULL);
 
     for (index = 0U; index < sizeof(observations) / sizeof(observations[0]);
@@ -877,6 +895,14 @@ E87_TEST(retry_publish_failure_reentry_and_pending_strengthening_are_exact)
                           e87_charge_adapter_retry_pending_close(
                               &pending.adapter));
         assert_callback_counts(&pending, 2U, 2U, 1U, 1U);
+        assert_trace(&pending, 3U, TRACE_EMIT_CLOSE, TRACE_EMIT_CLOSE);
+        E87_ASSERT_EQ_U32(TRACE_PUBLISH, pending.trace[2]);
+        E87_ASSERT_TRUE(snapshot_equal(
+            &(const struct e87_charge_snapshot) {
+                strengthen_raw[index] == UINT8_C(1), E87_CHARGE_PHASE_FAULT
+            }, &pending.publications[0]));
+        E87_ASSERT_TRUE(!e87_charge_adapter_has_pending_close(
+            &pending.adapter));
         assert_snapshot(&pending, strengthen_raw[index] == UINT8_C(1),
                         E87_CHARGE_PHASE_FAULT);
     }
