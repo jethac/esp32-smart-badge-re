@@ -148,7 +148,7 @@ final class MaintenanceUiPresenter implements AutoCloseable {
     }
 
     void onConfirmationChanged(boolean checked) {
-        if (phase != Phase.READY) return;
+        if (phase != Phase.READY && phase != Phase.CANDIDATES) return;
         if (confirmationChecked == checked) return;
         confirmationChecked = checked;
         publish();
@@ -184,7 +184,11 @@ final class MaintenanceUiPresenter implements AutoCloseable {
 
     void onCandidateSelected(StockGattDriver.Peer peer) {
         if (peer == null) throw new IllegalArgumentException("peer must not be null");
-        if (phase != Phase.CANDIDATES || session == null || !candidates.contains(peer)) return;
+        if (phase != Phase.CANDIDATES || session == null || !confirmationChecked
+                || !candidates.contains(peer)) {
+            return;
+        }
+        confirmationChecked = false;
         phase = Phase.CONNECTING;
         publish();
         try {
@@ -262,6 +266,8 @@ final class MaintenanceUiPresenter implements AutoCloseable {
 
     private void publish() {
         boolean ready = phase == Phase.READY && artifact != null;
+        boolean candidateGate = phase == Phase.CANDIDATES && session != null;
+        boolean confirmationAvailable = ready || candidateGate;
         long qixLength = artifact == null ? 0L
                 : (long) artifact.qixHeader().length + artifact.ufwPayload().length;
         String buildId = artifact == null ? null : hex(artifact.expectedBuildId());
@@ -270,8 +276,8 @@ final class MaintenanceUiPresenter implements AutoCloseable {
         viewState = new ViewState(
                 phase,
                 artifactStatus,
-                ready && confirmationChecked,
-                ready,
+                confirmationAvailable && confirmationChecked,
+                confirmationAvailable,
                 ready && confirmationChecked,
                 session != null && mayCancel && activePhase(),
                 qixLength,

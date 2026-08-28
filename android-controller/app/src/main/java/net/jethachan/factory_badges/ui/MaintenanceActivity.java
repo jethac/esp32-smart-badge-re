@@ -194,7 +194,9 @@ public final class MaintenanceActivity extends Activity {
                     LinearLayout.LayoutParams.WRAP_CONTENT));
             candidateButton.setText(getString(R.string.stock_candidate_format,
                     displayName(peer), finalTwoOctets(peer.address()), peer.rssi()));
-            candidateButton.setEnabled(state.phase() == MaintenanceUiPresenter.Phase.CANDIDATES);
+            candidateButton.setEnabled(
+                    state.phase() == MaintenanceUiPresenter.Phase.CANDIDATES
+                            && state.confirmationChecked());
             candidateButton.setOnClickListener(
                     view -> presenter.onCandidateSelected(peer));
             candidateList.addView(candidateButton);
