@@ -361,13 +361,12 @@ e87_bond_policy_open_pairing(
         return false;
     }
 
-    if (!policy->private_ops.pair_accept(
-            policy->private_ops.context, true)) {
-        /* Failure can still leave the SDK's runtime gate open. */
-        policy->private_stop_pending = true;
-        (void)stop_pairing(policy);
-        return false;
-    }
+    /*
+     * This opens only the logical enrollment window. The vendor gate is
+     * global and its dispatcher auto-confirms JustWorks before notifying us,
+     * so it must remain closed until an exact connection peer is staged and
+     * the REPLACING journal has been durably saved and verified.
+     */
     policy->private_pairing_open = true;
     return true;
 }
@@ -713,6 +712,12 @@ e87_bond_policy_advance(
         if (policy->private_record.has_owner == UINT8_C(1)) {
             policy->private_owner = policy->private_record.owner;
             policy->private_has_owner = true;
+        }
+        if (!policy->private_ops.pair_accept(
+                policy->private_ops.context, true)) {
+            /* Failure can still leave a vendor runtime gate open. */
+            (void)begin_abort(policy);
+            return E87_BOND_ADVANCE_FAILED;
         }
         policy->private_phase = E87_BOND_PHASE_AWAIT_CANDIDATE;
         return E87_BOND_ADVANCE_PROGRESSED;

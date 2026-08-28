@@ -4,9 +4,10 @@
  * JieLi attribute records are:
  * size (u16 LE), flags (u16 LE), handle (u16 LE), UUID, value.
  *
- * Dynamic = 0x0100, UUID128 = 0x0200. The BTstack permission fields
- * encode encrypted/no-MITM as read level 1 (0x0400) and write level 1
- * (0x1000). Runtime callbacks enforce the same security boundary.
+ * Dynamic = 0x0100, UUID128 = 0x0200. In the pinned BTstack database
+ * parser, 0x0400 means authenticated/MITM; the high nibble encodes the
+ * encrypted minimum-key-size field. Both protected values use level 1,
+ * matching encrypted/no-MITM runtime checks.
  */
 const uint8_t e87_normal_gatt_profile[] = {
     /* 0x0001 PRIMARY_SERVICE 1800 */
@@ -36,7 +37,7 @@ const uint8_t e87_normal_gatt_profile[] = {
     0x35, 0x07, 0xA7, 0x01, 0x9C, 0x5D, 0x0B, 0x9F,
     0x62, 0x4C, 0x1B, 0x7A, 0x03, 0x00, 0x7D, 0xE8,
     /* 0x0008 VALUE build READ | DYNAMIC | UUID128 | ENCRYPTED */
-    0x16, 0x00, 0x02, 0x07, 0x08, 0x00,
+    0x16, 0x00, 0x02, 0x13, 0x08, 0x00,
     0x35, 0x07, 0xA7, 0x01, 0x9C, 0x5D, 0x0B, 0x9F,
     0x62, 0x4C, 0x1B, 0x7A, 0x03, 0x00, 0x7D, 0xE8,
 

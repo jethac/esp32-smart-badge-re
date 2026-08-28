@@ -57,7 +57,7 @@ EXPECTED_PROFILE = b"".join(
         _record(0x0002, 5, UUID_CHARACTERISTIC, bytes((0x08, 0x06, 0x00)) + UUID_STATE),
         _record(0x1308, 6, UUID_STATE),
         _record(0x0002, 7, UUID_CHARACTERISTIC, bytes((0x02, 0x08, 0x00)) + UUID_BUILD),
-        _record(0x0702, 8, UUID_BUILD),
+        _record(0x1302, 8, UUID_BUILD),
         _record(0x0002, 9, UUID_PRIMARY_SERVICE, UUID_BATTERY_SERVICE),
         _record(0x0002, 10, UUID_CHARACTERISTIC, bytes((0x12, 0x0B, 0x00)) + UUID_BATTERY_LEVEL),
         _record(0x0112, 11, UUID_BATTERY_LEVEL),
@@ -82,7 +82,8 @@ class ExactAttDatabaseTests(unittest.TestCase):
     def test_handles_properties_and_encrypted_non_mitm_permissions_are_exact(self) -> None:
         profile = _array("e87_normal_gatt_profile")
         self.assertIn(_record(0x1308, 6, UUID_STATE), profile)
-        self.assertIn(_record(0x0702, 8, UUID_BUILD), profile)
+        self.assertIn(_record(0x1302, 8, UUID_BUILD), profile)
+        self.assertNotIn(_record(0x0702, 8, UUID_BUILD), profile)
         self.assertNotIn(_record(0x0304, 6, UUID_STATE), profile)
         self.assertNotIn((0x2308).to_bytes(2, "little"), profile)
         self.assertNotIn((0x0B02).to_bytes(2, "little"), profile)

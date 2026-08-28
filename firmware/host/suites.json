@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "includeDirectories": [
     "firmware/host",
+    "firmware/host/fakes",
     "firmware/overlay/SDK/apps/watch/include",
     "firmware/generated"
   ],
@@ -14,6 +15,119 @@
       }
     ],
     "ble": [
+      {
+        "name": "br35-owner-journal",
+        "test": "firmware/host/test_ble_target_journal.c",
+        "sources": [
+          "firmware/host/fakes/e87_br35_fake.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target_journal.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_bond_policy.c"
+        ]
+      },
+      {
+        "name": "br35-target-flow",
+        "test": "firmware/host/test_ble_target_flow.c",
+        "sources": [
+          "firmware/host/fakes/e87_br35_fake.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target_journal.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_bond_policy.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_gatt_db.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_state.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_build_info.c"
+        ]
+      },
+      {
+        "name": "br35-target-fail-closed",
+        "test": "firmware/host/test_ble_target_fail_closed.c",
+        "sources": [
+          "firmware/host/fakes/e87_br35_fake.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target_journal.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_bond_policy.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_gatt_db.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_state.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_build_info.c"
+        ]
+      },
+      {
+        "name": "br35-target-pair-race",
+        "test": "firmware/host/test_ble_target_pair_race.c",
+        "sources": [
+          "firmware/host/fakes/e87_br35_fake.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target_journal.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_bond_policy.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_gatt_db.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_state.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_build_info.c"
+        ]
+      },
+      {
+        "name": "br35-target-disconnect-race",
+        "test": "firmware/host/test_ble_target_disconnect_race.c",
+        "sources": [
+          "firmware/host/fakes/e87_br35_fake.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target_journal.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_bond_policy.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_gatt_db.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_state.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_build_info.c"
+        ]
+      },
+      {
+        "name": "br35-target-pair-failure",
+        "test": "firmware/host/test_ble_target_pair_failure.c",
+        "sources": [
+          "firmware/host/fakes/e87_br35_fake.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target_journal.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_bond_policy.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_gatt_db.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_state.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_build_info.c"
+        ]
+      },
+      {
+        "name": "br35-target-owner-identity",
+        "test": "firmware/host/test_ble_target_owner_identity.c",
+        "sources": [
+          "firmware/host/fakes/e87_br35_fake.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target_journal.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_bond_policy.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_gatt_db.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_state.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_build_info.c"
+        ]
+      },
+      {
+        "name": "br35-target-rpa-candidate",
+        "test": "firmware/host/test_ble_target_rpa_candidate.c",
+        "sources": [
+          "firmware/host/fakes/e87_br35_fake.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target_journal.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_bond_policy.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_gatt_db.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_state.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_build_info.c"
+        ]
+      },
+      {
+        "name": "br35-target-ingress",
+        "test": "firmware/host/test_ble_target_ingress.c",
+        "sources": [
+          "firmware/host/fakes/e87_br35_fake.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_target_journal.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_bond_policy.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_gatt_db.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_state.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_build_info.c"
+        ]
+      },
       {
         "name": "normal-gatt-control",
         "test": "firmware/host/test_ble_control.c",

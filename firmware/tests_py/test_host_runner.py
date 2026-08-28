@@ -352,6 +352,8 @@ class HostRunnerIntegrationTest(unittest.TestCase):
                 "-I",
                 "firmware/host",
                 "-I",
+                "firmware/host/fakes",
+                "-I",
                 "firmware/overlay/SDK/apps/watch/include",
                 "-I",
                 "firmware/generated",

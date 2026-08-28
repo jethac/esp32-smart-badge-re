@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "sdkCommit": "d0167685d032d745d88fe50233302edd46941622",
+  "sdkTree": "854734595be49510aca5afb89f5885e8bce6a00f",
+  "btstackArchiveSha256": "4a5c48ba0658647ecde1a59c7032448eeda1bdfe4a3899dd14903b5d75e8347d",
+  "providers": {
+    "appBle": "btstack.a(app_ble_module_manage.c.o)",
+    "appBleCallbacks": "btstack.a(app_ble_callback_handler.c.o)",
+    "advertising": "btstack.a(app_ble_adv_manage.c.o)",
+    "bondList": "btstack.a(remote_device_list.c.o)",
+    "attDatabase": "btstack.a(att_db.c.o)",
+    "securityManager": "btstack.a(sm.c.o)",
+    "syscfg": "cfg_tool.a(syscfg_api.c.o)",
+    "vm": "vm.a(vm.c.o)"
+  },
+  "pairing": {
+    "ordering": "REPLACING_DURABLE_THEN_GLOBAL_GATE_THEN_VENDOR_AUTO_CONFIRM",
+    "gate": "ble_list_pair_accept(bool)",
+    "gateScope": "global",
+    "autoConfirmBeforePerHandleCallback": true,
+    "publicRejectHook": false,
+    "exactPeerBoundary": "one configured HCI link plus exact staged current handle and peer"
+  },
+  "att": {
+    "dynamicReadError": "callback_result > 0xFE00; low byte is ATT error",
+    "writeCallback": "synchronous u8 ATT result; no public deferred-result token",
+    "stateWriteSuccessMeaning": "semantically valid 8-byte packet admitted to app-core ingress, not committed",
+    "semanticValidation": "pure e87_state_decode into discarded local output before enqueue; core decodes again before sole commit",
+    "buildFlags": "0x1302",
+    "stateFlags": "0x1308",
+    "authenticatedMask": "0x0400 -> ATT 0x05",
+    "authorizationMask": "0x0800 -> ATT 0x08",
+    "encryptionField": "flags high nibble shifted by 12"
+  },
+  "identity": {
+    "createdEvent": "0xDE",
+    "resolvedEvent": "0xDA",
+    "resolvedIndexAccessorSafe": false,
+    "canonicalAddressOrder": "normalized display order",
+    "getIdAddressOutputMustBeInitialized": true
+  },
+  "journal": {
+    "slotIds": [48, 49],
+    "wireBytes": 48,
+    "exactLengthRequired": true,
+    "readBackVerifyRequired": true
+  },
+  "coordinatorBoundary": {
+    "stateOwner": "APP_CORE_ONLY",
+    "targetWriteRole": "TRANSPORT_AND_PURE_SEMANTIC_VALIDATE_COPY_ENQUEUE_ONLY",
+    "ingressBytes": 8,
+    "decodeCommitContext": "APP_CORE_SERIALIZED_POLL",
+    "targetOwnsStateStore": false,
+    "targetInvokesBleControl": false,
+    "authorizationEpoch": {
+      "widthBits": 32,
+      "defaultWritesEnabled": false,
+      "separateLinkGeneration": false,
+      "singleLinkReason": "every disconnect invalidates before any replacement link is admitted",
+      "activeGates": [
+        "current link",
+        "encrypted",
+        "durable logical owner",
+        "contiguous full BuildInfo read",
+        "lifecycle writes enabled"
+      ],
+      "incrementPoints": [
+        "profile incarnation",
+        "writes false-to-true",
+        "every writes-disabled close barrier",
+        "fail-closed disconnect request",
+        "disconnect completion",
+        "encryption loss",
+        "owner or link replacement",
+        "profile teardown"
+      ],
+      "wrapPolicy": "FAIL_CLOSED_NO_REUSE",
+      "drainRule": "core must match its active NORMAL epoch and target active-epoch query"
+    },
+    "profileReleasePrecondition": "immediately before external profile release or maintenance handoff, call set_writes_enabled(false), retain its newly advanced epoch, and do not treat false for an older epoch as drain proof"
+  },
+  "linkBoundary": {
+    "blockerCode": "MISSING_APP_BTSTACK_LIFECYCLE_OWNER",
+    "targetLinkEligible": false,
+    "diagnosticResult": "LINK_DIAGNOSTIC_UNQUALIFIED_PRUNED",
+    "diagnosticElfSha256": "40b22e06babc0d7e5248b36d159946f80c930944c68d23d30861c954a9a2f036",
+    "diagnosticElfBytes": 1594584,
+    "targetSymbolsRetained": false,
+    "targetTextBytes": 0,
+    "undefinedSymbolClaim": null,
+    "missingRootEdges": [
+      "btstack_init",
+      "bt_event_update_to_user stack-ready route",
+      "e87_ble_target_init",
+      "e87_ble_target_poll"
+    ],
+    "missingTasks": [
+      "btctrler",
+      "btstack"
+    ],
+    "modeOwnershipRequirement": "Each normal or maintenance lifecycle callback must be the sole creator and releaser of its profile handle; the mode FSM only sequences disable, disconnect, wait, release, install, and enable.",
+    "binderBlockers": [
+      "target currently owns normal profile allocation and automatic pairing policy while coordinator expects external lifecycle and pairing effects",
+      "binder must reissue set_writes_enabled(false) and retain the returned current epoch immediately before release",
+      "battery update and notification seam is intentionally deferred"
+    ],
+    "futureComposition": {
+      "policyAndLifecycleOwner": "COORDINATOR_APP_CORE",
+      "sdkProfileAndAuthorizationOwner": "E87_BLE_TARGET",
+      "initMayAutoOpenPairing": false,
+      "binderRequiredMethods": [
+        "pairing open and close",
+        "normal advertising enable and disable",
+        "exact-handle disconnect",
+        "battery update and notification",
+        "close barrier plus profile release"
+      ]
+    }
+  }
+}

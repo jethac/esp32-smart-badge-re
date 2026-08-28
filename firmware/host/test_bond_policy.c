@@ -411,18 +411,25 @@ E87_TEST(pair_accept_failures_are_fail_closed_and_retryable)
     E87_ASSERT_EQ_U32(1U, fake.pair_accept_calls);
     fake.fail_pair_accept_disable = false;
     E87_ASSERT_TRUE(e87_bond_policy_boot(&policy, &ops));
+    E87_ASSERT_TRUE(e87_bond_policy_open_pairing(&policy));
+    E87_ASSERT_TRUE(!fake.pair_accept);
+    E87_ASSERT_TRUE(e87_bond_policy_stage_candidate(
+        &policy, &candidate));
+    E87_ASSERT_EQ_U32(E87_BOND_ADVANCE_PROGRESSED,
+                      e87_bond_policy_advance(&policy));
     fake.fail_pair_accept_enable = true;
     fake.fail_pair_accept_disable = true;
     fake.pair_accept_enable_side_effect_on_failure = true;
-    E87_ASSERT_TRUE(!e87_bond_policy_open_pairing(&policy));
+    E87_ASSERT_EQ_U32(E87_BOND_ADVANCE_FAILED,
+                      e87_bond_policy_advance(&policy));
     E87_ASSERT_TRUE(!e87_bond_policy_pairing_open(&policy));
     E87_ASSERT_TRUE(fake.pair_accept);
     E87_ASSERT_TRUE(!e87_bond_policy_allow_just_works(
         &policy, &candidate));
-    E87_ASSERT_TRUE(!e87_bond_policy_open_pairing(&policy));
     fake.fail_pair_accept_enable = false;
     fake.fail_pair_accept_disable = false;
-    E87_ASSERT_TRUE(e87_bond_policy_close_pairing(&policy));
+    E87_ASSERT_EQ_U32(E87_BOND_ADVANCE_PROGRESSED,
+                      e87_bond_policy_advance(&policy));
     E87_ASSERT_TRUE(!fake.pair_accept);
 }
 
@@ -435,8 +442,10 @@ E87_TEST(replacing_record_precedes_exact_candidate_authorization)
     memset(&fake, 0, sizeof(fake));
     E87_ASSERT_TRUE(boot_owner(&fake, &policy, &ops));
     E87_ASSERT_TRUE(e87_bond_policy_open_pairing(&policy));
+    E87_ASSERT_TRUE(!fake.pair_accept);
     E87_ASSERT_TRUE(e87_bond_policy_stage_candidate(
         &policy, &candidate));
+    E87_ASSERT_TRUE(!fake.pair_accept);
     E87_ASSERT_EQ_U32(E87_BOND_PHASE_SAVE_REPLACING,
                       e87_bond_policy_phase(&policy));
     E87_ASSERT_TRUE(!e87_bond_policy_allow_just_works(
@@ -446,6 +455,7 @@ E87_TEST(replacing_record_precedes_exact_candidate_authorization)
     E87_ASSERT_EQ_U32(E87_BOND_ADVANCE_PROGRESSED,
                       e87_bond_policy_advance(&policy));
     E87_ASSERT_EQ_U32(E87_OWNER_RECORD_REPLACING, fake.record.phase);
+    E87_ASSERT_TRUE(!fake.pair_accept);
     E87_ASSERT_TRUE(peer_equal(&owner, &fake.record.owner));
     E87_ASSERT_TRUE(peer_equal(&candidate, &fake.record.candidate));
     E87_ASSERT_TRUE(!e87_bond_policy_allow_just_works(
@@ -454,6 +464,7 @@ E87_TEST(replacing_record_precedes_exact_candidate_authorization)
                       e87_bond_policy_advance(&policy));
     E87_ASSERT_EQ_U32(E87_BOND_PHASE_AWAIT_CANDIDATE,
                       e87_bond_policy_phase(&policy));
+    E87_ASSERT_TRUE(fake.pair_accept);
     E87_ASSERT_TRUE(e87_bond_policy_allow_just_works(
         &policy, &candidate));
     E87_ASSERT_TRUE(!e87_bond_policy_allow_just_works(

@@ -1,0 +1,87 @@
+diff --git a/SDK/apps/watch/board/br35/board_e87_1542_full/board_e87_1542_full_cfg.h b/SDK/apps/watch/board/br35/board_e87_1542_full/board_e87_1542_full_cfg.h
+index da0a293..914d2b4 100644
+--- a/SDK/apps/watch/board/br35/board_e87_1542_full/board_e87_1542_full_cfg.h
++++ b/SDK/apps/watch/board/br35/board_e87_1542_full/board_e87_1542_full_cfg.h
+@@ -4,9 +4,9 @@
+ #undef TCFG_DEBUG_UART_ENABLE
+ #define TCFG_DEBUG_UART_ENABLE 0
+ #undef TCFG_APP_BT_EN
+-#define TCFG_APP_BT_EN 0
++#define TCFG_APP_BT_EN 1
+ #undef TCFG_USER_BLE_ENABLE
+-#define TCFG_USER_BLE_ENABLE 0
++#define TCFG_USER_BLE_ENABLE 1
+ #undef TCFG_USER_BT_CLASSIC_ENABLE
+ #define TCFG_USER_BT_CLASSIC_ENABLE 0
+ #undef TCFG_USER_TWS_ENABLE
+diff --git a/SDK/apps/watch/include/app_config.h b/SDK/apps/watch/include/app_config.h
+index a561f7a..4905c30 100644
+--- a/SDK/apps/watch/include/app_config.h
++++ b/SDK/apps/watch/include/app_config.h
+@@ -1037,9 +1037,9 @@
+ //*********************************************************************************//
+ #ifdef CONFIG_BOARD_E87_1542_FULL_H
+ #undef TCFG_APP_BT_EN
+-#define TCFG_APP_BT_EN 0
++#define TCFG_APP_BT_EN 1
+ #undef TCFG_USER_BLE_ENABLE
+-#define TCFG_USER_BLE_ENABLE 0
++#define TCFG_USER_BLE_ENABLE 1
+ #undef TCFG_USER_BT_CLASSIC_ENABLE
+ #define TCFG_USER_BT_CLASSIC_ENABLE 0
+ #undef TCFG_USER_TWS_ENABLE
+@@ -1051,7 +1051,11 @@
+ #undef RCSP_MODE
+ #define RCSP_MODE RCSP_MODE_OFF
+ #undef TCFG_BT_BLE_ADV_ENABLE
+-#define TCFG_BT_BLE_ADV_ENABLE 0
++#define TCFG_BT_BLE_ADV_ENABLE 1
++#undef TCFG_USER_EMITTER_ENABLE
++#define TCFG_USER_EMITTER_ENABLE 0
++#undef TCFG_BLE_BRIDGE_EDR_ENALBE
++#define TCFG_BLE_BRIDGE_EDR_ENALBE 0
+ #undef TCFG_UI_ENABLE
+ #define TCFG_UI_ENABLE 0
+ #undef CONFIG_JL_UI_ENABLE
+diff --git a/SDK/build/Makefile.mk b/SDK/build/Makefile.mk
+index 3709ada..64d5d4a 100644
+--- a/SDK/build/Makefile.mk
++++ b/SDK/build/Makefile.mk
+@@ -882,6 +882,21 @@ cpp_SRC_FILES :=
+ cc_SRC_FILES :=
+ cxx_SRC_FILES :=
+ # E87 full source closure complete.
++# E87_BLE_TARGET_REQUIRED_SOURCES_BEGIN
++E87_BLE_TARGET_REQUIRED_SOURCES := \
++	apps/watch/e87/e87_ble_target.c \
++	apps/watch/e87/e87_ble_target_journal.c \
++	apps/watch/e87/e87_ble_target_platform_config.c \
++	apps/watch/e87/e87_bond_policy.c \
++	apps/watch/e87/e87_build_info.c \
++	apps/watch/e87/e87_gatt_db.c \
++	apps/watch/e87/e87_state.c \
++	apps/watch/log_config/app_config.c \
++	apps/watch/log_config/lib_btctrler_config.c \
++	apps/watch/log_config/lib_btstack_config.c
++# E87_BLE_TARGET_REQUIRED_SOURCES_END
++E87_FULL_REQUIRED_SOURCES += $(E87_BLE_TARGET_REQUIRED_SOURCES)
++c_SRC_FILES := $(E87_FULL_REQUIRED_SOURCES)
+ # 链接参数
+ LFLAGS := \
+     --plugin-opt=-pi32v2-always-use-itblock=false \
+@@ -1090,6 +1105,15 @@ E87_FULL_REQUIRED_ARCHIVES := \
+     cpu/br35/liba/fs.a \
+     cpu/br35/liba/printf.a \
+     cpu/br35/liba/vm.a
++# E87_BLE_TARGET_REQUIRED_ARCHIVES_BEGIN
++E87_BLE_TARGET_REQUIRED_ARCHIVES := \
++    cpu/br35/liba/btstack.a \
++    cpu/br35/liba/btctrler.a \
++    cpu/br35/liba/cbuf.a \
++    cpu/br35/liba/crypto_toolbox_Osize.a \
++    cpu/br35/liba/lib_ccm_cipher.a
++# E87_BLE_TARGET_REQUIRED_ARCHIVES_END
++E87_FULL_REQUIRED_ARCHIVES += $(E87_BLE_TARGET_REQUIRED_ARCHIVES)
+ # E87 full required archive list complete.
+ LFLAGS := \
+     --plugin-opt=-pi32v2-always-use-itblock=false \

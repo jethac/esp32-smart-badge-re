@@ -38,6 +38,7 @@ FIXED_FLAGS = [
 ]
 ALLOWED_INCLUDE_ROOTS = {
     "firmware/host",
+    "firmware/host/fakes",
     "firmware/overlay/SDK/apps/watch/include",
     "firmware/generated",
 }

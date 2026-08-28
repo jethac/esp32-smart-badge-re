@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "profileId": "E87-1542-BLE-TARGET-H",
+  "baseProfileId": "E87-1542-FULL-SUBSTRATE-H",
+  "baseCommit": "1e793dd76d2ee194f89e4d9db34b933c2d409799",
+  "sdkCommit": "d0167685d032d745d88fe50233302edd46941622",
+  "sdkTree": "854734595be49510aca5afb89f5885e8bce6a00f",
+  "status": "TARGET_LINK_BLOCKED",
+  "qualification": "COMPILE_SEAM_ONLY",
+  "targetLinkEligible": false,
+  "diagnosticLink": {
+    "result": "LINK_DIAGNOSTIC_UNQUALIFIED_PRUNED",
+    "elfSha256": "40b22e06babc0d7e5248b36d159946f80c930944c68d23d30861c954a9a2f036",
+    "elfBytes": 1594584,
+    "targetSymbolsRetained": false,
+    "targetTextBytes": 0
+  },
+  "orderedPatches": [
+    "firmware/patches/full/0001-e87-full-substrate.patch",
+    "firmware/patches/ble-target/0001-e87-ble-target.patch"
+  ],
+  "publicApi": [
+    "e87_ble_target_init",
+    "e87_ble_target_poll",
+    "e87_ble_target_set_writes_enabled",
+    "e87_ble_target_authorization_epoch_is_active"
+  ],
+  "coordinatorBoundary": {
+    "stateOwner": "APP_CORE_ONLY",
+    "targetWriteRole": "TRANSPORT_AND_PURE_SEMANTIC_VALIDATE_COPY_ENQUEUE_ONLY",
+    "ingressBytes": 8,
+    "attSuccessMeaning": "SEMANTICALLY_VALID_INGRESS_ADMITTED_NOT_COMMITTED",
+    "validationDuplicationReason": "PINNED_ATT_WRITE_RESULT_IS_SYNCHRONOUS",
+    "decodeCommitContext": "APP_CORE_SERIALIZED_POLL",
+    "targetOwnsStateStore": false,
+    "targetInvokesBleControl": false,
+    "authorizationEpoch": {
+      "widthBits": 32,
+      "defaultWritesEnabled": false,
+      "separateLinkGeneration": false,
+      "activeGates": [
+        "current link",
+        "encrypted",
+        "durable logical owner",
+        "contiguous full BuildInfo read",
+        "lifecycle writes enabled"
+      ],
+      "gateLossInvalidatesSynchronously": true,
+      "wrapPolicy": "FAIL_CLOSED_NO_REUSE",
+      "drainMustRevalidate": true
+    },
+    "profileReleasePrecondition": "immediately before external profile release or maintenance handoff, call set_writes_enabled(false), retain its newly advanced epoch, and do not treat false for an older epoch as drain proof",
+    "futureComposition": {
+      "policyAndLifecycleOwner": "COORDINATOR_APP_CORE",
+      "sdkProfileAndAuthorizationOwner": "E87_BLE_TARGET",
+      "initMayAutoOpenPairing": false,
+      "binderRequiredMethods": [
+        "pairing open and close",
+        "normal advertising enable and disable",
+        "exact-handle disconnect",
+        "battery update and notification",
+        "close barrier plus profile release"
+      ]
+    }
+  },
+  "closureDelta": {
+    "sources": 10,
+    "archives": 5,
+    "excludes": ["e87_app", "panel", "charge", "rcsp"]
+  },
+  "limits": {
+    "bondSlots": 2,
+    "maxHciConnections": 1,
+    "normalProfileOnly": true,
+    "stackModules": 4
+  },
+  "journal": {
+    "slotIds": [48, 49],
+    "wireBytes": 48,
+    "version": 1,
+    "checksum": "CRC32-ISO-HDLC"
+  },
+  "blockers": [
+    "MISSING_APP_BTSTACK_LIFECYCLE_OWNER",
+    "MISSING_BTSTACK_BTCTRLR_TASK_ENTRIES",
+    "MISSING_STACK_READY_EVENT_ROUTE",
+    "MISSING_E87_BLE_TARGET_ROOT_CALLS",
+    "COORDINATOR_TARGET_LIFECYCLE_API_MISMATCH",
+    "MISSING_TARGET_BATTERY_UPDATE_SEAM"
+  ],
+  "evidence": "firmware/evidence/ble-target/vendor-contract.json"
+}
