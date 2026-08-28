@@ -207,18 +207,22 @@ public final class ManifestSourceTest {
         assertTrue(mergedPermissions.contains("android.permission.INTERNET"));
     }
 
-    // Mutation caught: retain a dangling activity, omit launcher shape, or drift app presentation.
+    // Mutation caught: retain a dangling component, omit launcher shape, expose maintenance,
+    // or drift app presentation.
     @Test
-    public void sourceAndMergedManifestsHaveOneExactLauncherActivity() throws Exception {
+    public void sourceAndMergedManifestsHaveExactLauncherAndPrivateMaintenanceActivity()
+            throws Exception {
         String source = new String(Files.readAllBytes(
                 Paths.get("app/src/main/AndroidManifest.xml")), StandardCharsets.UTF_8);
         String merged = new String(Files.readAllBytes(Paths.get(
                 "app/build/intermediates/merged_manifests/debug/"
                         + "processDebugManifest/AndroidManifest.xml")),
                 StandardCharsets.UTF_8);
-        assertLauncherApplication(source, "", ".ui.MainActivity");
-        assertLauncherApplication(merged, "net.jethachan.factory_badges",
-                "net.jethachan.factory_badges.ui.MainActivity");
+        assertApplicationActivities(source, "", ".ui.MainActivity",
+                ".ui.MaintenanceActivity");
+        assertApplicationActivities(merged, "net.jethachan.factory_badges",
+                "net.jethachan.factory_badges.ui.MainActivity",
+                "net.jethachan.factory_badges.ui.MaintenanceActivity");
     }
 
     // Mutation caught: malformed launcher filters/components or icon/theme variants are accepted.
@@ -228,37 +232,53 @@ public final class ManifestSourceTest {
                 + "<action android:name=\"android.intent.action.MAIN\" />"
                 + "<category android:name=\"android.intent.category.LAUNCHER\" />"
                 + "</intent-filter>";
+        String maintenance = "<activity android:name=\".ui.MaintenanceActivity\""
+                + " android:exported=\"false\" />";
         String[] bad = {
                 launcherFixture(".MainActivity", "true", "@drawable/ic_stat_badge_sync",
-                        goodFilter, ""),
+                        goodFilter, maintenance),
                 launcherFixture(".ui.MainActivity", "false", "@drawable/ic_stat_badge_sync",
-                        goodFilter, ""),
-                launcherFixture(".ui.MainActivity", "true", "", goodFilter, ""),
+                        goodFilter, maintenance),
+                launcherFixture(".ui.MainActivity", "true", "", goodFilter, maintenance),
                 launcherFixture(".ui.MainActivity", "true", "@drawable/wrong",
-                        goodFilter, ""),
+                        goodFilter, maintenance),
                 launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
                         "<intent-filter><action android:name=\"android.intent.action.MAIN\" />"
-                                + "</intent-filter>", ""),
+                                + "</intent-filter>", maintenance),
                 launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
                         goodFilter.replace("</intent-filter>", "<data android:scheme=\"x\" />"
-                                + "</intent-filter>"), ""),
+                                + "</intent-filter>"), maintenance),
                 launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
-                        goodFilter, "<activity android:name=\".MaintenanceActivity\" />"),
+                        goodFilter, ""),
                 launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
-                        goodFilter, "<activity-alias android:name=\".Alias\" />"),
+                        goodFilter, maintenance.replace("false", "true")),
                 launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
-                        goodFilter, "").replace("<manifest ", "<manifest package=\"wrong.example\" "),
+                        goodFilter, maintenance.replace(
+                                ".ui.MaintenanceActivity", ".MaintenanceActivity")),
                 launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
-                        goodFilter, "<meta-data android:name=\"unexpected\" android:value=\"1\" />")
+                        goodFilter, maintenance.replace(" />",
+                                "><intent-filter><action android:name=\"unexpected\" />"
+                                        + "</intent-filter></activity>")),
+                launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
+                        goodFilter, maintenance
+                                + "<activity-alias android:name=\".Alias\" />"),
+                launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
+                        goodFilter, maintenance).replace(
+                                "<manifest ", "<manifest package=\"wrong.example\" "),
+                launcherFixture(".ui.MainActivity", "true", "@drawable/ic_stat_badge_sync",
+                        goodFilter, maintenance
+                                + "<meta-data android:name=\"unexpected\" android:value=\"1\" />")
         };
         for (String xml : bad) {
             assertThrows(AssertionError.class,
-                    () -> assertLauncherApplication(xml, "", ".ui.MainActivity"));
+                    () -> assertApplicationActivities(xml, "", ".ui.MainActivity",
+                            ".ui.MaintenanceActivity"));
         }
     }
 
-    private static void assertLauncherApplication(
-            String xml, String expectedPackage, String expectedName)
+    private static void assertApplicationActivities(
+            String xml, String expectedPackage, String expectedLauncher,
+            String expectedMaintenance)
             throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(true);
@@ -278,16 +298,24 @@ public final class ManifestSourceTest {
                 application.getAttributeNS(ANDROID_NAMESPACE, "theme"));
         assertEquals("app icon", "@drawable/ic_stat_badge_sync",
                 application.getAttributeNS(ANDROID_NAMESPACE, "icon"));
-        assertEquals("one activity", 1,
+        assertEquals("exactly two activities", 2,
                 application.getElementsByTagName("activity").getLength());
         assertEquals("no activity alias", 0,
                 application.getElementsByTagName("activity-alias").getLength());
-        Element activity = (Element) application.getElementsByTagName("activity").item(0);
-        assertEquals("launcher name", expectedName,
-                activity.getAttributeNS(ANDROID_NAMESPACE, "name"));
+        Element launcher = null;
+        Element maintenance = null;
+        NodeList activities = application.getElementsByTagName("activity");
+        for (int index = 0; index < activities.getLength(); index++) {
+            Element candidate = (Element) activities.item(index);
+            String name = candidate.getAttributeNS(ANDROID_NAMESPACE, "name");
+            if (expectedLauncher.equals(name)) launcher = candidate;
+            if (expectedMaintenance.equals(name)) maintenance = candidate;
+        }
+        assertTrue("launcher present", launcher != null);
+        assertTrue("maintenance present", maintenance != null);
         assertEquals("launcher exported", "true",
-                activity.getAttributeNS(ANDROID_NAMESPACE, "exported"));
-        NodeList filters = activity.getElementsByTagName("intent-filter");
+                launcher.getAttributeNS(ANDROID_NAMESPACE, "exported"));
+        NodeList filters = launcher.getElementsByTagName("intent-filter");
         assertEquals("one launcher filter", 1, filters.getLength());
         Element filter = (Element) filters.item(0);
         assertEquals("one action", 1, filter.getElementsByTagName("action").getLength());
@@ -300,6 +328,10 @@ public final class ManifestSourceTest {
                 ((Element) filter.getElementsByTagName("category").item(0))
                         .getAttributeNS(ANDROID_NAMESPACE, "name"));
         assertEquals("no data", 0, filter.getElementsByTagName("data").getLength());
+        assertEquals("maintenance private", "false",
+                maintenance.getAttributeNS(ANDROID_NAMESPACE, "exported"));
+        assertEquals("maintenance has no intent filter", 0,
+                maintenance.getElementsByTagName("intent-filter").getLength());
         assertEquals("no receiver", 0,
                 application.getElementsByTagName("receiver").getLength());
         assertEquals("no provider", 0,

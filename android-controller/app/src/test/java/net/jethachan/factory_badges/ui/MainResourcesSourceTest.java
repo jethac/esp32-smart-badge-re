@@ -86,6 +86,7 @@ public final class MainResourcesSourceTest {
         expected.put("start_sync", "Start syncing");
         expected.put("sync_now", "Sync now");
         expected.put("stop_sync", "Stop sync");
+        expected.put("open_maintenance", "Firmware transition");
         expected.put("last_sync_never", "Not synced yet.");
         expected.put("last_sync_current",
                 "Last sync acknowledged: Day %1$d%%, Week %2$d%%.");
@@ -149,7 +150,8 @@ public final class MainResourcesSourceTest {
                 "connection_status_value", "connection_detail_value", "sync_pair_guidance",
                 "local_warning_value", "notification_warning_value", "day_label", "day_value",
                 "day_seek", "week_label", "week_value", "week_seek", "credit_label",
-                "credit_value", "last_sync_value", "sync_button", "stop_sync_button")), ids);
+                "credit_value", "last_sync_value", "sync_button", "stop_sync_button",
+                "maintenance_button")), ids);
 
         assertSeek(document, "day_seek", "@string/day_seek_description");
         assertSeek(document, "week_seek", "@string/week_seek_description");
@@ -169,7 +171,8 @@ public final class MainResourcesSourceTest {
         assertEquals("polite", attr(byId(document, "notification_warning_value"),
                 "accessibilityLiveRegion"));
         assertEquals("gone", attr(byId(document, "notification_warning_value"), "visibility"));
-        for (String id : Arrays.asList("choose_badge_button", "sync_button", "stop_sync_button")) {
+        for (String id : Arrays.asList("choose_badge_button", "sync_button", "stop_sync_button",
+                "maintenance_button")) {
             assertEquals("48dp", attr(byId(document, id), "minHeight"));
         }
     }
@@ -237,6 +240,8 @@ public final class MainResourcesSourceTest {
         assertEquals("@string/start_sync", attr(byId(document, "sync_button"), "text"));
         assertEquals("@string/stop_sync",
                 attr(byId(document, "stop_sync_button"), "text"));
+        assertEquals("@string/open_maintenance",
+                attr(byId(document, "maintenance_button"), "text"));
     }
 
     private static void assertLogicalGroupSpacing(Document document) {

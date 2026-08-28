@@ -47,6 +47,7 @@
     <string name="start_sync">Start syncing</string>
     <string name="sync_now">Sync now</string>
     <string name="stop_sync">Stop sync</string>
+    <string name="open_maintenance">Firmware transition</string>
     <string name="last_sync_never">Not synced yet.</string>
     <string name="last_sync_current">Last sync acknowledged: Day %1$d%%, Week %2$d%%.</string>
     <string name="last_sync_older">Last sync acknowledged: Day %1$d%%, Week %2$d%%. Current sliders are not yet acknowledged.</string>
@@ -64,4 +65,34 @@
     <string name="scan_dialog_title">Nearby E87 badges</string>
     <string name="scan_dialog_searching">Searching…</string>
     <string name="cancel">Cancel</string>
+    <string name="maintenance_title">Stock firmware transition</string>
+    <string name="artifact_not_packaged">No reviewed transition firmware is embedded in this build.</string>
+    <string name="artifact_validator_unavailable">A firmware index is present, but authoritative validators are not integrated. Transfer is disabled.</string>
+    <string name="artifact_invalid">The embedded firmware inventory is unavailable or invalid. Transfer is disabled.</string>
+    <string name="artifact_ready_label">Reviewed transition artifact</string>
+    <plurals name="artifact_identity">
+        <item quantity="one">%1$d byte • expected build %2$s</item>
+        <item quantity="other">%1$d bytes • expected build %2$s</item>
+    </plurals>
+    <string name="stock_receiving_warning">This writes firmware and can leave this badge unusable. It does not detect the stock receiving screen automatically.</string>
+    <string name="confirm_stock_receiving">I put the badge in its stock receiving screen</string>
+    <string name="start_stock_transition">Scan for receiving badge</string>
+    <string name="stock_candidates">Confirm receiving mode again, then select the receiving badge</string>
+    <string name="stock_candidate_format">%1$s • …%2$s • %3$d dBm</string>
+    <string name="transition_idle">No transfer has started.</string>
+    <string name="transition_starting">Preparing the confirmed transition.</string>
+    <string name="transition_scanning">Scanning; tap the correct receiving badge below.</string>
+    <string name="transition_connecting">Connecting to the selected stock badge.</string>
+    <plurals name="transition_progress_format">
+        <item quantity="one">Transferring: %1$d%% • %2$d / %3$d byte acknowledged.</item>
+        <item quantity="other">Transferring: %1$d%% • %2$d / %3$d bytes acknowledged.</item>
+    </plurals>
+    <string name="transition_waiting_custom">Waiting for custom firmware to boot and identify itself.</string>
+    <string name="transition_failed_format">Transition stopped: %1$s</string>
+    <string name="transition_closed">Transition screen closed.</string>
+    <string name="transition_permission_required">Nearby devices permission is required. Confirm receiving mode again after granting it.</string>
+    <string name="cancel_transition">Cancel transition</string>
+    <string name="rewrite_custom_heading">Rewrite custom firmware</string>
+    <string name="rewrite_custom_unavailable">Not available until custom recovery is hardware-proven.</string>
+    <string name="rewrite_custom_firmware">Rewrite custom firmware</string>
 </resources>
