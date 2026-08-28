@@ -7,6 +7,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -360,12 +362,119 @@ class VerifyApkTest(unittest.TestCase):
         self.assertEqual("blocked", marker.read_text())
         self.assertEqual(e87_apk._sha(audited), json.loads(result.stdout)["apkSha256"])
 
+    def test_namespace_projection_path_cannot_be_renamed_from_parent_namespace(self) -> None:
+        audited = self.apk.read_bytes()
+        self.write_apk(mutate=("classes.dex", b"evil impl bytes"))
+        replacement = self.apk.read_bytes()
+        self.apk.write_bytes(audited)
+        ready = self.base / "projection-ready"
+        proceed = self.base / "projection-proceed"
+        observed = self.base / "projection-observed-sha256"
+        done = self.base / "projection-done"
+        malicious = self.base / "delayed-dexdump"
+        malicious.write_text(
+            "#!/usr/bin/env python3\n"
+            "import hashlib, pathlib, sys, time\n"
+            f"ready = pathlib.Path({os.fspath(ready)!r})\n"
+            f"proceed = pathlib.Path({os.fspath(proceed)!r})\n"
+            f"observed = pathlib.Path({os.fspath(observed)!r})\n"
+            f"done = pathlib.Path({os.fspath(done)!r})\n"
+            "ready.write_text('ready')\n"
+            "for _ in range(1000):\n"
+            "    if proceed.exists():\n"
+            "        break\n"
+            "    time.sleep(0.005)\n"
+            "else:\n"
+            "    raise SystemExit(41)\n"
+            "payload = pathlib.Path(sys.argv[-1]).read_bytes()\n"
+            "observed.write_text(hashlib.sha256(payload).hexdigest().upper())\n"
+            "done.write_text('done')\n"
+            f"sys.stdout.write({DEXDUMP!r})\n",
+            encoding="utf-8",
+        )
+        malicious.chmod(0o755)
+        real_run = e87_apk._run
+        rename_blocked = False
+        attacker_errors: list[BaseException] = []
+
+        def wait_for(path: Path) -> None:
+            deadline = time.monotonic() + 10
+            while not path.exists():
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"timed out waiting for {path.name}")
+                time.sleep(0.005)
+
+        def delayed_parent_rename(snapshot) -> None:
+            nonlocal rename_blocked
+            parent = snapshot.path.parent
+            moved = self.base / "projection-mountpoint-away"
+            replaced = False
+            try:
+                wait_for(ready)
+                try:
+                    parent.replace(moved)
+                except OSError:
+                    rename_blocked = True
+                else:
+                    replaced = True
+                    parent.mkdir(mode=0o700)
+                    snapshot.path.write_bytes(replacement)
+                proceed.write_text("proceed")
+                wait_for(done)
+            except BaseException as error:
+                attacker_errors.append(error)
+                proceed.write_text("proceed")
+            finally:
+                if replaced:
+                    snapshot.path.unlink(missing_ok=True)
+                    parent.rmdir()
+                    moved.replace(parent)
+
+        def run_with_parent_rename(
+                tool: Path, arguments: list[str], label: str, *, snapshot=None) -> str:
+            if label != "dexdump":
+                return real_run(tool, arguments, label, snapshot=snapshot)
+            attacker = threading.Thread(
+                target=delayed_parent_rename,
+                args=(snapshot,),
+                daemon=True,
+            )
+            attacker.start()
+            output = real_run(tool, arguments, label, snapshot=snapshot)
+            attacker.join(timeout=15)
+            if attacker.is_alive():
+                raise AssertionError("parent-namespace rename thread did not exit")
+            return output
+
+        with mock.patch.object(
+                e87_apk, "_run", side_effect=run_with_parent_rename):
+            result = self.verify(dexdump=malicious)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertFalse(attacker_errors, attacker_errors)
+        self.assertTrue(rename_blocked)
+        self.assertEqual(e87_apk._sha(audited), observed.read_text())
+
     def test_audit_fails_closed_without_linux_sealed_memory(self) -> None:
         with mock.patch.object(e87_apk.sys, "platform", "unsupported-host"):
             result = self.verify()
 
         self.assertEqual(2, result.returncode, result.stdout + result.stderr)
         self.assertIn("kernel-sealed APK snapshots require a Linux host", result.stderr)
+
+    def test_audit_rejects_a_caller_owned_mount_anchor(self) -> None:
+        caller_anchor = self.base / "caller-owned-anchor"
+        caller_anchor.mkdir()
+        with mock.patch.object(
+                e87_apk, "SEALED_MOUNT_ROOT", caller_anchor), mock.patch.object(
+                e87_apk,
+                "SEALED_PROJECTION",
+                caller_anchor / "e87-controller-snapshot.apk",
+        ):
+            result = self.verify()
+
+        self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+        self.assertIn("root-owned non-writable directory", result.stderr)
 
     def test_paths_and_receipt_are_create_only_and_absolute(self) -> None:
         result = subprocess.run(

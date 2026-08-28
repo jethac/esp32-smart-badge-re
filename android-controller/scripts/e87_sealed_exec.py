@@ -17,6 +17,8 @@ MS_NODEV = 4
 MS_NOEXEC = 8
 MS_REMOUNT = 32
 MOUNT_FLAGS = MS_NOSUID | MS_NODEV | MS_NOEXEC
+SEALED_MOUNT_ROOT = Path("/mnt")
+SEALED_PROJECTION = SEALED_MOUNT_ROOT / "e87-controller-snapshot.apk"
 REQUIRED_SEALS = (
     fcntl.F_SEAL_SEAL
     | fcntl.F_SEAL_SHRINK
@@ -92,10 +94,11 @@ def main(argv: list[str] | None = None) -> int:
         actual_sha = _descriptor_hash(descriptor, expected_length)
     except OSError as error:
         return _fail(f"sealed descriptor validation failed: {error}")
-    if (projection.name != "controller-snapshot.apk"
+    if (projection != SEALED_PROJECTION or parent != SEALED_MOUNT_ROOT
             or not stat.S_ISDIR(parent_mode) or parent.is_symlink()
+            or parent_mode & 0o022
             or projection.exists() or projection.is_symlink()):
-        return _fail("projection must be absent below a private real directory")
+        return _fail("projection must be absent below the fixed protected mount anchor")
     if not stat.S_ISREG(descriptor_stat.st_mode):
         return _fail("sealed descriptor is not a regular file")
     if descriptor_stat.st_size != expected_length or actual_sha != expected_sha:

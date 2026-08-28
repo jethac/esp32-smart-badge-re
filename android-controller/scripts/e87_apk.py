@@ -11,7 +11,6 @@ import re
 import stat
 import subprocess
 import sys
-import tempfile
 import zipfile
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -87,6 +86,8 @@ SOURCE_ROOT = Path(__file__).resolve().parents[1] / "app/src/main/java"
 MAX_APK_SNAPSHOT = 512 * 1024 * 1024
 SEALED_EXEC = Path(__file__).resolve().with_name("e87_sealed_exec.py")
 UNSHARE = Path("/usr/bin/unshare")
+SEALED_MOUNT_ROOT = Path("/mnt")
+SEALED_PROJECTION = SEALED_MOUNT_ROOT / "e87-controller-snapshot.apk"
 
 
 @dataclass(frozen=True)
@@ -110,6 +111,7 @@ class _ApkSnapshot:
 def _sealed_linux_projection(data: bytes) -> Iterator[_ApkSnapshot]:
     if not sys.platform.startswith("linux") or not hasattr(os, "memfd_create"):
         raise ValidationError("kernel-sealed APK snapshots require a Linux host")
+    _validate_sealed_anchor()
     try:
         import fcntl
         add_seals = fcntl.F_ADD_SEALS
@@ -139,18 +141,16 @@ def _sealed_linux_projection(data: bytes) -> Iterator[_ApkSnapshot]:
             fcntl.fcntl(descriptor, add_seals, seals)
         except OSError as error:
             raise ValidationError("sealed APK snapshot initialization failed") from error
-        with tempfile.TemporaryDirectory(prefix="e87-sealed-apk-") as temporary:
-            projection = Path(temporary) / "controller-snapshot.apk"
-            snapshot = _ApkSnapshot(
-                data=data,
-                path=projection,
-                pass_fds=(descriptor,),
-                sealed_path=Path(f"/proc/self/fd/{descriptor}"),
-                sha256=_sha(data),
-            )
-            snapshot.verify_projection()
-            yield snapshot
-            snapshot.verify_projection()
+        snapshot = _ApkSnapshot(
+            data=data,
+            path=SEALED_PROJECTION,
+            pass_fds=(descriptor,),
+            sealed_path=Path(f"/proc/self/fd/{descriptor}"),
+            sha256=_sha(data),
+        )
+        snapshot.verify_projection()
+        yield snapshot
+        snapshot.verify_projection()
     finally:
         os.close(descriptor)
 
@@ -190,11 +190,30 @@ def _regular_absolute(path: Path, label: str, *, executable: bool = False) -> Pa
     return candidate
 
 
+def _validate_sealed_anchor() -> None:
+    if os.geteuid() == 0:
+        raise ValidationError("sealed APK execution requires an unprivileged host user")
+    for candidate, label in ((Path("/"), "root"), (SEALED_MOUNT_ROOT, "mount")):
+        try:
+            metadata = candidate.lstat()
+        except OSError as error:
+            raise ValidationError(f"sealed APK {label} anchor is unavailable") from error
+        if (not stat.S_ISDIR(metadata.st_mode)
+                or candidate.is_symlink()
+                or metadata.st_uid != 0
+                or metadata.st_mode & 0o022):
+            raise ValidationError(
+                f"sealed APK {label} anchor must be a root-owned non-writable directory")
+    if SEALED_PROJECTION.exists() or SEALED_PROJECTION.is_symlink():
+        raise ValidationError("sealed APK projection name already exists on the host")
+
+
 def _sealed_command(
         executable: Path,
         arguments: list[str],
         snapshot: _ApkSnapshot,
 ) -> tuple[list[str], tuple[int, ...]]:
+    _validate_sealed_anchor()
     unshare = _regular_absolute(UNSHARE, "unshare", executable=True)
     interpreter = _regular_absolute(Path(sys.executable), "Python", executable=True)
     runner = _regular_absolute(SEALED_EXEC, "sealed exec helper")
