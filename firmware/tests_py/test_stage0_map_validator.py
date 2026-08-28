@@ -207,28 +207,35 @@ class Stage0MapValidatorTests(unittest.TestCase):
             encoding="ascii",
         )
 
-    def run_validator(self) -> subprocess.CompletedProcess[str]:
+    def run_validator(
+        self,
+        *,
+        test_only: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        arguments = [
+            sys.executable,
+            str(VALIDATOR),
+            "--map",
+            str(self.map_path),
+            "--elf",
+            str(self.elf_path),
+            "--resolution",
+            str(self.resolution_path),
+            "--object-list",
+            str(self.object_list_path),
+            "--app-bin",
+            str(self.app_bin_path),
+            "--evidence",
+            str(self.evidence_path),
+            "--sdk-root",
+            str(self.sdk),
+            "--toolchain-root",
+            str(self.toolchain),
+        ]
+        if test_only:
+            arguments.append("--test-only-accept-untrusted-evidence")
         return subprocess.run(
-            [
-                sys.executable,
-                str(VALIDATOR),
-                "--map",
-                str(self.map_path),
-                "--elf",
-                str(self.elf_path),
-                "--resolution",
-                str(self.resolution_path),
-                "--object-list",
-                str(self.object_list_path),
-                "--app-bin",
-                str(self.app_bin_path),
-                "--evidence",
-                str(self.evidence_path),
-                "--sdk-root",
-                str(self.sdk),
-                "--toolchain-root",
-                str(self.toolchain),
-            ],
+            arguments,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -257,6 +264,48 @@ class Stage0MapValidatorTests(unittest.TestCase):
         result = self.run_validator()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("stage0 link map qualified", result.stdout)
+
+    def test_default_mode_rejects_self_authored_tiny_evidence(self) -> None:
+        result = self.run_validator(test_only=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("committed production evidence", result.stderr)
+
+    def test_default_mode_authenticates_the_committed_evidence_before_artifacts(
+        self,
+    ) -> None:
+        self.evidence_path.write_bytes(PRODUCTION_EVIDENCE.read_bytes())
+        result = self.run_validator(test_only=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("map digest", result.stderr)
+        self.assertNotIn("committed production evidence", result.stderr)
+
+    def test_default_rejects_reblessed_wrong_source_list_hash_and_order(
+        self,
+    ) -> None:
+        self.evidence["evidenceId"] = "E87-S0-LINK-CLOSURE"
+        self.source_objects.reverse()
+        self.evidence["sourceObjects"] = list(self.source_objects)
+        self.map_bytes = self.map_path.read_bytes().replace(
+            b"LOAD objs/apps/common/update/update.c.o\n"
+            b"LOAD objs/apps/watch/e87/e87_stage0_app.c.o\n",
+            b"LOAD objs/apps/watch/e87/e87_stage0_app.c.o\n"
+            b"LOAD objs/apps/common/update/update.c.o\n",
+        )
+        self.map_path.write_bytes(self.map_bytes)
+        self.object_list_bytes = (
+            " " + " ".join(self.source_objects) + "\n"
+        ).encode("ascii")
+        self.object_list_path.write_bytes(self.object_list_bytes)
+        artifact = self.evidence["qualificationArtifact"]
+        assert isinstance(artifact, dict)
+        artifact["mapSha256"] = sha256(self.map_bytes)
+        artifact["mapSize"] = len(self.map_bytes)
+        artifact["objectListSha256"] = sha256(self.object_list_bytes)
+        artifact["objectListSize"] = len(self.object_list_bytes)
+        self.write_evidence()
+        result = self.run_validator(test_only=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("committed production evidence", result.stderr)
 
     def test_plugin_bit_is_bound_in_the_canonical_extraction_graph(self) -> None:
         self.rewrite_map(
@@ -302,6 +351,25 @@ class Stage0MapValidatorTests(unittest.TestCase):
         result = self.run_validator()
         self.assertEqual(result.returncode, 2)
         self.assertIn("source object", result.stderr)
+
+    def test_generated_lto_load_must_appear_exactly_once(self) -> None:
+        self.rewrite_map(
+            b"LOAD cpu/br35/tools/sdk.elf.o\n",
+            b"LOAD cpu/br35/tools/sdk.elf.o\n"
+            b"LOAD cpu/br35/tools/sdk.elf.o\n",
+        )
+        result = self.run_validator()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("generated LTO object LOAD", result.stderr)
+
+    def test_malformed_load_whitespace_is_rejected_not_ignored(self) -> None:
+        self.rewrite_map(
+            b"LOAD cpu/br35/tools/sdk.elf.o\n",
+            b"LOAD\tcpu/br35/tools/sdk.elf.o\n",
+        )
+        result = self.run_validator()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("malformed LOAD record", result.stderr)
 
     def test_archive_load_order_is_exact_and_load_is_not_extraction(self) -> None:
         self.rewrite_map(
@@ -351,6 +419,22 @@ class Stage0MapValidatorTests(unittest.TestCase):
         result = self.run_validator()
         self.assertEqual(result.returncode, 2)
         self.assertIn("disabled update provider", result.stderr)
+
+    def test_discarded_only_update_block_cannot_satisfy_live_map_contract(self) -> None:
+        update_block = (
+            b" .update.text   0x000000000c00b838        0x4 "
+            b"cpu/br35/tools/sdk.elf.o\n"
+            b"                0x000000000c00b838                "
+            b"update_result_get\n"
+        )
+        self.rewrite_map(update_block, b"")
+        self.rewrite_map(
+            b"Discarded input sections\n",
+            b"Discarded input sections\n" + update_block,
+        )
+        result = self.run_validator()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("disabled update", result.stderr)
 
     def test_archive_bytes_are_hash_verified(self) -> None:
         (self.sdk / "cpu/br35/liba/btstack.a").write_bytes(b"drift\n")
