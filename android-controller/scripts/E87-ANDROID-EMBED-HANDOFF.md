@@ -79,6 +79,8 @@ The current `MaintenanceActivity` is narrowly the one-time stock-firmware transi
 
 Installation and installed-byte verification require the Redmi's explicit `adb` serial. Both commands re-run the complete offline audit before contacting that serial, and every `adb` invocation includes `-s <serial>`:
 
+The APK source path is read once into an immutable byte snapshot before authorization. ZIP, DEX-build, and receipt hashes consume those bytes; `aapt`, `dexdump`, and `adb install` consume one private read-only projection of the same snapshot, revalidated before and after each subprocess. Replacing or restoring the caller's APK path after authorization cannot change the bytes installed or recorded. Installed verification likewise retains the expected snapshot while pulling, snapshots the pulled base APK once, then compares and re-audits those exact bytes.
+
 ```sh
 /usr/bin/python3.11 scripts/install-apk.py --serial <redmi-serial> \
   --apk /absolute/path/to/app-labQualified.apk --release /absolute/path/to/handoff \

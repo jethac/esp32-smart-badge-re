@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -285,6 +286,48 @@ class VerifyApkTest(unittest.TestCase):
         result = self.verify(dexdump=self.make_tool("dexdump", changed_dump))
 
         self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+
+    def test_audit_uses_one_snapshot_across_original_path_replacement_and_aba(self) -> None:
+        original = self.apk.read_bytes()
+        self.write_apk(mutate=("classes.dex", b"evil impl bytes"))
+        replacement = self.apk.read_bytes()
+        replacement_path = self.base / "replacement.apk"
+        self.apk.replace(replacement_path)
+        self.apk.write_bytes(original)
+        original_stat = self.apk.stat()
+        original_away = self.base / "original-away.apk"
+        replacement_away = self.base / "replacement-away.apk"
+        self.assertEqual(len(original), len(replacement))
+        real_run = e87_apk._run
+        tool_apk_paths: list[Path] = []
+
+        def swap_original_during_tool_audit(
+                tool: Path, arguments: list[str], label: str) -> str:
+            candidates = [Path(argument) for argument in arguments
+                          if argument.endswith(".apk")]
+            tool_apk_paths.extend(candidates)
+            if len(tool_apk_paths) == 1:
+                self.apk.replace(original_away)
+                replacement_path.replace(self.apk)
+            elif len(tool_apk_paths) == 2:
+                self.apk.replace(replacement_away)
+                original_away.replace(self.apk)
+            return real_run(tool, arguments, label)
+
+        with mock.patch.object(
+                e87_apk, "_run", side_effect=swap_original_during_tool_audit):
+            result = self.verify()
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        value = json.loads(result.stdout)
+        self.assertEqual(hashlib.sha256(original).hexdigest().upper(), value["apkSha256"])
+        self.assertEqual(original, self.apk.read_bytes())
+        self.assertEqual(original_stat.st_ino, self.apk.stat().st_ino)
+        self.assertEqual(original_stat.st_size, self.apk.stat().st_size)
+        self.assertEqual(original_stat.st_mtime_ns, self.apk.stat().st_mtime_ns)
+        self.assertTrue(tool_apk_paths)
+        self.assertEqual(1, len(set(tool_apk_paths)))
+        self.assertNotEqual(self.apk, tool_apk_paths[0])
 
     def test_paths_and_receipt_are_create_only_and_absolute(self) -> None:
         result = subprocess.run(

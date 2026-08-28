@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import re
 import stat
 import zipfile
@@ -79,10 +80,18 @@ def _surface_digest(surface_receipt: Path) -> str:
     return _sha(receipt.read_bytes())
 
 
-def dex_records(apk: Path) -> tuple[dict[str, object], ...]:
-    candidate = _regular_absolute(Path(apk), "APK", size_cap=MAX_APK)
+def dex_records(apk: Path | bytes) -> tuple[dict[str, object], ...]:
+    if isinstance(apk, bytes):
+        data = apk
+        if not data or len(data) > MAX_APK:
+            raise ValidationError("APK byte snapshot is empty or exceeds cap")
+    else:
+        candidate = _regular_absolute(Path(apk), "APK", size_cap=MAX_APK)
+        data = candidate.read_bytes()
+        if not data or len(data) > MAX_APK:
+            raise ValidationError("APK byte snapshot is empty or exceeds cap")
     try:
-        archive = zipfile.ZipFile(candidate)
+        archive = zipfile.ZipFile(io.BytesIO(data))
     except (OSError, zipfile.BadZipFile) as error:
         raise ValidationError("APK is not a valid ZIP container") from error
     with archive:
@@ -146,7 +155,7 @@ def build_authorization(
 
 def validate_build_authorization(
         receipt_path: Path,
-        apk: Path,
+        apk: Path | bytes,
         surface_receipt: Path,
 ) -> tuple[dict[str, object], ...]:
     receipt = _regular_absolute(
@@ -189,6 +198,6 @@ def validate_build_authorization(
     if tuple(record["name"] for record in records) != _canonical_names(len(records)):
         raise ValidationError("authorized DEX records are not closed and contiguous")
     expected = tuple(records)
-    if expected != dex_records(Path(apk)):
+    if expected != dex_records(apk):
         raise ValidationError("APK DEX names, lengths, or implementation hashes changed")
     return expected

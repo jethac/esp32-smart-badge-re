@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import os
 import re
 import subprocess
@@ -12,10 +11,22 @@ from pathlib import Path
 from typing import Sequence
 
 try:
-    from .e87_apk import _canonical, _regular_absolute, audit_apk, write_receipt
+    from .e87_apk import (
+        _audit_snapshot,
+        _canonical,
+        _regular_absolute,
+        _snapshot_apk,
+        write_receipt,
+    )
     from .e87_embed import ValidationError
 except ImportError:
-    from e87_apk import _canonical, _regular_absolute, audit_apk, write_receipt
+    from e87_apk import (
+        _audit_snapshot,
+        _canonical,
+        _regular_absolute,
+        _snapshot_apk,
+        write_receipt,
+    )
     from e87_embed import ValidationError
 
 
@@ -61,12 +72,20 @@ def install(arguments: argparse.Namespace) -> dict[str, object]:
     adb = _regular_absolute(arguments.adb, "adb", executable=True)
     if arguments.receipt is not None and Path(arguments.receipt).exists():
         raise ValidationError("install receipt already exists")
-    audit = audit_apk(
-        arguments.apk, arguments.release, arguments.aapt, arguments.dexdump)
-    _require_device(adb, serial)
-    output = _run_adb(adb, serial, ["install", "-r", os.fspath(arguments.apk)], "install")
-    if "Success" not in output.splitlines():
-        raise ValidationError("adb install did not report Success")
+    with _snapshot_apk(arguments.apk) as snapshot:
+        audit = _audit_snapshot(
+            snapshot, arguments.release, arguments.aapt, arguments.dexdump)
+        _require_device(adb, serial)
+        snapshot.verify_projection()
+        output = _run_adb(
+            adb,
+            serial,
+            ["install", "-r", os.fspath(snapshot.path)],
+            "install",
+        )
+        snapshot.verify_projection()
+        if "Success" not in output.splitlines():
+            raise ValidationError("adb install did not report Success")
     receipt = {
         "apkAudit": audit,
         "package": PACKAGE,
@@ -84,28 +103,40 @@ def verify_installed(arguments: argparse.Namespace) -> dict[str, object]:
     adb = _regular_absolute(arguments.adb, "adb", executable=True)
     if arguments.receipt is not None and Path(arguments.receipt).exists():
         raise ValidationError("installed audit receipt already exists")
-    expected = audit_apk(
-        arguments.apk, arguments.release, arguments.aapt, arguments.dexdump)
-    _require_device(adb, serial)
-    paths = [line for line in _run_adb(
-        adb, serial, ["shell", "pm", "path", PACKAGE], "package path", timeout=30
-    ).splitlines() if line]
-    if len(paths) != 1 or not paths[0].startswith("package:"):
-        raise ValidationError("installed package does not have exactly one base APK")
-    remote = paths[0][len("package:"):]
-    if REMOTE_APK.fullmatch(remote) is None or any(
-            segment in ("", ".", "..") for segment in remote.split("/")[1:]):
-        raise ValidationError("installed package path is not a canonical base APK path")
-    with tempfile.TemporaryDirectory(prefix="e87-installed-apk-") as temporary:
-        pulled = Path(temporary) / "base.apk"
-        _run_adb(adb, serial, ["pull", remote, os.fspath(pulled)], "pull", timeout=180)
-        if not pulled.is_file() or pulled.is_symlink():
-            raise ValidationError("adb pull did not produce a regular base APK")
-        installed_sha = hashlib.sha256(pulled.read_bytes()).hexdigest().upper()
-        if installed_sha != expected["apkSha256"]:
-            raise ValidationError("installed base APK differs from the audited APK")
-        installed = audit_apk(
-            pulled, arguments.release, arguments.aapt, arguments.dexdump)
+    with _snapshot_apk(arguments.apk) as expected_snapshot:
+        expected = _audit_snapshot(
+            expected_snapshot, arguments.release, arguments.aapt, arguments.dexdump)
+        _require_device(adb, serial)
+        paths = [line for line in _run_adb(
+            adb, serial, ["shell", "pm", "path", PACKAGE], "package path", timeout=30
+        ).splitlines() if line]
+        if len(paths) != 1 or not paths[0].startswith("package:"):
+            raise ValidationError("installed package does not have exactly one base APK")
+        remote = paths[0][len("package:"):]
+        if REMOTE_APK.fullmatch(remote) is None or any(
+                segment in ("", ".", "..") for segment in remote.split("/")[1:]):
+            raise ValidationError("installed package path is not a canonical base APK path")
+        with tempfile.TemporaryDirectory(prefix="e87-installed-apk-") as temporary:
+            pulled = Path(temporary) / "base.apk"
+            _run_adb(
+                adb,
+                serial,
+                ["pull", remote, os.fspath(pulled)],
+                "pull",
+                timeout=180,
+            )
+            if not pulled.is_file() or pulled.is_symlink():
+                raise ValidationError("adb pull did not produce a regular base APK")
+            with _snapshot_apk(pulled) as installed_snapshot:
+                installed_sha = installed_snapshot.sha256
+                if installed_sha != expected["apkSha256"]:
+                    raise ValidationError("installed base APK differs from the audited APK")
+                installed = _audit_snapshot(
+                    installed_snapshot,
+                    arguments.release,
+                    arguments.aapt,
+                    arguments.dexdump,
+                )
     if installed != expected:
         raise ValidationError("installed APK audit differs from the pre-install audit")
     receipt = {

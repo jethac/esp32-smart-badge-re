@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import re
 import stat
 import subprocess
+import tempfile
 import zipfile
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Iterator, Sequence
 
 try:
     from .e87_build import (
@@ -79,6 +83,48 @@ FORBIDDEN_APP_REFERENCES = (
 SURFACE_RECEIPT = Path(__file__).resolve().with_name(SURFACE_RECEIPT_NAME)
 BUILD_RECEIPT = Path(__file__).resolve().with_name(BUILD_RECEIPT_NAME)
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "app/src/main/java"
+MAX_APK_SNAPSHOT = 512 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class _ApkSnapshot:
+    data: bytes
+    path: Path
+    sha256: str
+
+    def verify_projection(self) -> None:
+        try:
+            projected = self.path.read_bytes()
+        except OSError as error:
+            raise ValidationError("immutable APK projection is unavailable") from error
+        if projected != self.data:
+            raise ValidationError("immutable APK projection changed during audit")
+
+
+@contextmanager
+def _snapshot_apk(apk: Path) -> Iterator[_ApkSnapshot]:
+    source = _regular_absolute(Path(apk), "APK")
+    if source.stat().st_size > MAX_APK_SNAPSHOT:
+        raise ValidationError("APK exceeds snapshot cap")
+    try:
+        data = source.read_bytes()
+    except OSError as error:
+        raise ValidationError("APK snapshot read failed") from error
+    if not data or len(data) > MAX_APK_SNAPSHOT:
+        raise ValidationError("APK snapshot is empty or exceeds cap")
+    with tempfile.TemporaryDirectory(prefix="e87-apk-snapshot-") as temporary:
+        projection = Path(temporary) / "controller-snapshot.apk"
+        try:
+            with projection.open("xb") as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+            projection.chmod(0o400)
+        except OSError as error:
+            raise ValidationError("APK snapshot projection failed") from error
+        snapshot = _ApkSnapshot(data, projection, _sha(data))
+        snapshot.verify_projection()
+        yield snapshot
 
 
 def _regular_absolute(path: Path, label: str, *, executable: bool = False) -> Path:
@@ -128,10 +174,10 @@ def _dex_rank(name: str) -> int:
 
 
 def _audit_zip(
-        apk: Path, release,
+        apk_bytes: bytes, release,
 ) -> tuple[list[dict[str, object]], str, tuple[str, ...]]:
     try:
-        archive = zipfile.ZipFile(apk)
+        archive = zipfile.ZipFile(io.BytesIO(apk_bytes))
     except (OSError, zipfile.BadZipFile) as error:
         raise ValidationError("APK is not a valid ZIP container") from error
     with archive:
@@ -277,33 +323,51 @@ def _audit_dex(output: str, dex_entries: tuple[str, ...],
         raise ValidationError("APK class descriptors differ from the reviewed closed surface")
 
 
-def audit_apk(apk: Path, release_root: Path, aapt: Path, dexdump: Path) -> dict[str, object]:
-    apk = _regular_absolute(apk, "APK")
+def _run_apk_tool(
+        snapshot: _ApkSnapshot,
+        tool: Path,
+        arguments: list[str],
+        label: str,
+) -> str:
+    snapshot.verify_projection()
+    output = _run(tool, arguments, label)
+    snapshot.verify_projection()
+    return output
+
+
+def _audit_snapshot(
+        snapshot: _ApkSnapshot,
+        release_root: Path,
+        aapt: Path,
+        dexdump: Path,
+) -> dict[str, object]:
     aapt = _regular_absolute(aapt, "aapt", executable=True)
     dexdump = _regular_absolute(dexdump, "dexdump", executable=True)
     release = validate_release(Path(release_root))
     authorized_descriptors = validate_surface(SURFACE_RECEIPT, SOURCE_ROOT)
     authorized_dex = validate_build_authorization(
         BUILD_RECEIPT,
-        apk,
+        snapshot.data,
         SURFACE_RECEIPT,
     )
-    projection, tree_digest, dex_entries = _audit_zip(apk, release)
+    projection, tree_digest, dex_entries = _audit_zip(snapshot.data, release)
+    apk_path = os.fspath(snapshot.path)
     min_sdk, target_sdk = _audit_badging(
-        _run(aapt, ["dump", "badging", os.fspath(apk)], "aapt badging"))
+        _run_apk_tool(snapshot, aapt, ["dump", "badging", apk_path], "aapt badging"))
     permissions = _audit_permissions(
-        _run(aapt, ["dump", "permissions", os.fspath(apk)], "aapt permissions"))
-    _audit_manifest_tree(_run(
-        aapt, ["dump", "xmltree", os.fspath(apk), "AndroidManifest.xml"],
+        _run_apk_tool(
+            snapshot, aapt, ["dump", "permissions", apk_path], "aapt permissions"))
+    _audit_manifest_tree(_run_apk_tool(
+        snapshot, aapt, ["dump", "xmltree", apk_path, "AndroidManifest.xml"],
         "aapt manifest"))
     _audit_dex(
-        _run(dexdump, ["-d", os.fspath(apk)], "dexdump"),
+        _run_apk_tool(snapshot, dexdump, ["-d", apk_path], "dexdump"),
         dex_entries,
         authorized_descriptors,
     )
     return {
         "applicationId": APPLICATION_ID,
-        "apkSha256": _sha(apk.read_bytes()),
+        "apkSha256": snapshot.sha256,
         "authorizedBuildSha256": _sha(BUILD_RECEIPT.read_bytes()),
         "authorizedClassCount": len(authorized_descriptors),
         "authorizedDex": list(authorized_dex),
@@ -326,6 +390,11 @@ def audit_apk(apk: Path, release_root: Path, aapt: Path, dexdump: Path) -> dict[
         "semver": release.receipt["semver"],
         "targetSdk": target_sdk,
     }
+
+
+def audit_apk(apk: Path, release_root: Path, aapt: Path, dexdump: Path) -> dict[str, object]:
+    with _snapshot_apk(apk) as snapshot:
+        return _audit_snapshot(snapshot, release_root, aapt, dexdump)
 
 
 def write_receipt(path: Path, value: dict[str, object]) -> None:

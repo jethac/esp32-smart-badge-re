@@ -24,6 +24,8 @@ class HostScriptTest(VerifyApkTest):
     def setUp(self) -> None:
         super().setUp()
         self.adb_log = self.base / "adb.log"
+        self.adb_install_capture = self.base / "adb-install-capture.apk"
+        self.fake_installed_apk = self.apk
         self.adb = self.base / "adb"
         self.adb.write_text(
             "#!/usr/bin/env python3\n"
@@ -38,6 +40,7 @@ class HostScriptTest(VerifyApkTest):
             "if command == ['get-state']:\n"
             "    print('device')\n"
             "elif command[:2] == ['install', '-r']:\n"
+            "    shutil.copyfile(command[2], os.environ['FAKE_ADB_INSTALL_CAPTURE'])\n"
             "    print('Success')\n"
             "elif command == ['shell', 'pm', 'path', 'net.jethachan.factory_badges']:\n"
             "    print('package:/data/app/qualified/base.apk')\n"
@@ -53,7 +56,8 @@ class HostScriptTest(VerifyApkTest):
     def host_env(self) -> dict[str, str]:
         environment = os.environ.copy()
         environment["FAKE_ADB_LOG"] = os.fspath(self.adb_log)
-        environment["FAKE_INSTALLED_APK"] = os.fspath(self.apk)
+        environment["FAKE_ADB_INSTALL_CAPTURE"] = os.fspath(self.adb_install_capture)
+        environment["FAKE_INSTALLED_APK"] = os.fspath(self.fake_installed_apk)
         return environment
 
     def common(self) -> list[str]:
@@ -109,6 +113,68 @@ class HostScriptTest(VerifyApkTest):
         self.assertIn(repr(SERIAL), lines[1])
         self.assertIn("get-state", lines[0])
         self.assertIn("install", lines[1])
+        self.assertNotIn(os.fspath(self.apk), lines[1])
+        self.assertEqual(self.apk.read_bytes(), self.adb_install_capture.read_bytes())
+
+    def test_install_uses_the_audited_snapshot_after_source_replacement(self) -> None:
+        audited = self.apk.read_bytes()
+        self.write_apk(mutate=("classes.dex", b"evil impl bytes"))
+        replacement = self.apk.read_bytes()
+        self.apk.write_bytes(audited)
+        real_audit = e87_device._audit_snapshot
+
+        def replace_source_after_audit(*arguments, **keywords):
+            result = real_audit(*arguments, **keywords)
+            self.apk.write_bytes(replacement)
+            return result
+
+        with mock.patch.object(
+                e87_device, "_audit_snapshot", side_effect=replace_source_after_audit):
+            result = self.run_script(INSTALL, self.common())
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(replacement, self.apk.read_bytes())
+        self.assertEqual(audited, self.adb_install_capture.read_bytes())
+        receipt = json.loads(result.stdout)
+        self.assertEqual(
+            e87_apk._sha(audited),
+            receipt["apkAudit"]["apkSha256"],
+        )
+
+    def test_installed_verifier_does_not_reopen_replaced_expected_path(self) -> None:
+        expected = self.apk.read_bytes()
+        installed = self.base / "independent-installed.apk"
+        installed.write_bytes(expected)
+        self.fake_installed_apk = installed
+        self.write_apk(mutate=("classes.dex", b"evil impl bytes"))
+        replacement = self.apk.read_bytes()
+        self.apk.write_bytes(expected)
+        real_audit = e87_device._audit_snapshot
+        audit_count = 0
+
+        def replace_expected_after_first_audit(*arguments, **keywords):
+            nonlocal audit_count
+            result = real_audit(*arguments, **keywords)
+            audit_count += 1
+            if audit_count == 1:
+                self.apk.write_bytes(replacement)
+            return result
+
+        with mock.patch.object(
+                e87_device,
+                "_audit_snapshot",
+                side_effect=replace_expected_after_first_audit,
+        ):
+            result = self.run_script(VERIFY, self.common())
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(2, audit_count)
+        self.assertEqual(replacement, self.apk.read_bytes())
+        receipt = json.loads(result.stdout)
+        self.assertEqual(
+            e87_apk._sha(expected),
+            receipt["expectedApkSha256"],
+        )
 
     def test_installed_verifier_pulls_exact_package_and_reaudits_identical_apk(self) -> None:
         receipt = self.base / "installed-audit.json"
