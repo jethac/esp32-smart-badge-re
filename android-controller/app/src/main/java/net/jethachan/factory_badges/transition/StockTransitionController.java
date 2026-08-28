@@ -17,6 +17,8 @@ import java.util.concurrent.Executor;
  * ingress.
  */
 public final class StockTransitionController {
+    public static final int MAX_CANDIDATES = 16;
+
     public interface Scheduler {
         interface Handle {
             void cancel();
@@ -717,6 +719,9 @@ public final class StockTransitionController {
             enqueue(new Runnable() {
                 @Override public void run() {
                     if (!matches(callbackGeneration, token, CallbackKind.SCAN)) {
+                        return;
+                    }
+                    if (!candidates.contains(peer) && candidates.size() >= MAX_CANDIDATES) {
                         return;
                     }
                     if (candidates.add(peer)) {
