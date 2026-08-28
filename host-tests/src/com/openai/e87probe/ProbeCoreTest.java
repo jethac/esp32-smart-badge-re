@@ -108,11 +108,11 @@ public final class ProbeCoreTest {
 
     private static void testQixFirmwareUpdateHeaderProbe() {
         byte[] header = Hex.decode(
-                "BCAF0131312E312E302E320000287C1000000000000000000001B5");
+                "BCAF01312E30000000000000000800000000000000000000001234");
         bytes(Hex.decode(
-                        "9E3505C01B00BCAF0131312E312E302E320000287C1000000000000000000001B5"),
+                        "9E2905C01B00BCAF01312E30000000000000000800000000000000000000001234"),
                 QixFirmwareUpdateProbe.start(header),
-                "vendor C0 request carries the exact 27-byte E87 update header");
+                "vendor C0 request carries an opaque exact 27-byte header");
         QixFirmwareUpdateProbe.UpdateRequest response =
                 QixFirmwareUpdateProbe.parseUpdateRequest(
                         Hex.decode("9EBC01C1090001F000000000000000"));

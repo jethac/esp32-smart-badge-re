@@ -24,11 +24,13 @@ import android.os.Looper;
 import android.util.Log;
 import android.text.format.DateFormat;
 import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -41,7 +43,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
-public final class ProbeActivity extends Activity {
+public final class ProbeActivity extends Activity
+        implements UploadStartCoordinator.Host {
     private static final String TAG = "E87Probe";
     private static final String DEFAULT_MAC = "46:83:00:01:8A:E9";
     private static final int CONNECT_PERMISSION_REQUEST = 87;
@@ -50,12 +53,6 @@ public final class ProbeActivity extends Activity {
     private static final long UPDATE_RESPONSE_TIMEOUT_MS = 60_000L;
     private static final long FINAL_RESULT_TIMEOUT_MS = 60_000L;
     private static final int REQUESTED_MTU = 512;
-    private static final int EXPECTED_PACKAGE_SIZE = 1_080_387;
-    private static final String EXPECTED_PACKAGE_SHA256 =
-            "14484147053903F879D0C24ACBAB6A564F5CC8F039CACCBB30821012DF645D32";
-    private static final String EXPECTED_RESULT_VERSION = "11.1.0.2";
-    private static final byte[] UPDATE_HEADER = Hex.decode(
-            "BCAF0131312E312E302E320000287C1000000000000000000001B5");
     private static final UUID CCCD = uuid16(0x2902);
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -95,15 +92,17 @@ public final class ProbeActivity extends Activity {
     private int fd02TxLastLength;
     private String fd02TxPurpose;
     private boolean pendingBlockIsFinal;
-    private boolean verifyOnly;
     private String observedFirmwareVersion;
     private long updateStartedAt;
+    private final PackagePin packagePin = GeneratedPackagePin.create();
+    private PinnedPackageValidator.ValidatedPackage validatedPackage;
+    private UploadStartCoordinator startCoordinator;
 
     private final Runnable setupTimeout = () -> fail("Timed out waiting for " + waitingFor);
     private final Runnable scanTimeout = () -> {
         if (!scanning) return;
         stopScan();
-        fail("No E87 advertisement appeared during the five-minute scan");
+        fail("No exact-address target advertisement appeared during the five-minute scan");
     };
     private final Runnable updateTimeout = () -> fail("Timed out waiting for " + waitingFor
             + "; acknowledgedOffset=" + acknowledgedOffset
@@ -111,6 +110,8 @@ public final class ProbeActivity extends Activity {
             + " pendingLength=" + pendingBlockLength);
 
     private TextView output;
+    private CheckBox receiveModeConfirmation;
+    private Button startButton;
     private File outputDirectory;
     private File logFile;
     private BluetoothGatt gatt;
@@ -125,60 +126,88 @@ public final class ProbeActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        String requestedMac = getIntent().getStringExtra("mac");
+        if (requestedMac == null || requestedMac.trim().isEmpty()) requestedMac = DEFAULT_MAC;
+        targetMac = requestedMac.trim().toUpperCase(Locale.ROOT);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(24, 24, 24, 24);
+
+        TextView title = new TextView(this);
+        title.setText("E87 ONE-SHOT LAB UPLOADER");
+        title.setTextSize(22);
+        content.addView(title);
+
+        TextView target = new TextView(this);
+        target.setText("TARGET DEVICE - EXACT MAC ONLY\n\n" + targetMac);
+        target.setTextSize(18);
+        target.setPadding(0, 24, 0, 24);
+        content.addView(target);
+
+        TextView warning = new TextView(this);
+        warning.setText("DESTRUCTIVE ONE-SHOT LAB UPLOAD\n\n"
+                + "This writes the single reviewed update.bin to the exact device above. "
+                + "A wrong package, wrong device, power loss, or interruption can make "
+                + "the badge unusable. There is no automatic start and no retry button.");
+        warning.setTextSize(17);
+        content.addView(warning);
+
+        receiveModeConfirmation = new CheckBox(this);
+        receiveModeConfirmation.setText(
+                "I physically placed this exact badge in hardware receive/update mode.");
+        receiveModeConfirmation.setChecked(false);
+        content.addView(receiveModeConfirmation);
+
+        startButton = new Button(this);
+        startButton.setText("START ONE-SHOT UPLOAD");
+        startButton.setEnabled(false);
+        content.addView(startButton);
+
         output = new TextView(this);
         output.setTextIsSelectable(true);
-        output.setPadding(24, 24, 24, 24);
+        output.setPadding(0, 24, 0, 24);
+        content.addView(output);
+
         ScrollView scroll = new ScrollView(this);
-        scroll.addView(output, new ScrollView.LayoutParams(
+        scroll.addView(content, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(scroll);
-        verifyOnly = getIntent().getBooleanExtra("verifyOnly", false);
 
-        File outputRoot = getExternalFilesDir(null);
-        if (outputRoot == null) outputRoot = getFilesDir();
-        String runName = "run-" + new SimpleDateFormat(
-                "yyyyMMdd-HHmmss-SSS", Locale.ROOT).format(new Date())
-                + "-pid" + android.os.Process.myPid();
-        outputDirectory = new File(outputRoot, runName);
-        if (!outputDirectory.mkdirs() && !outputDirectory.isDirectory()) {
+        startCoordinator = new UploadStartCoordinator(this);
+        receiveModeConfirmation.setOnCheckedChangeListener((button, isChecked) -> {
+            startCoordinator.setReceiveModeConfirmed(isChecked);
+            startButton.setEnabled(startCoordinator.isStartEnabled() && !terminal);
+        });
+        startButton.setOnClickListener(view -> {
+            startButton.setEnabled(false);
+            receiveModeConfirmation.setEnabled(false);
+            handleStartResult(startCoordinator.start());
+        });
+
+        output.setText("IDLE - no package access, permission request, scan, connection, "
+                + "or upload has started.\n"
+                + "Required path: /sdcard/Android/data/com.openai.e87probe/files/update.bin\n"
+                + "Pinned size: " + packagePin.size() + "\n"
+                + "Pinned SHA256: " + packagePin.sha256() + "\n");
+        if (!BluetoothAdapter.checkBluetoothAddress(targetMac)) {
             terminal = true;
-            String message = "Unable to create evidence directory " + outputDirectory;
-            Log.e(TAG, message);
-            output.append(message + "\n");
+            startButton.setEnabled(false);
+            output.append("INVALID EXACT TARGET MAC - START DISABLED\n");
             return;
         }
-        logFile = new File(outputDirectory, "probe.log");
-        try (FileOutputStream ignored = new FileOutputStream(logFile, false)) {
-            // Create and truncate this run's log.
-        } catch (IOException error) {
-            terminal = true;
-            String message = "Unable to initialize run log " + logFile;
-            Log.e(TAG, message, error);
-            output.append(message + ": " + error + "\n");
-            return;
-        }
+    }
 
-        log(verifyOnly ? "Qix bind-only firmware verification starting"
-                : "Qix full firmware uploader starting; badge reset or failure is accepted");
-        log("Sequence: exact-MAC scan -> FD00 discovery -> subscribe FD01 -> subscribe FD03"
-                + " -> request MTU " + REQUESTED_MTU
-                + " -> bind on FD02 -> C0 update header on FD02"
-                + " -> C2 payload blocks on FD02 -> C3 offsets -> C5 result");
-        log("Pinned package: size=" + EXPECTED_PACKAGE_SIZE
-                + " SHA256=" + EXPECTED_PACKAGE_SHA256);
-        log("Output directory: " + outputDirectory.getAbsolutePath());
-
-        if (android.os.Build.VERSION.SDK_INT >= 31
-                && (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                != PackageManager.PERMISSION_GRANTED
-                || checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)
-                != PackageManager.PERMISSION_GRANTED)) {
-            requestPermissions(new String[] {
-                            Manifest.permission.BLUETOOTH_CONNECT,
-                            Manifest.permission.BLUETOOTH_SCAN},
-                    CONNECT_PERMISSION_REQUEST);
-        } else {
-            startScan();
+    private void handleStartResult(UploadStartCoordinator.Result result) {
+        log("Start gate result: " + result);
+        if (result == UploadStartCoordinator.Result.NOT_CONFIRMED) {
+            receiveModeConfirmation.setEnabled(true);
+            startButton.setEnabled(startCoordinator.isStartEnabled() && !terminal);
+        } else if (result == UploadStartCoordinator.Result.VALIDATION_FAILED && !terminal) {
+            fail("Pinned package validation failed closed");
+        } else if (result == UploadStartCoordinator.Result.PERMISSION_DENIED && !terminal) {
+            fail("Bluetooth connect/scan permission denied");
         }
     }
 
@@ -190,15 +219,112 @@ public final class ProbeActivity extends Activity {
         for (int result : results) {
             if (result != PackageManager.PERMISSION_GRANTED) granted = false;
         }
-        if (granted) startScan();
-        else fail("Bluetooth connect/scan permission denied");
+        handleStartResult(startCoordinator.onPermissionResult(granted));
+    }
+
+    @Override
+    public boolean validatePinnedPackage() {
+        if (terminal || validatedPackage != null) return false;
+        File root = getExternalFilesDir(null);
+        File source = root == null ? null : new File(root, "update.bin");
+        if (source == null) {
+            fail("App-specific external files directory is unavailable");
+            return false;
+        }
+
+        final PinnedPackageValidator.ValidatedPackage validated;
+        try {
+            validated = PinnedPackageValidator.validate(source, packagePin);
+        } catch (IllegalArgumentException error) {
+            fail("Pinned update package rejected: " + error.getMessage()
+                    + "; required path=" + source.getAbsolutePath());
+            return false;
+        }
+
+        if (!initializeEvidenceDirectory(root)) {
+            return false;
+        }
+        log("One-shot Start consumed for exact target " + targetMac);
+
+        byte[] payload = validated.payload();
+        String info = "path=" + source.getAbsolutePath() + "\n"
+                + "size=" + packagePin.size() + "\n"
+                + "sha256=" + validated.sha256() + "\n"
+                + "header=" + Hex.encode(validated.header()) + "\n"
+                + "payloadLength=" + payload.length + "\n";
+        if (!writeArtifact("firmware-package.txt", info.getBytes(StandardCharsets.UTF_8))) {
+            return false;
+        }
+        if (!appendJournal("{\"event\":\"package_verified\",\"size\":"
+                + packagePin.size() + ",\"payloadLength\":" + payload.length
+                + ",\"sha256\":\"" + validated.sha256() + "\"}")) {
+            return false;
+        }
+
+        validatedPackage = validated;
+        updateData = payload;
+        log("Pinned package verified before Bluetooth permission request; payload="
+                + updateData.length);
+        return true;
+    }
+
+    private boolean initializeEvidenceDirectory(File outputRoot) {
+        if (outputDirectory != null || logFile != null) {
+            fail("Evidence directory was already initialized");
+            return false;
+        }
+        String runName = "run-" + new SimpleDateFormat(
+                "yyyyMMdd-HHmmss-SSS", Locale.ROOT).format(new Date())
+                + "-pid" + android.os.Process.myPid();
+        outputDirectory = new File(outputRoot, runName);
+        if (!outputDirectory.mkdirs() && !outputDirectory.isDirectory()) {
+            terminal = true;
+            String message = "Unable to create evidence directory " + outputDirectory;
+            Log.e(TAG, message);
+            output.append(message + "\n");
+            return false;
+        }
+        logFile = new File(outputDirectory, "probe.log");
+        try (FileOutputStream stream = new FileOutputStream(logFile, false)) {
+            stream.flush();
+        } catch (IOException error) {
+            terminal = true;
+            String message = "Unable to initialize run log " + logFile;
+            Log.e(TAG, message, error);
+            output.append(message + ": " + error + "\n");
+            return false;
+        }
+        log("Evidence directory: " + outputDirectory.getAbsolutePath());
+        log("Sequence: exact-MAC scan -> FD00 discovery -> subscribe FD01 -> subscribe FD03"
+                + " -> request MTU " + REQUESTED_MTU
+                + " -> bind -> C0/C1 -> C2/C3 -> C5");
+        return true;
+    }
+
+    @Override
+    public boolean bluetoothPermissionsGranted() {
+        return android.os.Build.VERSION.SDK_INT < 31
+                || (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)
+                == PackageManager.PERMISSION_GRANTED
+                && checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)
+                == PackageManager.PERMISSION_GRANTED);
+    }
+
+    @Override
+    public void requestBluetoothPermissions() {
+        requestPermissions(new String[] {
+                        Manifest.permission.BLUETOOTH_CONNECT,
+                        Manifest.permission.BLUETOOTH_SCAN},
+                CONNECT_PERMISSION_REQUEST);
+    }
+
+    @Override
+    public void startExactAddressScan() {
+        startScan();
     }
 
     private void startScan() {
         if (terminal || scanning || gatt != null) return;
-        String mac = getIntent().getStringExtra("mac");
-        if (mac == null || mac.trim().isEmpty()) mac = DEFAULT_MAC;
-        targetMac = mac.trim().toUpperCase(Locale.ROOT);
         if (!BluetoothAdapter.checkBluetoothAddress(targetMac)) {
             fail("Invalid MAC address: " + targetMac);
             return;
@@ -219,13 +345,12 @@ public final class ProbeActivity extends Activity {
         waitingFor = "target advertisement";
         scanning = true;
         main.postDelayed(scanTimeout, SCAN_DURATION_MS);
-        log("Scanning for exact target " + targetMac + " or name E87 (five minutes maximum)");
+        log("Scanning only for exact target " + targetMac + " (five minutes maximum)");
         ScanSettings settings = new ScanSettings.Builder()
                 .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
                 .build();
         List<ScanFilter> filters = Arrays.asList(
-                new ScanFilter.Builder().setDeviceAddress(targetMac).build(),
-                new ScanFilter.Builder().setDeviceName("E87").build());
+                new ScanFilter.Builder().setDeviceAddress(targetMac).build());
         try {
             scanner.startScan(filters, settings, scanCallback);
         } catch (Throwable error) {
@@ -254,19 +379,12 @@ public final class ProbeActivity extends Activity {
         if (terminal || !scanning || result == null || result.getDevice() == null) return;
         BluetoothDevice device = result.getDevice();
         String address = device.getAddress();
+        if (!ProbeSequence.matchesAdvertisement(targetMac, address)) return;
+
         String name = null;
         if (result.getScanRecord() != null) name = result.getScanRecord().getDeviceName();
-        if (name == null) name = device.getName();
-        boolean exactTarget = targetMac.equalsIgnoreCase(address);
-        boolean namedE87 = name != null && name.toUpperCase(Locale.ROOT).contains("E87");
-        if (exactTarget || namedE87) {
-            log("Advertisement address=" + address + " name=" + name
-                    + " rssi=" + result.getRssi());
-        }
-        if (!exactTarget && !namedE87) return;
-        if (!exactTarget) {
-            log("Using name-matched E87 because the displayed/cached MAC is stale");
-        }
+        log("Exact-target advertisement address=" + address + " name=" + name
+                + " rssi=" + result.getRssi());
         stopScan();
         connect(device);
     }
@@ -541,11 +659,7 @@ public final class ProbeActivity extends Activity {
                 return;
             }
             bindAckOutstanding = false;
-            if (verifyOnly) {
-                main.postDelayed(this::completeVersionVerification, 100L);
-            } else {
-                main.postDelayed(this::sendUpdateHeaderProbe, 100L);
-            }
+            main.postDelayed(this::sendUpdateHeaderProbe, 100L);
             return;
         }
         if (status != BluetoothGatt.GATT_SUCCESS) {
@@ -556,73 +670,18 @@ public final class ProbeActivity extends Activity {
 
     private void sendUpdateHeaderProbe() {
         if (terminal || updateHeaderSent || gatt == null || fd02 == null) return;
-        if (!loadFirmwarePackage()) return;
-        updateStartFrame = QixFirmwareUpdateProbe.start(UPDATE_HEADER);
+        if (validatedPackage == null || updateData == null) {
+            fail("Pinned package was not validated before C0");
+            return;
+        }
+        byte[] validatedHeader = validatedPackage.header();
+        updateStartFrame = QixFirmwareUpdateProbe.start(validatedHeader);
         if (!writeArtifact("qix-c0-update-header-request.bin", updateStartFrame)) return;
         log("TX FD02 C0 update header " + Hex.encode(updateStartFrame));
         updateHeaderSent = true;
         requestSent = true;
         updateStartedAt = System.currentTimeMillis();
         beginFd02Frame(updateStartFrame, "C0");
-    }
-
-    private boolean loadFirmwarePackage() {
-        File root = getExternalFilesDir(null);
-        File source = root == null ? null : new File(root, "update.bin");
-        if (source == null || !source.isFile()) {
-            fail("Pinned update package is missing: " + source);
-            return false;
-        }
-        if (source.length() != EXPECTED_PACKAGE_SIZE) {
-            fail("Update package size mismatch: expected " + EXPECTED_PACKAGE_SIZE
-                    + " got " + source.length());
-            return false;
-        }
-        byte[] packageBytes = new byte[EXPECTED_PACKAGE_SIZE];
-        try (FileInputStream stream = new FileInputStream(source)) {
-            int position = 0;
-            while (position < packageBytes.length) {
-                int count = stream.read(packageBytes, position, packageBytes.length - position);
-                if (count < 0) break;
-                position += count;
-            }
-            if (position != packageBytes.length || stream.read() != -1) {
-                fail("Could not read the pinned package exactly");
-                return false;
-            }
-        } catch (IOException error) {
-            fail("Unable to read pinned update package: " + error);
-            return false;
-        }
-        String sha256 = sha256Hex(packageBytes);
-        if (!EXPECTED_PACKAGE_SHA256.equals(sha256)) {
-            fail("Update package SHA-256 mismatch: " + sha256);
-            return false;
-        }
-        if (!Arrays.equals(UPDATE_HEADER, Arrays.copyOfRange(packageBytes, 0, 27))) {
-            fail("Update package header differs from the live-accepted C0 header");
-            return false;
-        }
-        int declaredLength = littleEndianInt(packageBytes, 13);
-        if (declaredLength != packageBytes.length - 27) {
-            fail("Update package declares payload " + declaredLength
-                    + " but contains " + (packageBytes.length - 27));
-            return false;
-        }
-        updateData = Arrays.copyOfRange(packageBytes, 27, packageBytes.length);
-        String info = "path=" + source.getAbsolutePath() + "\n"
-                + "size=" + packageBytes.length + "\n"
-                + "sha256=" + sha256 + "\n"
-                + "header=" + Hex.encode(UPDATE_HEADER) + "\n"
-                + "payloadLength=" + updateData.length + "\n";
-        if (!writeArtifact("firmware-package.txt", info.getBytes(StandardCharsets.UTF_8))) {
-            return false;
-        }
-        appendJournal("{\"event\":\"package_verified\",\"size\":"
-                + packageBytes.length + ",\"payloadLength\":" + updateData.length
-                + ",\"sha256\":\"" + sha256 + "\"}");
-        log("Pinned package verified byte-for-byte; payload=" + updateData.length);
-        return true;
     }
 
     private void beginFd02Frame(byte[] frame, String purpose) {
@@ -753,11 +812,7 @@ public final class ProbeActivity extends Activity {
                     fail("FD02 bind-response ACK write did not start");
                 }
             } else {
-                if (verifyOnly) {
-                    main.postDelayed(this::completeVersionVerification, 100L);
-                } else {
-                    main.postDelayed(this::sendUpdateHeaderProbe, 100L);
-                }
+                main.postDelayed(this::sendUpdateHeaderProbe, 100L);
             }
         }
         if (updateHeaderSent) handleUpdateFrame(channel, completeFrame);
@@ -944,7 +999,7 @@ public final class ProbeActivity extends Activity {
         String summary = "reason=" + reason + "\n"
                 + "bindRequest=" + (bindFrame == null ? "" : Hex.encode(bindFrame)) + "\n"
                 + "updateStart=" + (updateStartFrame == null ? "" : Hex.encode(updateStartFrame)) + "\n"
-                + "packageSha256=" + EXPECTED_PACKAGE_SHA256 + "\n"
+                + "packageSha256=" + packagePin.sha256() + "\n"
                 + "payloadLength=" + (updateData == null ? 0 : updateData.length) + "\n"
                 + "acknowledgedOffset=" + acknowledgedOffset + "\n"
                 + "blocksSent=" + blocksSent + "\n"
@@ -967,25 +1022,6 @@ public final class ProbeActivity extends Activity {
                 + acknowledgedOffset + "/" + updateData.length + " blocks=" + blocksSent
                 + " elapsedMs=" + elapsed);
         main.postDelayed(this::closeGatt, 2_000L);
-    }
-
-    private void completeVersionVerification() {
-        if (terminal) return;
-        main.removeCallbacks(setupTimeout);
-        String summary = "expected=" + EXPECTED_RESULT_VERSION + "\n"
-                + "observed=" + observedFirmwareVersion + "\n"
-                + "match=" + EXPECTED_RESULT_VERSION.equals(observedFirmwareVersion) + "\n"
-                + "negotiatedMtu=" + negotiatedMtu + "\n";
-        if (!writeArtifact("post-update-version-verification.txt",
-                summary.getBytes(StandardCharsets.UTF_8))) return;
-        if (!EXPECTED_RESULT_VERSION.equals(observedFirmwareVersion)) {
-            fail("Post-update firmware mismatch: expected " + EXPECTED_RESULT_VERSION
-                    + " got " + observedFirmwareVersion);
-            return;
-        }
-        terminal = true;
-        log("SUCCESS: post-update bind reports firmware " + observedFirmwareVersion);
-        closeGatt();
     }
 
     private void armSetupTimeout() {
@@ -1073,13 +1109,6 @@ public final class ProbeActivity extends Activity {
     private static UUID uuid16(int shortUuid) {
         return UUID.fromString(String.format(Locale.ROOT,
                 "0000%04x-0000-1000-8000-00805f9b34fb", shortUuid));
-    }
-
-    private static int littleEndianInt(byte[] bytes, int offset) {
-        return (bytes[offset] & 0xFF)
-                | ((bytes[offset + 1] & 0xFF) << 8)
-                | ((bytes[offset + 2] & 0xFF) << 16)
-                | ((bytes[offset + 3] & 0xFF) << 24);
     }
 
     private static String sha256Hex(byte[] bytes) {

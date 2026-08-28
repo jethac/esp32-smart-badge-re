@@ -15,7 +15,7 @@
         android:allowBackup="false"
         android:debuggable="true"
         android:extractNativeLibs="true"
-        android:label="E87 Qix Memory Probe"
+        android:label="E87 One-Shot Lab Uploader"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="false">
         <activity

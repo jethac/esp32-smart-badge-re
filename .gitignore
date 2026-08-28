@@ -1,0 +1,4 @@
+signing/
+build/
+host-tests/__pycache__/
+*.pyc
