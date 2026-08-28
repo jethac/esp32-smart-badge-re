@@ -34,8 +34,10 @@
     "rcsp"
   ],
   "evidence": {
+    "btstackRuntimeEvidence": "firmware/evidence/stage0/btstack-runtime-gate.json",
     "controllerRoleQualification": "controller library gates remain vendor-owned; externally exposed behavior is non-connectable advertising only",
     "immutableBootSeam": "setup_arch retains sdfile_init and syscfg_tools_init before app_main",
+    "linkedProfilePolicy": "PINNED_BTSTACK_RUNTIME_GATED",
     "readyTupleEvidence": "btstack.a btstack_task.c.o calls update_bt_current_status(NULL,3,50)",
     "sdkCommit": "d0167685d032d745d88fe50233302edd46941622"
   },
