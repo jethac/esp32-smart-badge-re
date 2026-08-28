@@ -16,6 +16,14 @@ static bool snapshot_valid(const struct e87_charge_snapshot *snapshot)
     return snapshot != NULL && phase_valid(snapshot->phase);
 }
 
+static bool pending_snapshot_valid(const struct e87_charge_snapshot *snapshot)
+{
+    return snapshot_valid(snapshot) &&
+           (snapshot->phase == E87_CHARGE_PHASE_FULL ||
+            snapshot->phase == E87_CHARGE_PHASE_CLOSED ||
+            snapshot->phase == E87_CHARGE_PHASE_FAULT);
+}
+
 static bool raw_valid(uint8_t raw)
 {
     return raw == UINT8_C(0) || raw == UINT8_C(1);
@@ -37,8 +45,11 @@ static bool adapter_valid(const struct e87_charge_adapter *adapter)
     if (adapter == NULL || !adapter->private_initialized ||
         adapter->private_port.emit == NULL ||
         adapter->private_port.publish == NULL ||
-        !snapshot_valid(&adapter->private_snapshot) ||
-        !snapshot_valid(&adapter->private_pending_snapshot)) {
+        !snapshot_valid(&adapter->private_snapshot)) {
+        return false;
+    }
+    if (adapter->private_has_pending_close &&
+        !pending_snapshot_valid(&adapter->private_pending_snapshot)) {
         return false;
     }
     if (adapter->private_has_pending_close &&
@@ -110,8 +121,7 @@ static struct e87_charge_snapshot candidate_for(
         break;
     case E87_CHARGE_EVENT_CHARGE_FULL:
         candidate.external_power_online = true;
-        if (!(current->external_power_online &&
-              current->phase == E87_CHARGE_PHASE_FAULT)) {
+        if (current->phase != E87_CHARGE_PHASE_FAULT) {
             candidate.phase = E87_CHARGE_PHASE_FULL;
         }
         break;
@@ -183,7 +193,7 @@ bool e87_charge_adapter_init(struct e87_charge_adapter *adapter,
     struct e87_charge_adapter initialized;
 
     if (adapter == NULL || port == NULL || port->emit == NULL ||
-        port->publish == NULL || adapter->private_initialized) {
+        port->publish == NULL) {
         return false;
     }
     memset(&initialized, 0, sizeof(initialized));
