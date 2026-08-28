@@ -312,10 +312,10 @@ class HostRunnerIntegrationTest(unittest.TestCase):
         self.assertEqual("", result.stderr)
         self.assertIn("RUN buffer-budget::display_geometry\n", result.stdout)
         self.assertIn(
-            "PASS buffer-budget::strip_buffer_budget assertions=5\n", result.stdout
+            "PASS buffer-budget::strip_buffer_budget assertions=7\n", result.stdout
         )
         self.assertIn(
-            "SUMMARY buffer-budget tests=2 passed=2 failed=0 assertions=8\n",
+            "SUMMARY buffer-budget tests=2 passed=2 failed=0 assertions=10\n",
             result.stdout,
         )
         receipts = list(self.build_root.rglob("receipt.json"))

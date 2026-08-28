@@ -21,6 +21,7 @@ FETCH = ROOT / "firmware/tools/fetch-assets.py"
 HEADER = ROOT / "firmware/generated/e87_assets.h"
 CFILE = ROOT / "firmware/generated/e87_assets.c"
 MANIFEST = ROOT / "firmware/generated/assets-manifest.json"
+RENDERER = ROOT / "firmware/overlay/SDK/apps/watch/e87/e87_renderer.c"
 RECEIPT = Path("/tmp/e87-final-qualification.json")
 RUNTIME = "127.0.0.1:5001/e87/asset-runtime@sha256:859689ef25f6940e22a5ea2427471596b42bb628bc8d308b5d3334721784d0ea"
 QUALIFIER = Path("/opt/e87/qualify-runtime.py")
@@ -68,15 +69,15 @@ APPROVED_ASSET_BOUNDS = {
 }
 APPROVED_ICON_BOUNDARY_PROBES = {
     "today": (
-        {"x": 4, "y": 3, "alpha": 255, "global_x": 179, "global_y": 18,
+        {"x": 4, "y": 3, "alpha": 255, "global_x": 175, "global_y": 14,
          "zero_rgb565": 0xBE18, "active_rgb565": 0x0000},
-        {"x": 4, "y": 2, "alpha": 127, "global_x": 179, "global_y": 17,
+        {"x": 4, "y": 2, "alpha": 127, "global_x": 175, "global_y": 13,
          "zero_rgb565": 0x738E, "active_rgb565": 0x630C},
     ),
     "date_range": (
-        {"x": 4, "y": 3, "alpha": 255, "global_x": 179, "global_y": 48,
+        {"x": 4, "y": 3, "alpha": 255, "global_x": 175, "global_y": 44,
          "zero_rgb565": 0xFFFF, "active_rgb565": 0x0000},
-        {"x": 4, "y": 2, "alpha": 127, "global_x": 179, "global_y": 47,
+        {"x": 4, "y": 2, "alpha": 127, "global_x": 175, "global_y": 43,
          "zero_rgb565": 0x94B2, "active_rgb565": 0x8410},
     ),
 }
@@ -264,9 +265,9 @@ else:
         self.assertEqual(actual, APPROVED_GENERATED_DIGESTS)
 
         ring_geometry = {
-            "today": {"top": 15, "inner": 149, "outer": 171,
+            "today": {"top": 11, "inner": 149, "outer": 171,
                       "active": (191, 195, 199), "track": (34, 35, 36)},
-            "date_range": {"top": 45, "inner": 119, "outer": 141,
+            "date_range": {"top": 41, "inner": 119, "outer": 141,
                            "active": (255, 255, 255), "track": (46, 46, 46)},
         }
 
@@ -290,11 +291,11 @@ else:
                     self.assertLessEqual(cap_x * cap_x + cap_y * cap_y, (11 * 4) ** 2)
             for probe in APPROVED_ICON_BOUNDARY_PROBES[name]:
                 self.assertEqual(values[18 * probe["y"] + probe["x"]], probe["alpha"])
-                self.assertEqual((175 + probe["x"], geometry["top"] + probe["y"]),
+                self.assertEqual((171 + probe["x"], geometry["top"] + probe["y"]),
                                  (probe["global_x"], probe["global_y"]))
                 for ox, oy in ((1, 1), (3, 1), (1, 3), (3, 3)):
-                    dx = (probe["global_x"] - 184) * 4 + ox
-                    dy = (probe["global_y"] - 184) * 4 + oy
+                    dx = (probe["global_x"] - 180) * 4 + ox
+                    dy = (probe["global_y"] - 180) * 4 + oy
                     distance = dx * dx + dy * dy
                     self.assertGreaterEqual(distance, (geometry["inner"] * 4) ** 2)
                     self.assertLessEqual(distance, (geometry["outer"] * 4) ** 2)
@@ -304,6 +305,31 @@ else:
                 self.assertEqual(
                     probe["active_rgb565"],
                     rgb565(blend((0, 0, 0), geometry["active"], probe["alpha"])))
+
+    def test_renderer_uses_exact_translated_asset_placements(self):
+        renderer = need(self, RENDERER).read_text()
+
+        def literal_placement(asset: str) -> tuple[int, int]:
+            match = re.search(
+                r"e87_blend_asset\(\s*&color,\s*x,\s*y,\s*"
+                r"(\d+)u,\s*(\d+)u,\s*&e87_asset_" + asset,
+                renderer,
+            )
+            self.assertIsNotNone(match, "missing literal placement for " + asset)
+            return int(match.group(1)), int(match.group(2))
+
+        self.assertEqual(literal_placement("today"), (171, 11))
+        self.assertEqual(literal_placement("date_range"), (171, 41))
+        self.assertEqual(literal_placement("devin"), (132, 118))
+        self.assertRegex(renderer, r"\bE87_FACE_CENTER\s*=\s*180\b")
+        self.assertIn(
+            "credit_left = E87_FACE_CENTER - e87_asset_credit_1727.width / 2u;",
+            renderer,
+        )
+        self.assertIn(
+            "credit_top = 240u - e87_asset_credit_1727.height / 2u;",
+            renderer,
+        )
 
     def test_endpoint_table_pins_cardinals_symmetry_and_all_101_bounds(self):
         source = need(self, CFILE).read_text()

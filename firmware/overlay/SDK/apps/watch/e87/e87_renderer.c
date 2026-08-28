@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 enum {
-    E87_FACE_CENTER = 184,
+    E87_FACE_CENTER = 180,
     E87_PHYSICAL_RADIUS = 180,
     E87_DAY_RADIUS = 160,
     E87_DAY_INNER_RADIUS = 149,
@@ -329,8 +329,8 @@ static uint16_t e87_render_pixel(unsigned int x,
         &color,
         x,
         y,
-        175u,
-        15u,
+        171u,
+        11u,
         &e87_asset_today,
         icon_red,
         icon_green,
@@ -349,8 +349,8 @@ static uint16_t e87_render_pixel(unsigned int x,
         &color,
         x,
         y,
-        175u,
-        45u,
+        171u,
+        41u,
         &e87_asset_date_range,
         icon_red,
         icon_green,
@@ -360,15 +360,15 @@ static uint16_t e87_render_pixel(unsigned int x,
         &color,
         x,
         y,
-        136u,
-        122u,
+        132u,
+        118u,
         &e87_asset_devin,
         UINT8_C(255),
         UINT8_C(255),
         UINT8_C(255));
 
     credit_left = E87_FACE_CENTER - e87_asset_credit_1727.width / 2u;
-    credit_top = 244u - e87_asset_credit_1727.height / 2u;
+    credit_top = 240u - e87_asset_credit_1727.height / 2u;
     e87_blend_asset(
         &color,
         x,

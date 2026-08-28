@@ -137,7 +137,7 @@ E87_TEST(renderer_rejects_null_bad_strip_short_capacity_and_credit_without_mutat
     E87_ASSERT_EQ_U32(
         E87_RENDER_ERROR_STRIP,
         e87_render_normal_face_strip(
-            &valid, UINT8_C(23), &output[1], E87_TEST_STRIP_PIXELS));
+            &valid, UINT8_C(12), &output[1], E87_TEST_STRIP_PIXELS));
     E87_ASSERT_TRUE(memcmp(output, before, sizeof(output)) == 0);
     E87_ASSERT_EQ_U32(
         E87_RENDER_ERROR_CAPACITY,
@@ -151,13 +151,13 @@ E87_TEST(renderer_rejects_null_bad_strip_short_capacity_and_credit_without_mutat
     E87_ASSERT_TRUE(memcmp(output, before, sizeof(output)) == 0);
 }
 
-E87_TEST(renderer_writes_exactly_5888_words_and_preserves_both_canaries)
+E87_TEST(renderer_writes_exactly_10800_words_and_preserves_both_canaries)
 {
     struct e87_metrics model =
         metrics(UINT8_C(50), UINT8_C(50), E87_STATE_FIXED_CREDIT_CENTS);
     uint16_t guarded[E87_TEST_STRIP_PIXELS + 2u];
 
-    E87_ASSERT_EQ_U32(UINT32_C(5888), E87_TEST_STRIP_PIXELS);
+    E87_ASSERT_EQ_U32(UINT32_C(10800), E87_TEST_STRIP_PIXELS);
     fill_words(guarded, E87_TEST_STRIP_PIXELS + 2u, UINT16_C(0xD39C));
     E87_ASSERT_EQ_U32(
         E87_RENDER_OK,
@@ -169,7 +169,7 @@ E87_TEST(renderer_writes_exactly_5888_words_and_preserves_both_canaries)
     E87_ASSERT_TRUE(guarded[1] != UINT16_C(0xD39C));
 }
 
-E87_TEST(strip_indices_cover_rows_0_through_367_once_in_sixteen_row_tiles)
+E87_TEST(strip_indices_cover_rows_0_through_359_once_in_thirty_row_tiles)
 {
     struct e87_metrics model =
         metrics(UINT8_C(0), UINT8_C(0), E87_STATE_FIXED_CREDIT_CENTS);
@@ -178,7 +178,12 @@ E87_TEST(strip_indices_cover_rows_0_through_367_once_in_sixteen_row_tiles)
     unsigned int strip_index;
     unsigned int row;
 
-    E87_ASSERT_EQ_U32(UINT32_C(23), E87_STRIP_COUNT);
+    E87_ASSERT_EQ_U32(UINT32_C(12), E87_STRIP_COUNT);
+    E87_ASSERT_EQ_U32(
+        UINT32_C(330), (E87_STRIP_COUNT - 1u) * E87_STRIP_ROWS);
+    E87_ASSERT_EQ_U32(
+        UINT32_C(359),
+        (E87_STRIP_COUNT - 1u) * E87_STRIP_ROWS + E87_STRIP_ROWS - 1u);
     for (strip_index = 0u; strip_index < E87_STRIP_COUNT; ++strip_index) {
         E87_ASSERT_EQ_U32(
             E87_RENDER_OK,
@@ -191,7 +196,7 @@ E87_TEST(strip_indices_cover_rows_0_through_367_once_in_sixteen_row_tiles)
     for (row = 0u; row < E87_DISPLAY_HEIGHT; ++row) {
         E87_ASSERT_EQ_U32(UINT8_C(1), rows[row]);
     }
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), strip[15u * E87_DISPLAY_WIDTH]);
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), strip[29u * E87_DISPLAY_WIDTH]);
 }
 
 E87_TEST(out_of_range_percentages_clamp_independently_to_100)
@@ -219,12 +224,12 @@ E87_TEST(zero_percent_has_no_active_arc_or_cap_and_has_active_colored_fixed_icon
         metrics(UINT8_C(0), UINT8_C(0), E87_STATE_FIXED_CREDIT_CENTS);
 
     E87_ASSERT_TRUE(render_in_order(&model, frame_a, false, 1u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x2104), frame_pixel(frame_a, 344u, 184u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x2965), frame_pixel(frame_a, 314u, 184u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x2104), frame_pixel(frame_a, 184u, 15u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x2965), frame_pixel(frame_a, 184u, 45u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 179u, 18u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 179u, 48u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x2104), frame_pixel(frame_a, 340u, 180u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x2965), frame_pixel(frame_a, 310u, 180u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x2104), frame_pixel(frame_a, 180u, 11u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x2965), frame_pixel(frame_a, 180u, 41u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 175u, 14u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 175u, 44u));
 }
 
 E87_TEST(fifty_percent_advances_clockwise_on_the_right_half)
@@ -233,10 +238,10 @@ E87_TEST(fifty_percent_advances_clockwise_on_the_right_half)
         metrics(UINT8_C(50), UINT8_C(50), E87_STATE_FIXED_CREDIT_CENTS);
 
     E87_ASSERT_TRUE(render_in_order(&model, frame_a, false, 1u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 344u, 184u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x2104), frame_pixel(frame_a, 24u, 184u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 314u, 184u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x2965), frame_pixel(frame_a, 54u, 184u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 340u, 180u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x2104), frame_pixel(frame_a, 20u, 180u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 310u, 180u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x2965), frame_pixel(frame_a, 50u, 180u));
 }
 
 E87_TEST(one_percent_has_round_start_and_endpoint_caps)
@@ -245,11 +250,11 @@ E87_TEST(one_percent_has_round_start_and_endpoint_caps)
         metrics(UINT8_C(1), UINT8_C(1), E87_STATE_FIXED_CREDIT_CENTS);
 
     E87_ASSERT_TRUE(render_in_order(&model, frame_a, false, 1u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 184u, 13u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 175u, 24u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 203u, 24u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 175u, 54u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 201u, 54u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 180u, 9u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 171u, 20u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 199u, 20u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 171u, 50u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 197u, 50u));
 }
 
 E87_TEST(ninety_nine_percent_pins_near_seam_cap_overlap_and_edge_wedge)
@@ -258,11 +263,11 @@ E87_TEST(ninety_nine_percent_pins_near_seam_cap_overlap_and_edge_wedge)
         metrics(UINT8_C(99), UINT8_C(99), E87_STATE_FIXED_CREDIT_CENTS);
 
     E87_ASSERT_TRUE(render_in_order(&model, frame_a, false, 1u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 184u, 14u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 174u, 14u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 174u, 24u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 184u, 44u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 176u, 44u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 180u, 10u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 170u, 10u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 170u, 20u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 180u, 40u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 172u, 40u));
 }
 
 E87_TEST(one_hundred_percent_is_a_seamless_full_annulus)
@@ -271,12 +276,12 @@ E87_TEST(one_hundred_percent_is_a_seamless_full_annulus)
         metrics(UINT8_C(100), UINT8_C(100), E87_STATE_FIXED_CREDIT_CENTS);
 
     E87_ASSERT_TRUE(render_in_order(&model, frame_a, false, 1u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 174u, 24u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 194u, 24u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 174u, 54u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 194u, 54u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 344u, 184u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 314u, 184u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 170u, 20u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 190u, 20u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 170u, 50u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 190u, 50u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 340u, 180u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 310u, 180u));
 }
 
 E87_TEST(physical_circle_and_storage_corners_are_black)
@@ -286,11 +291,11 @@ E87_TEST(physical_circle_and_storage_corners_are_black)
 
     E87_ASSERT_TRUE(render_in_order(&model, frame_a, false, 1u));
     E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 0u, 0u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 367u, 0u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 0u, 367u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 367u, 367u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 184u, 0u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 184u, 4u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 359u, 0u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 0u, 359u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 359u, 359u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 180u, 0u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 180u, 4u));
 }
 
 E87_TEST(four_sample_coverage_and_rgb565_truncation_match_literal_pixels)
@@ -299,10 +304,10 @@ E87_TEST(four_sample_coverage_and_rgb565_truncation_match_literal_pixels)
         metrics(UINT8_C(0), UINT8_C(0), E87_STATE_FIXED_CREDIT_CENTS);
 
     E87_ASSERT_TRUE(render_in_order(&model, frame_a, false, 1u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x1082), frame_pixel(frame_a, 168u, 13u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0861), frame_pixel(frame_a, 169u, 43u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x2104), frame_pixel(frame_a, 344u, 184u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x2965), frame_pixel(frame_a, 314u, 184u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x1082), frame_pixel(frame_a, 164u, 9u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0861), frame_pixel(frame_a, 165u, 39u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x2104), frame_pixel(frame_a, 340u, 180u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x2965), frame_pixel(frame_a, 310u, 180u));
 }
 
 E87_TEST(icons_switch_independently_from_active_color_at_zero_to_black_at_one_and_stay_fixed)
@@ -317,52 +322,52 @@ E87_TEST(icons_switch_independently_from_active_color_at_zero_to_black_at_one_an
         metrics(UINT8_C(100), UINT8_C(100), E87_STATE_FIXED_CREDIT_CENTS);
 
     E87_ASSERT_TRUE(render_in_order(&day_zero, frame_a, false, 1u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 179u, 18u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x738E), frame_pixel(frame_a, 179u, 17u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 179u, 48u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x8410), frame_pixel(frame_a, 179u, 47u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xBE18), frame_pixel(frame_a, 175u, 14u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x738E), frame_pixel(frame_a, 175u, 13u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 175u, 44u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x8410), frame_pixel(frame_a, 175u, 43u));
 
     E87_ASSERT_TRUE(render_in_order(&week_zero, frame_a, false, 1u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 179u, 18u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x630C), frame_pixel(frame_a, 179u, 17u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 179u, 48u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x94B2), frame_pixel(frame_a, 179u, 47u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 175u, 14u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x630C), frame_pixel(frame_a, 175u, 13u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 175u, 44u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x94B2), frame_pixel(frame_a, 175u, 43u));
 
     E87_ASSERT_TRUE(render_in_order(&middle, frame_a, false, 1u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 179u, 18u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x630C), frame_pixel(frame_a, 179u, 17u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 179u, 48u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x8410), frame_pixel(frame_a, 179u, 47u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 175u, 14u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x630C), frame_pixel(frame_a, 175u, 13u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 175u, 44u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x8410), frame_pixel(frame_a, 175u, 43u));
 
     E87_ASSERT_TRUE(render_in_order(&full, frame_a, false, 1u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 179u, 18u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x630C), frame_pixel(frame_a, 179u, 17u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 179u, 48u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x8410), frame_pixel(frame_a, 179u, 47u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 175u, 14u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x630C), frame_pixel(frame_a, 175u, 13u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 175u, 44u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x8410), frame_pixel(frame_a, 175u, 43u));
 }
 
-E87_TEST(devin_mask_is_white_and_centered_at_184_170)
+E87_TEST(devin_mask_is_white_and_centered_at_180_166)
 {
     struct e87_metrics model =
         metrics(UINT8_C(0), UINT8_C(0), E87_STATE_FIXED_CREDIT_CENTS);
 
     E87_ASSERT_TRUE(render_in_order(&model, frame_a, false, 1u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 154u, 123u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0841), frame_pixel(frame_a, 153u, 122u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 232u, 170u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 184u, 218u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 150u, 119u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0841), frame_pixel(frame_a, 149u, 118u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 228u, 166u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 180u, 214u));
 }
 
-E87_TEST(credit_mask_is_white_and_centered_at_184_244)
+E87_TEST(credit_mask_is_white_and_centered_at_180_240)
 {
     struct e87_metrics model =
         metrics(UINT8_C(0), UINT8_C(0), E87_STATE_FIXED_CREDIT_CENTS);
 
     E87_ASSERT_TRUE(render_in_order(&model, frame_a, false, 1u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 145u, 231u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x2124), frame_pixel(frame_a, 144u, 230u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 137u, 244u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 230u, 244u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 141u, 227u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x2124), frame_pixel(frame_a, 140u, 226u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 133u, 240u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x0000), frame_pixel(frame_a, 226u, 240u));
 }
 
 E87_TEST(layer_order_is_track_arc_icons_devin_credit)
@@ -371,10 +376,10 @@ E87_TEST(layer_order_is_track_arc_icons_devin_credit)
         metrics(UINT8_C(1), UINT8_C(1), E87_STATE_FIXED_CREDIT_CENTS);
 
     E87_ASSERT_TRUE(render_in_order(&model, frame_a, false, 1u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x630C), frame_pixel(frame_a, 179u, 17u));
-    E87_ASSERT_EQ_U32(UINT16_C(0x8410), frame_pixel(frame_a, 179u, 47u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 154u, 123u));
-    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 145u, 231u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x630C), frame_pixel(frame_a, 175u, 13u));
+    E87_ASSERT_EQ_U32(UINT16_C(0x8410), frame_pixel(frame_a, 175u, 43u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 150u, 119u));
+    E87_ASSERT_EQ_U32(UINT16_C(0xFFFF), frame_pixel(frame_a, 141u, 227u));
 }
 
 E87_TEST(strip_rendering_is_repeatable_reentrant_and_order_independent)
@@ -424,8 +429,8 @@ static const struct e87_test_case renderer_cases[] = {
     E87_TEST_CASE(credit_formats_1727_as_exact_ascii_without_float_or_locale),
     E87_TEST_CASE(credit_rejects_wrong_value_and_short_or_null_output_without_mutation),
     E87_TEST_CASE(renderer_rejects_null_bad_strip_short_capacity_and_credit_without_mutation),
-    E87_TEST_CASE(renderer_writes_exactly_5888_words_and_preserves_both_canaries),
-    E87_TEST_CASE(strip_indices_cover_rows_0_through_367_once_in_sixteen_row_tiles),
+    E87_TEST_CASE(renderer_writes_exactly_10800_words_and_preserves_both_canaries),
+    E87_TEST_CASE(strip_indices_cover_rows_0_through_359_once_in_thirty_row_tiles),
     E87_TEST_CASE(out_of_range_percentages_clamp_independently_to_100),
     E87_TEST_CASE(zero_percent_has_no_active_arc_or_cap_and_has_active_colored_fixed_icons),
     E87_TEST_CASE(fifty_percent_advances_clockwise_on_the_right_half),
@@ -435,8 +440,8 @@ static const struct e87_test_case renderer_cases[] = {
     E87_TEST_CASE(physical_circle_and_storage_corners_are_black),
     E87_TEST_CASE(four_sample_coverage_and_rgb565_truncation_match_literal_pixels),
     E87_TEST_CASE(icons_switch_independently_from_active_color_at_zero_to_black_at_one_and_stay_fixed),
-    E87_TEST_CASE(devin_mask_is_white_and_centered_at_184_170),
-    E87_TEST_CASE(credit_mask_is_white_and_centered_at_184_244),
+    E87_TEST_CASE(devin_mask_is_white_and_centered_at_180_166),
+    E87_TEST_CASE(credit_mask_is_white_and_centered_at_180_240),
     E87_TEST_CASE(layer_order_is_track_arc_icons_devin_credit),
     E87_TEST_CASE(strip_rendering_is_repeatable_reentrant_and_order_independent),
 };
