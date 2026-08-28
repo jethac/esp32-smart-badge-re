@@ -20,7 +20,9 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 find "$ROOT/src/main/java" -type f -name '*.java' \
-    ! -name 'ProbeActivity.java' -print \
+    ! -name 'ProbeActivity.java' \
+    ! -name 'AndroidFdPackageReader.java' \
+    -print \
     | LC_ALL=C sort > "$OUT/java-sources.txt"
 find "$ROOT/host-tests/src" -type f -name '*.java' -print \
     | LC_ALL=C sort >> "$OUT/java-sources.txt"
@@ -33,5 +35,6 @@ find "$ROOT/host-tests/src" -type f -name '*.java' -print \
 cd "$ROOT"
 "$PYTHON" -m unittest -v \
     host-tests/test_activity_safety.py \
+    host-tests/test_android_fd_reader_safety.py \
     host-tests/test_build_contract.py \
     host-tests/test_generate_package_pin.py

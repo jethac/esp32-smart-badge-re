@@ -95,7 +95,15 @@ class ActivitySafetyTest(unittest.TestCase):
             "public boolean validatePinnedPackage()",
             "public boolean bluetoothPermissionsGranted()",
         )
-        self.assertIn("PinnedPackageValidator.validate(source, packagePin)", validation)
+        self.assertIn(
+            "AndroidFdPackageReader.readExactly(",
+            validation,
+        )
+        self.assertIn(
+            "PinnedPackageValidator.validate(packageBytes, packagePin)",
+            validation,
+        )
+        self.assertNotIn("PinnedPackageValidator.validate(source, packagePin)", validation)
         self.assertIn("validatedPackage = validated", validation)
 
         send_c0 = method_body(
@@ -116,6 +124,18 @@ class ActivitySafetyTest(unittest.TestCase):
         self.assertIn('android:label="E87 One-Shot Lab Uploader"', self.manifest)
         self.assertIn('new File(root, "update.bin")', self.source)
         self.assertNotIn("asset", self.source.lower())
+
+    def test_fresh_transfer_and_c5_are_physically_gated(self):
+        self.assertIn(
+            "FirmwareTransferSafety.requireFreshC1Offset(update.offset)",
+            self.source,
+        )
+        self.assertIn("finalC2WriteCompleted = true", self.source)
+        self.assertIn("FirmwareTransferSafety.C5Disposition.DEFER", self.source)
+        self.assertIn("deferredC5Frame", self.source)
+        self.assertIn("processDeferredC5IfReady()", self.source)
+        self.assertIn("if (!outputDirectory.mkdir())", self.source)
+        self.assertIn("if (!appendJournal(", self.source)
 
 
 if __name__ == "__main__":

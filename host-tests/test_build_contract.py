@@ -1,7 +1,9 @@
 import hashlib
+import os
 import subprocess
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 
@@ -10,6 +12,13 @@ BUILD_SCRIPT = ROOT / "scripts" / "build-one-shot-apk.sh"
 KEYSTORE = ROOT / "signing" / "debug.keystore"
 ARM64_AUTH = ROOT / "vendor-lib" / "arm64-v8a" / "libjl_ota_auth.so"
 ARMV7_AUTH = ROOT / "vendor-lib" / "armeabi-v7a" / "libjl_ota_auth.so"
+BUILD_TOOLS = Path("/home/jethac/.local/share/e87-dev/android-sdk/build-tools/34.0.0")
+AAPT2 = BUILD_TOOLS / "aapt2"
+APKSIGNER = BUILD_TOOLS / "apksigner"
+JAVA_HOME = Path("/home/jethac/.local/share/e87-dev/jdk-17/usr/lib/jvm/java-17-openjdk-amd64")
+EXPECTED_CERT = "c1492dba623bb541187d6db26b0559d4d0dbcf0ff2ce829317c73dab521b2ce5"
+SYNTHETIC_SHA256 = "190f32b094719e9587cce687243f062c7e967b09a5362113aee79a2e90cf250a"
+SYNTHETIC_HEADER = "bcaf01312e30000000000000000800000000000000000000001234"
 
 
 class BuildContractTest(unittest.TestCase):
@@ -52,6 +61,110 @@ class BuildContractTest(unittest.TestCase):
         for path, digest in expected.items():
             with self.subTest(path=path):
                 self.assertEqual(digest, hashlib.sha256(path.read_bytes()).hexdigest())
+
+    def test_full_signed_apk_smoke_audits_android_compile_and_contents(self):
+        with tempfile.TemporaryDirectory(prefix="e87-signed-smoke-") as directory:
+            output = Path(directory) / "smoke.apk"
+            result = subprocess.run(
+                [
+                    "/bin/bash",
+                    str(BUILD_SCRIPT),
+                    "--package-size",
+                    "35",
+                    "--package-sha256",
+                    SYNTHETIC_SHA256,
+                    "--package-header",
+                    SYNTHETIC_HEADER,
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=120,
+                check=False,
+            )
+            self.assertEqual(
+                0,
+                result.returncode,
+                msg=f"builder stdout:\n{result.stdout}\nbuilder stderr:\n{result.stderr}",
+            )
+            self.assertTrue(output.is_file())
+            self.assertIn(f"APK={output}", result.stdout)
+            self.assertIn(f"SIGNER_CERT_SHA256={EXPECTED_CERT}", result.stdout)
+
+            audit_env = os.environ.copy()
+            audit_env["JAVA_HOME"] = str(JAVA_HOME)
+            audit_env["PATH"] = f"{JAVA_HOME / 'bin'}:{audit_env.get('PATH', '')}"
+            verified = subprocess.run(
+                [str(APKSIGNER), "verify", "--verbose", "--print-certs", str(output)],
+                cwd=ROOT,
+                env=audit_env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=30,
+                check=False,
+            )
+            self.assertEqual(
+                0,
+                verified.returncode,
+                msg=f"apksigner stdout:\n{verified.stdout}\nstderr:\n{verified.stderr}",
+            )
+            normalized_certificate_output = verified.stdout.lower().replace(":", "")
+            self.assertIn(EXPECTED_CERT, normalized_certificate_output)
+
+            badging = subprocess.check_output(
+                [str(AAPT2), "dump", "badging", str(output)],
+                cwd=ROOT,
+                text=True,
+                timeout=30,
+            )
+            self.assertIn("package: name='com.openai.e87probe'", badging)
+            self.assertIn(
+                "launchable-activity: name='com.openai.e87probe.ProbeActivity'",
+                badging,
+            )
+            manifest_tree = subprocess.check_output(
+                [
+                    str(AAPT2),
+                    "dump",
+                    "xmltree",
+                    str(output),
+                    "--file",
+                    "AndroidManifest.xml",
+                ],
+                cwd=ROOT,
+                text=True,
+                timeout=30,
+            )
+            self.assertIn(
+                'android:label(0x01010001)="E87 One-Shot Lab Uploader"',
+                manifest_tree,
+            )
+
+            expected_native_hashes = {
+                "lib/arm64-v8a/libjl_ota_auth.so":
+                    "d65dd43fb8eb284b93fcbd85c7ce4e59168f3673e28c7637ed467667e4cc5c4b",
+                "lib/armeabi-v7a/libjl_ota_auth.so":
+                    "5e629e0e0190f745fade919bcca53a7638915b1f856537352977c8b5e0d214ce",
+            }
+            with zipfile.ZipFile(output) as apk:
+                names = set(apk.namelist())
+                self.assertIn("classes.dex", names)
+                for name, expected_hash in expected_native_hashes.items():
+                    with self.subTest(name=name):
+                        self.assertIn(name, names)
+                        self.assertEqual(
+                            expected_hash,
+                            hashlib.sha256(apk.read(name)).hexdigest(),
+                        )
+                for name in names:
+                    lower_name = name.lower()
+                    self.assertFalse(lower_name.startswith("assets/"))
+                    self.assertNotIn(Path(lower_name).name, {"update.bin", "debug.keystore"})
+                    self.assertFalse(lower_name.endswith((".qix", ".fw")))
 
     def test_missing_required_pins_fails_without_an_apk(self):
         with tempfile.TemporaryDirectory(prefix="e87-no-pins-") as directory:

@@ -92,6 +92,10 @@ public final class ProbeActivity extends Activity
     private int fd02TxLastLength;
     private String fd02TxPurpose;
     private boolean pendingBlockIsFinal;
+    private boolean finalC2Started;
+    private boolean finalC2WriteCompleted;
+    private byte[] deferredC5Frame;
+    private String deferredC5Channel;
     private String observedFirmwareVersion;
     private long updateStartedAt;
     private final PackagePin packagePin = GeneratedPackagePin.create();
@@ -234,8 +238,12 @@ public final class ProbeActivity extends Activity
 
         final PinnedPackageValidator.ValidatedPackage validated;
         try {
-            validated = PinnedPackageValidator.validate(source, packagePin);
-        } catch (IllegalArgumentException error) {
+            byte[] packageBytes = AndroidFdPackageReader.readExactly(
+                    source,
+                    packagePin.size(),
+                    PackagePin.MAX_PACKAGE_SIZE_BYTES);
+            validated = PinnedPackageValidator.validate(packageBytes, packagePin);
+        } catch (IOException | IllegalArgumentException error) {
             fail("Pinned update package rejected: " + error.getMessage()
                     + "; required path=" + source.getAbsolutePath());
             return false;
@@ -275,9 +283,10 @@ public final class ProbeActivity extends Activity
         }
         String runName = "run-" + new SimpleDateFormat(
                 "yyyyMMdd-HHmmss-SSS", Locale.ROOT).format(new Date())
-                + "-pid" + android.os.Process.myPid();
+                + "-pid" + android.os.Process.myPid()
+                + "-n" + Long.toHexString(System.nanoTime());
         outputDirectory = new File(outputRoot, runName);
-        if (!outputDirectory.mkdirs() && !outputDirectory.isDirectory()) {
+        if (!outputDirectory.mkdir()) {
             terminal = true;
             String message = "Unable to create evidence directory " + outputDirectory;
             Log.e(TAG, message);
@@ -736,9 +745,12 @@ public final class ProbeActivity extends Activity
         fd02TxPurpose = null;
         log("FD02 " + completedPurpose + " logical frame written: " + bytes
                 + " bytes in " + fragments + " fragment(s)");
-        appendJournal("{\"event\":\"frame_written\",\"purpose\":\""
+        if (!appendJournal("{\"event\":\"frame_written\",\"purpose\":\""
                 + completedPurpose + "\",\"bytes\":" + bytes
-                + ",\"fragments\":" + fragments + "}");
+                + ",\"fragments\":" + fragments + "}")) return;
+        if (completedPurpose.startsWith("C2") && pendingBlockIsFinal) {
+            finalC2WriteCompleted = true;
+        }
         if ("C0".equals(completedPurpose)) {
             waitingFor = "Qix C1 update response";
             armUpdateTimeout(UPDATE_RESPONSE_TIMEOUT_MS);
@@ -748,6 +760,17 @@ public final class ProbeActivity extends Activity
             armUpdateTimeout(pendingBlockIsFinal
                     ? FINAL_RESULT_TIMEOUT_MS : UPDATE_RESPONSE_TIMEOUT_MS);
         }
+        processDeferredC5IfReady();
+    }
+
+    private void processDeferredC5IfReady() {
+        if (terminal || deferredC5Frame == null || !finalC2WriteCompleted) return;
+        byte[] frame = deferredC5Frame;
+        String channel = deferredC5Channel;
+        deferredC5Frame = null;
+        deferredC5Channel = null;
+        log("Processing deferred C5 after every final C2 fragment write completed");
+        handleUpdateResult(channel, frame);
     }
 
     private void handleNotification(BluetoothGatt callbackGatt,
@@ -862,22 +885,14 @@ public final class ProbeActivity extends Activity
             fail("Badge returned invalid C1 update window=" + update.allowedLength);
             return;
         }
-        if (update.offset < 0 || update.offset > updateData.length) {
-            fail("Badge returned invalid C1 resume offset=" + update.offset);
-            return;
-        }
+        FirmwareTransferSafety.requireFreshC1Offset(update.offset);
         updateRequestAccepted = true;
         updateWindow = update.allowedLength;
-        acknowledgedOffset = update.offset;
-        appendJournal("{\"event\":\"c1\",\"channel\":\"" + channel
+        acknowledgedOffset = 0;
+        if (!appendJournal("{\"event\":\"c1\",\"channel\":\"" + channel
                 + "\",\"state\":" + update.state + ",\"window\":"
-                + updateWindow + ",\"offset\":" + acknowledgedOffset + "}");
-        if (acknowledgedOffset == updateData.length) {
-            waitingFor = "Qix C5 result for already-staged payload";
-            armUpdateTimeout(FINAL_RESULT_TIMEOUT_MS);
-            return;
-        }
-        main.postDelayed(() -> sendDataBlockWhenIdle(acknowledgedOffset), 5L);
+                + updateWindow + ",\"offset\":" + acknowledgedOffset + "}")) return;
+        main.postDelayed(() -> sendDataBlockWhenIdle(0), 5L);
     }
 
     private void sendDataBlockWhenIdle(int offset) {
@@ -906,13 +921,18 @@ public final class ProbeActivity extends Activity
         pendingBlockOffset = offset;
         pendingBlockLength = length;
         pendingBlockIsFinal = offset + length == updateData.length;
+        if (pendingBlockIsFinal) {
+            finalC2Started = true;
+            finalC2WriteCompleted = false;
+        }
         blocksSent++;
-        if (blocksSent == 1) writeArtifact("qix-c2-first.bin", frame);
-        if (pendingBlockIsFinal) writeArtifact("qix-c2-last.bin", frame);
-        appendJournal("{\"event\":\"c2_send\",\"block\":" + blocksSent
+        if (blocksSent == 1 && !writeArtifact("qix-c2-first.bin", frame)) return;
+        if (pendingBlockIsFinal
+                && !writeArtifact("qix-c2-last.bin", frame)) return;
+        if (!appendJournal("{\"event\":\"c2_send\",\"block\":" + blocksSent
                 + ",\"serial\":" + serial + ",\"offset\":" + offset
                 + ",\"length\":" + length + ",\"frameLength\":" + frame.length
-                + ",\"frameSha256\":\"" + sha256Hex(frame) + "\"}");
+                + ",\"frameSha256\":\"" + sha256Hex(frame) + "\"}")) return;
         if (blocksSent == 1 || pendingBlockIsFinal || blocksSent % 32 == 0) {
             log("C2 block=" + blocksSent + " serial=" + serial + " offset=" + offset
                     + " length=" + length + " progress="
@@ -931,9 +951,9 @@ public final class ProbeActivity extends Activity
         }
         main.removeCallbacks(updateTimeout);
         int expectedOffset = pendingBlockOffset + pendingBlockLength;
-        appendJournal("{\"event\":\"c3\",\"channel\":\"" + channel
+        if (!appendJournal("{\"event\":\"c3\",\"channel\":\"" + channel
                 + "\",\"result\":" + response.result + ",\"nextOffset\":"
-                + response.nextOffset + ",\"expectedOffset\":" + expectedOffset + "}");
+                + response.nextOffset + ",\"expectedOffset\":" + expectedOffset + "}")) return;
         if (response.result != 0) {
             fail("Badge rejected C2 block at offset=" + pendingBlockOffset
                     + " with C3 result=" + response.result);
@@ -966,24 +986,36 @@ public final class ProbeActivity extends Activity
 
     private void handleUpdateResult(String channel, byte[] frame) {
         int result = QixFirmwareUpdateProbe.parseUpdateResult(frame);
-        main.removeCallbacks(updateTimeout);
-        if (!updateRequestAccepted) {
-            fail("Unexpected C5 before an accepted C1");
+        int payloadLength = updateData == null ? -1 : updateData.length;
+        FirmwareTransferSafety.C5Disposition disposition =
+                FirmwareTransferSafety.c5Disposition(
+                        updateRequestAccepted,
+                        finalC2Started,
+                        finalC2WriteCompleted,
+                        acknowledgedOffset,
+                        payloadLength);
+        if (disposition == FirmwareTransferSafety.C5Disposition.DEFER) {
+            if (deferredC5Frame != null) {
+                fail("Received duplicate C5 while the final C2 write was incomplete");
+                return;
+            }
+            deferredC5Frame = frame.clone();
+            deferredC5Channel = channel;
+            log("Deferring C5 until every final C2 fragment write callback succeeds");
             return;
         }
-        appendJournal("{\"event\":\"c5\",\"channel\":\"" + channel
+        if (disposition == FirmwareTransferSafety.C5Disposition.REJECT) {
+            fail("C5 is not permitted by the current transfer state; acknowledgedOffset="
+                    + acknowledgedOffset + " payloadLength=" + payloadLength);
+            return;
+        }
+
+        main.removeCallbacks(updateTimeout);
+        if (!appendJournal("{\"event\":\"c5\",\"channel\":\"" + channel
                 + "\",\"result\":" + result + ",\"frame\":\""
-                + Hex.encode(frame) + "\"}");
+                + Hex.encode(frame) + "\"}")) return;
         if (result != 0) {
             fail("Badge reported C5 update failure result=" + result);
-            return;
-        }
-        boolean finalBlockWasSent = pendingBlockIsFinal
-                && pendingBlockOffset >= 0
-                && pendingBlockOffset + pendingBlockLength == updateData.length;
-        if (!finalBlockWasSent && acknowledgedOffset != updateData.length) {
-            fail("C5 success arrived before the complete payload was sent; acknowledgedOffset="
-                    + acknowledgedOffset);
             return;
         }
         acknowledgedOffset = updateData.length;
@@ -1013,10 +1045,10 @@ public final class ProbeActivity extends Activity
                 + "fd03Bytes=" + fd03Bytes + "\n";
         if (!writeArtifact("firmware-update-summary.txt",
                 summary.getBytes(StandardCharsets.UTF_8))) return;
-        appendJournal("{\"event\":\"complete\",\"reason\":\"" + reason
+        if (!appendJournal("{\"event\":\"complete\",\"reason\":\"" + reason
                 + "\",\"acknowledgedOffset\":" + acknowledgedOffset
                 + ",\"blocksSent\":" + blocksSent + ",\"elapsedMillis\":"
-                + elapsed + "}");
+                + elapsed + "}")) return;
         terminal = true;
         log("SUCCESS: firmware payload accepted; " + reason + "; bytes="
                 + acknowledgedOffset + "/" + updateData.length + " blocks=" + blocksSent

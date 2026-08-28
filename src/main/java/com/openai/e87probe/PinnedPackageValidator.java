@@ -1,62 +1,27 @@
 package com.openai.e87probe;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.Objects;
 
 /**
- * Loads only a regular, non-symlink file whose complete identity matches a PackagePin.
+ * Validates one immutable package snapshot against a PackagePin.
  */
 public final class PinnedPackageValidator {
     private PinnedPackageValidator() {}
 
-    public static ValidatedPackage validate(File file, PackagePin pin) {
-        Objects.requireNonNull(file, "file");
+    public static ValidatedPackage validate(byte[] packageBytes, PackagePin pin) {
+        Objects.requireNonNull(packageBytes, "packageBytes");
         Objects.requireNonNull(pin, "pin");
-
-        Path path = file.toPath();
-        if (Files.isSymbolicLink(path)
-                || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
-            throw new IllegalArgumentException(
-                    "Pinned package input must be a regular non-symlink file");
+        if (packageBytes.length <= PackagePin.HEADER_SIZE_BYTES
+                || packageBytes.length > PackagePin.MAX_PACKAGE_SIZE_BYTES
+                || packageBytes.length != pin.size()) {
+            throw new IllegalArgumentException("Pinned package snapshot size mismatch");
         }
 
-        final long actualSize;
-        try {
-            actualSize = Files.size(path);
-        } catch (IOException exception) {
-            throw invalid("Cannot inspect pinned package", exception);
-        }
-        if (actualSize <= PackagePin.HEADER_SIZE_BYTES
-                || actualSize > PackagePin.MAX_PACKAGE_SIZE_BYTES
-                || actualSize != pin.size()) {
-            throw new IllegalArgumentException("Pinned package size mismatch");
-        }
-
-        byte[] packageBytes = new byte[(int) actualSize];
-        try (FileInputStream input = new FileInputStream(file)) {
-            int offset = 0;
-            while (offset < packageBytes.length) {
-                int read = input.read(packageBytes, offset, packageBytes.length - offset);
-                if (read < 0) {
-                    throw new IllegalArgumentException("Pinned package was truncated while reading");
-                }
-                offset += read;
-            }
-            if (input.read() != -1) {
-                throw new IllegalArgumentException("Pinned package grew while reading");
-            }
-        } catch (IOException exception) {
-            throw invalid("Cannot read pinned package", exception);
-        }
-
+        // Break caller aliasing before hashing or returning any derived view.
+        packageBytes = Arrays.copyOf(packageBytes, packageBytes.length);
         String actualSha256;
         try {
             actualSha256 =
@@ -89,9 +54,6 @@ public final class PinnedPackageValidator {
         return new ValidatedPackage(header, payload, actualSha256);
     }
 
-    private static IllegalArgumentException invalid(String message, Exception cause) {
-        return new IllegalArgumentException(message, cause);
-    }
 
     public static final class ValidatedPackage {
         private final byte[] header;

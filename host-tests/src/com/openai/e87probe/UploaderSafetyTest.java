@@ -1,9 +1,5 @@
 package com.openai.e87probe;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
@@ -22,10 +18,11 @@ public final class UploaderSafetyTest {
         testPermissionRequestFollowsValidationAndGrantStartsExactScan();
         testExistingPermissionStartsScanImmediatelyAfterValidation();
         testPermissionDenialAndDuplicateCallbacksStayClosed();
+        testFreshTransferRejectsEveryNonzeroC1Offset();
+        testC5DispositionRequiresCompletedFinalWriteOrFullC3();
         testValidPinnedPackageReturnsDefensiveHeaderAndPayload();
         testPinRejectsUnsafeOrNoncanonicalConstantsBeforeAllocation();
         testValidatorRejectsSizeHashAndHeaderMismatch();
-        testValidatorRejectsMissingDirectoryAndSymlinkInputs();
         System.out.println("UploaderSafetyTest: PASS");
     }
 
@@ -112,34 +109,72 @@ public final class UploaderSafetyTest {
         equal(0, host.scanCalls, "late callback cannot bypass denial");
     }
 
-    private static void testValidPinnedPackageReturnsDefensiveHeaderAndPayload()
-            throws IOException {
-        Path directory = Files.createTempDirectory("e87-valid-package-");
-        try {
-            Path packagePath = directory.resolve("update.bin");
-            Files.write(packagePath, VALID_PACKAGE);
-            PackagePin pin = validPin();
+    private static void testFreshTransferRejectsEveryNonzeroC1Offset() {
+        FirmwareTransferSafety.requireFreshC1Offset(0);
+        throwsIllegalArgument(
+                () -> FirmwareTransferSafety.requireFreshC1Offset(-1),
+                "negative C1 resume offset is rejected");
+        throwsIllegalArgument(
+                () -> FirmwareTransferSafety.requireFreshC1Offset(1),
+                "partial C1 resume offset is rejected");
+        throwsIllegalArgument(
+                () -> FirmwareTransferSafety.requireFreshC1Offset(8),
+                "fully staged C1 offset is rejected without package identity proof");
+    }
 
-            PinnedPackageValidator.ValidatedPackage validated =
-                    PinnedPackageValidator.validate(packagePath.toFile(), pin);
+    private static void testC5DispositionRequiresCompletedFinalWriteOrFullC3() {
+        equal(FirmwareTransferSafety.C5Disposition.REJECT,
+                FirmwareTransferSafety.c5Disposition(
+                        false, false, false, 0, VALID_PAYLOAD.length),
+                "C5 before accepted C1 is rejected");
+        equal(FirmwareTransferSafety.C5Disposition.REJECT,
+                FirmwareTransferSafety.c5Disposition(
+                        true, false, false, 0, VALID_PAYLOAD.length),
+                "C5 without a final block is rejected");
+        equal(FirmwareTransferSafety.C5Disposition.DEFER,
+                FirmwareTransferSafety.c5Disposition(
+                        true, true, false, 0, VALID_PAYLOAD.length),
+                "C5 during final fragmented write is deferred");
+        equal(FirmwareTransferSafety.C5Disposition.ACCEPT,
+                FirmwareTransferSafety.c5Disposition(
+                        true, true, true, 0, VALID_PAYLOAD.length),
+                "C5 after every final C2 callback is accepted");
+        equal(FirmwareTransferSafety.C5Disposition.DEFER,
+                FirmwareTransferSafety.c5Disposition(
+                        true, true, false, VALID_PAYLOAD.length, VALID_PAYLOAD.length),
+                "full C3 cannot bypass an incomplete final C2 write callback");
+        equal(FirmwareTransferSafety.C5Disposition.ACCEPT,
+                FirmwareTransferSafety.c5Disposition(
+                        true, true, true, VALID_PAYLOAD.length, VALID_PAYLOAD.length),
+                "C5 after full C3 and every final C2 callback is accepted");
+        equal(FirmwareTransferSafety.C5Disposition.REJECT,
+                FirmwareTransferSafety.c5Disposition(
+                        true, true, true, VALID_PAYLOAD.length + 1, VALID_PAYLOAD.length),
+                "out-of-range acknowledgement cannot accept C5");
+    }
 
-            bytes(VALID_HEADER, validated.header(), "validated header is exact");
-            bytes(VALID_PAYLOAD, validated.payload(), "validated payload is exact");
-            equal(VALID_SHA256, validated.sha256(), "validated digest is canonical");
+    private static void testValidPinnedPackageReturnsDefensiveHeaderAndPayload() {
+        PackagePin pin = validPin();
+        byte[] mutableSnapshot = VALID_PACKAGE.clone();
+        PinnedPackageValidator.ValidatedPackage validated =
+                PinnedPackageValidator.validate(mutableSnapshot, pin);
 
-            byte[] returnedHeader = validated.header();
-            byte[] returnedPayload = validated.payload();
-            returnedHeader[0] ^= 0x7F;
-            returnedPayload[0] ^= 0x7F;
-            bytes(VALID_HEADER, validated.header(), "header is defensively copied");
-            bytes(VALID_PAYLOAD, validated.payload(), "payload is defensively copied");
+        mutableSnapshot[0] ^= 0x7F;
+        mutableSnapshot[mutableSnapshot.length - 1] ^= 0x7F;
+        bytes(VALID_HEADER, validated.header(), "validated header is exact and immutable");
+        bytes(VALID_PAYLOAD, validated.payload(), "validated payload is exact and immutable");
+        equal(VALID_SHA256, validated.sha256(), "validated digest is canonical");
 
-            byte[] pinHeader = pin.header();
-            pinHeader[0] ^= 0x7F;
-            bytes(VALID_HEADER, pin.header(), "pin header is defensively copied");
-        } finally {
-            deleteTree(directory);
-        }
+        byte[] returnedHeader = validated.header();
+        byte[] returnedPayload = validated.payload();
+        returnedHeader[0] ^= 0x7F;
+        returnedPayload[0] ^= 0x7F;
+        bytes(VALID_HEADER, validated.header(), "header is defensively copied");
+        bytes(VALID_PAYLOAD, validated.payload(), "payload is defensively copied");
+
+        byte[] pinHeader = pin.header();
+        pinHeader[0] ^= 0x7F;
+        bytes(VALID_HEADER, pin.header(), "pin header is defensively copied");
     }
 
     private static void testPinRejectsUnsafeOrNoncanonicalConstantsBeforeAllocation() {
@@ -168,63 +203,26 @@ public final class UploaderSafetyTest {
                 "header declared length must equal package size minus header");
     }
 
-    private static void testValidatorRejectsSizeHashAndHeaderMismatch() throws IOException {
-        Path directory = Files.createTempDirectory("e87-invalid-package-");
-        try {
-            Path packagePath = directory.resolve("update.bin");
+    private static void testValidatorRejectsSizeHashAndHeaderMismatch() {
+        throwsIllegalArgument(
+                () -> PinnedPackageValidator.validate(
+                        Arrays.copyOf(VALID_PACKAGE, VALID_PACKAGE.length + 1), validPin()),
+                "wrong snapshot size fails before parsing");
 
-            Files.write(packagePath, Arrays.copyOf(VALID_PACKAGE, VALID_PACKAGE.length + 1));
-            throwsIllegalArgument(
-                    () -> PinnedPackageValidator.validate(packagePath.toFile(), validPin()),
-                    "wrong file size fails before parsing");
+        byte[] changedPayload = VALID_PACKAGE.clone();
+        changedPayload[changedPayload.length - 1] ^= 0x01;
+        throwsIllegalArgument(
+                () -> PinnedPackageValidator.validate(changedPayload, validPin()),
+                "wrong digest is rejected");
 
-            byte[] changedPayload = VALID_PACKAGE.clone();
-            changedPayload[changedPayload.length - 1] ^= 0x01;
-            Files.write(packagePath, changedPayload);
-            throwsIllegalArgument(
-                    () -> PinnedPackageValidator.validate(packagePath.toFile(), validPin()),
-                    "wrong digest is rejected");
-
-            byte[] changedHeader = VALID_PACKAGE.clone();
-            changedHeader[3] ^= 0x01;
-            Files.write(packagePath, changedHeader);
-            PackagePin matchingDigestWrongHeader =
-                    new PackagePin(changedHeader.length, sha256(changedHeader), VALID_HEADER);
-            throwsIllegalArgument(
-                    () -> PinnedPackageValidator.validate(
-                            packagePath.toFile(), matchingDigestWrongHeader),
-                    "exact 27-byte header mismatch is rejected even with matching digest");
-        } finally {
-            deleteTree(directory);
-        }
-    }
-
-    private static void testValidatorRejectsMissingDirectoryAndSymlinkInputs()
-            throws IOException {
-        Path directory = Files.createTempDirectory("e87-path-policy-");
-        try {
-            Path missing = directory.resolve("missing.bin");
-            throwsIllegalArgument(
-                    () -> PinnedPackageValidator.validate(missing.toFile(), validPin()),
-                    "missing input is rejected");
-            throwsIllegalArgument(
-                    () -> PinnedPackageValidator.validate(directory.toFile(), validPin()),
-                    "directory input is rejected");
-
-            Path real = directory.resolve("real.bin");
-            Path link = directory.resolve("link.bin");
-            Files.write(real, VALID_PACKAGE);
-            try {
-                Files.createSymbolicLink(link, real.getFileName());
-                throwsIllegalArgument(
-                        () -> PinnedPackageValidator.validate(link.toFile(), validPin()),
-                        "symbolic-link input is rejected");
-            } catch (UnsupportedOperationException | SecurityException exception) {
-                // The production check is still exercised on platforms supporting symlinks.
-            }
-        } finally {
-            deleteTree(directory);
-        }
+        byte[] changedHeader = VALID_PACKAGE.clone();
+        changedHeader[3] ^= 0x01;
+        PackagePin matchingDigestWrongHeader =
+                new PackagePin(changedHeader.length, sha256(changedHeader), VALID_HEADER);
+        throwsIllegalArgument(
+                () -> PinnedPackageValidator.validate(
+                        changedHeader, matchingDigestWrongHeader),
+                "exact 27-byte header mismatch is rejected even with matching digest");
     }
 
     private static PackagePin validPin() {
@@ -252,15 +250,6 @@ public final class UploaderSafetyTest {
         byte[] out = Arrays.copyOf(first, first.length + second.length);
         System.arraycopy(second, 0, out, first.length, second.length);
         return out;
-    }
-
-    private static void deleteTree(Path root) throws IOException {
-        if (!Files.exists(root)) return;
-        try (java.util.stream.Stream<Path> paths = Files.walk(root)) {
-            paths.sorted(java.util.Comparator.reverseOrder())
-                    .map(Path::toFile)
-                    .forEach(File::delete);
-        }
     }
 
     private static void equal(Object expected, Object actual, String message) {
