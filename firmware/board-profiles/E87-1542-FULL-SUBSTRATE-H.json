@@ -1,0 +1,48 @@
+{
+  "boot": {
+    "applicationTask": "app_core",
+    "explicitCalls": [
+      "app_var_init",
+      "board_init",
+      "wdt_init",
+      "e87_app_start",
+      "e87_app_dispatch_forever"
+    ],
+    "genericInitcalls": [],
+    "immutableSetupArchSeam": "RETAINED_SDFILE_SYSCFG_UNTIL_DEDICATED_SETUP_PATCH"
+  },
+  "evidence": {
+    "mapContract": "firmware/evidence/full/link-closure.json",
+    "validator": "firmware/tools/validate-full-map.py"
+  },
+  "excludedUntilNamedIntegration": [
+    "panel",
+    "gpu-dbi",
+    "bluetooth",
+    "rcsp",
+    "charger",
+    "generic-initcalls",
+    "stock-app-modes",
+    "stock-ui",
+    "audio",
+    "application-filesystem-route",
+    "update-engine"
+  ],
+  "memory": {
+    "bufferBytes": 21600,
+    "bufferEnd": 1270368,
+    "bufferStart": 1248768,
+    "minimumHeapBytes": 32768,
+    "psramBytes": 0,
+    "ramTop": 1273856,
+    "reservedBytes": 24576,
+    "reservedEnd": 1273344,
+    "reservedStart": 1248768,
+    "slackBytes": 2976,
+    "updateStart": 1273344
+  },
+  "profileId": "E87-1542-FULL-SUBSTRATE-H",
+  "schemaVersion": 1,
+  "sdkCommit": "d0167685d032d745d88fe50233302edd46941622",
+  "status": "LINK_SUBSTRATE_ONLY"
+}
