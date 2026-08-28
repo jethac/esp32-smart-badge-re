@@ -68,6 +68,8 @@ class Stage0MapValidatorTests(unittest.TestCase):
         self.map_bytes = self.make_map()
         self.elf_bytes = b"synthetic linked stage0 ELF\n"
         self.resolution_bytes = (
+            b"objs/apps/common/update/update.c.o\n"
+            b"-r=objs/apps/common/update/update.c.o,update_result_get,plx\n"
             b"objs/apps/watch/e87/e87_stage0_app.c.o\n"
             b"-r=objs/apps/watch/e87/e87_stage0_app.c.o,btstack_init,l\n"
             b"cpu/br35/liba/btstack.a.llvm.1.btstack_task.c\n"
@@ -242,6 +244,15 @@ class Stage0MapValidatorTests(unittest.TestCase):
         artifact["mapSize"] = len(self.map_bytes)
         self.write_evidence()
 
+    def rewrite_resolution(self, old: bytes, new: bytes) -> None:
+        self.resolution_bytes = self.resolution_path.read_bytes().replace(old, new)
+        self.resolution_path.write_bytes(self.resolution_bytes)
+        artifact = self.evidence["qualificationArtifact"]
+        assert isinstance(artifact, dict)
+        artifact["resolutionSha256"] = sha256(self.resolution_bytes)
+        artifact["resolutionSize"] = len(self.resolution_bytes)
+        self.write_evidence()
+
     def test_valid_exact_map_and_archive_bytes_are_accepted(self) -> None:
         result = self.run_validator()
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -325,6 +336,21 @@ class Stage0MapValidatorTests(unittest.TestCase):
         result = self.run_validator()
         self.assertEqual(result.returncode, 2)
         self.assertIn("disabled update", result.stderr)
+
+    def test_disabled_update_owner_is_exact(self) -> None:
+        self.rewrite_map(
+            b"0x4 cpu/br35/tools/sdk.elf.o\n",
+            b"0x4 cpu/br35/tools/rogue.elf.o\n",
+        )
+        result = self.run_validator()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("disabled update", result.stderr)
+
+    def test_disabled_update_resolution_provider_is_exact(self) -> None:
+        self.rewrite_resolution(b"update_result_get,plx\n", b"update_result_get,lx\n")
+        result = self.run_validator()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("disabled update provider", result.stderr)
 
     def test_archive_bytes_are_hash_verified(self) -> None:
         (self.sdk / "cpu/br35/liba/btstack.a").write_bytes(b"drift\n")
