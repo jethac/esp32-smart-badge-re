@@ -1,6 +1,11 @@
 #include "e87/e87_power_policy.h"
 
+#include <limits.h>
 #include <stddef.h>
+
+/* Pinned GCC-11/pi32 E87 ABI: bool is one 8-bit byte encoded as 0 or 1. */
+_Static_assert(CHAR_BIT == 8, "E87 requires 8-bit bytes");
+_Static_assert(sizeof(bool) == 1U, "E87 requires one-byte bool");
 
 static bool valid_state(enum e87_power_state state)
 {
@@ -168,13 +173,13 @@ static enum e87_power_result wait_classification_step(
 static bool valid_charge_snapshot(
     const struct e87_charge_snapshot *snapshot)
 {
-    uint8_t online_byte;
+    unsigned char online_byte;
 
     if (snapshot == 0) {
         return false;
     }
-    online_byte = *((const uint8_t *)&snapshot->external_power_online);
-    return online_byte <= UINT8_C(1) && valid_charge_phase(snapshot->phase);
+    online_byte = *((const unsigned char *)&snapshot->external_power_online);
+    return online_byte <= 1U && valid_charge_phase(snapshot->phase);
 }
 
 static bool equal_charge_snapshot(
