@@ -19,9 +19,12 @@ PATCH_TARGETS = {
     "SDK/build/genFileList.c",
     "SDK/build/Makefile.mk",
     "SDK/cpu/br35/sdk_ld.c",
+    "SDK/cpu/br35/power/power_app.c",
 }
 REQUIRED_TARGET_SOURCES = {
     "apps/common/debug/debug.c",
+    "apps/common/debug/debug_uart_config.c",
+    "apps/common/perf_counter/perf_counter.c",
     "apps/common/update/update.c",
     "apps/watch/app_main.c",
     "apps/watch/board/br35/board_e87_1542/board_e87_1542.c",
@@ -35,6 +38,8 @@ REQUIRED_TARGET_SOURCES = {
     "apps/watch/log_config/lib_driver_config.c",
     "apps/watch/log_config/lib_system_config.c",
     "cpu/br35/setup.c",
+    "cpu/br35/power/power_app.c",
+    "cpu/config/lib_power_config.c",
     "cpu/power/msg.c",
 }
 REQUIRED_TARGET_ARCHIVES = {
@@ -45,6 +50,10 @@ REQUIRED_TARGET_ARCHIVES = {
     "cpu/br35/liba/libc.a",
     "cpu/br35/liba/cbuf.a",
     "cpu/br35/liba/cfg_tool.a",
+    "cpu/br35/liba/crypto_toolbox_Osize.a",
+    "cpu/br35/liba/fs.a",
+    "cpu/br35/liba/lib_ccm_cipher.a",
+    "cpu/br35/liba/vm.a",
 }
 FORBIDDEN_TARGET_SOURCES = {
     "apps/watch/mode/bt/bt.c",
@@ -92,7 +101,7 @@ class Stage0StaticTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.patch = read(PATCH)
 
-    def test_patch_touches_only_the_six_frozen_sdk_targets(self) -> None:
+    def test_patch_touches_only_the_seven_frozen_sdk_targets(self) -> None:
         targets = set(
             re.findall(r"^diff --git a/(\S+) b/\1$", self.patch, re.M)
         )
@@ -232,8 +241,32 @@ class Stage0StaticTests(unittest.TestCase):
         source = read(policy)
         self.assertIn("const int CONFIG_CPU_UNMASK_IRQ_ENABLE = 0;", source)
         self.assertIn("const u8 btstack_emitter_support = 0;", source)
+        self.assertIn("const u8 adt_profile_support = 0;", source)
+        self.assertIn(
+            "const struct btif_item btif_table[] = {{0, 0}};", source
+        )
+        self.assertIn(
+            "const int vm_max_page_align_size_config = TCFG_VM_SIZE;", source
+        )
+        self.assertIn(
+            "const int vm_max_sector_align_size_config = TCFG_VM_SIZE;", source
+        )
         self.assertNotIn("config_stack_modules", source)
         self.assertNotRegex(source, re.compile(r"^[A-Za-z_].*\([^;]*\)\s*\{", re.M))
+
+    def test_stage0_power_flow_does_not_program_an_unproven_longpress_pin(self) -> None:
+        target = "SDK/cpu/br35/power/power_app.c"
+        self.assertIn(f"diff --git a/{target} b/{target}\n", self.patch)
+        section = patch_section(self.patch, target)
+        self.assertRegex(
+            section,
+            re.compile(
+                r"^\+#ifndef CONFIG_BOARD_E87_1542_STAGE0_H\n"
+                r" gpio_longpress_pin0_reset_config\(PINR_DEFAULT_IO, 0, 0, 1, 1\);\n"
+                r"\+#endif$",
+                re.M,
+            ),
+        )
 
 
     def test_generated_file_list_has_a_closed_stage0_branch(self) -> None:
@@ -291,6 +324,16 @@ class Stage0StaticTests(unittest.TestCase):
             "app_version_check",
         ):
             self.assertNotIn(forbidden, branch)
+        self.assertRegex(
+            branch,
+            re.compile(
+                r"int eSystemConfirmStopStatus\(void\)\n"
+                r"\{\n"
+                r"    return 0;\n"
+                r"\}",
+                re.M,
+            ),
+        )
 
     def test_app_config_disables_every_externally_visible_stock_route(self) -> None:
         added = added_section(self.patch, "SDK/apps/watch/include/app_config.h")
