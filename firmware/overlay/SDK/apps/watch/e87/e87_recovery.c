@@ -57,11 +57,11 @@ static bool emit_command(struct e87_recovery_fsm *fsm,
         fsm->private_port.emit(fsm->private_port.context, command);
 
     if (accepted) {
-        if (command == E87_RECOVERY_COMMAND_DISARM_PB08_RESET) {
+        if (command == E87_RECOVERY_COMMAND_DISARM_KEY_RESET) {
             fsm->private_reset_ownership =
                 E87_RESET_OWNERSHIP_DISARMED;
         } else if (command ==
-                   E87_RECOVERY_COMMAND_ARM_PB08_RESET_16S) {
+                   E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S) {
             fsm->private_reset_ownership =
                 E87_RESET_OWNERSHIP_ARMED;
         }
@@ -80,7 +80,7 @@ static enum e87_recovery_result arm_then_maintenance(
     struct e87_recovery_fsm *fsm)
 {
     if (!emit_command(fsm,
-                      E87_RECOVERY_COMMAND_ARM_PB08_RESET_16S)) {
+                      E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S)) {
         return enter_fail_safe(fsm);
     }
     if (!emit_command(fsm,
@@ -111,7 +111,7 @@ static enum e87_recovery_result fail_safe_step(
     fsm->private_state = E87_RECOVERY_STATE_FAIL_SAFE_WAIT_RELEASE;
     if (is_released(event->key)) {
         if (!emit_command(fsm,
-                          E87_RECOVERY_COMMAND_ARM_PB08_RESET_16S)) {
+                          E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S)) {
             return E87_RECOVERY_RESULT_FAIL_SAFE_WAITING;
         }
         fsm->private_state = E87_RECOVERY_STATE_FAIL_SAFE_REARMED;
@@ -128,14 +128,14 @@ static enum e87_recovery_result boot_step(
 {
     fsm->private_reset_ownership = E87_RESET_OWNERSHIP_UNKNOWN;
     if (!emit_command(fsm,
-                      E87_RECOVERY_COMMAND_DISARM_PB08_RESET)) {
+                      E87_RECOVERY_COMMAND_DISARM_KEY_RESET)) {
         fsm->private_state = E87_RECOVERY_STATE_ERROR;
         return E87_RECOVERY_RESULT_ERROR;
     }
 
     if (event->reset_cause != E87_RESET_CAUSE_P33_PPINR) {
         if (!emit_command(fsm,
-                          E87_RECOVERY_COMMAND_ARM_PB08_RESET_16S)) {
+                          E87_RECOVERY_COMMAND_ARM_KEY_RESET_16S)) {
             return enter_fail_safe(fsm);
         }
         fsm->private_state = E87_RECOVERY_STATE_NORMAL;
@@ -158,7 +158,7 @@ static enum e87_recovery_result healthy_step(
     fsm->private_release_latched = is_released(event->key);
 
     if (!emit_command(fsm,
-                      E87_RECOVERY_COMMAND_DISARM_PB08_RESET)) {
+                      E87_RECOVERY_COMMAND_DISARM_KEY_RESET)) {
         fsm->private_state = E87_RECOVERY_STATE_ERROR;
         return E87_RECOVERY_RESULT_ERROR;
     }
