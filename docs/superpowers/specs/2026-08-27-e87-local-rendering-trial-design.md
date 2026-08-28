@@ -85,16 +85,32 @@ The deliverables are:
   validated 657-byte initialization list. Bus mode, pin mapping, timing,
   orientation, byte order, and window offsets still require reconstruction and
   sacrificial-hardware validation before a display build is flashed.
-- Both user buttons are decoded through one PB08 ADC resistor ladder in the
-  model-1552 target configuration. A two-button chord aliases button 1 in the
-  stock logical decoder, so the shipping recovery gesture will not use a chord.
-- The model-1552 artifact contains two sequential owners of the same PINR0 reset
-  facility: packaged `isd_config.ini` sets `RESET = PB07_08_0` for the
-  boot/pre-application window; early SDK startup disables it; then
-  `cfg_tool.bin` makes the PB08 ADC key driver arm an eight-second reset. The
-  custom package disables the PB07 phase unless later board tracing proves it
-  is required, and configures the PB08 runtime phase explicitly as described
-  below.
+- Both user buttons are decoded through one PB07 ADC resistor ladder in the
+  model-1552 target configuration. This is **PROVEN for the decoded model-1552
+  artifact and UNVERIFIED for the physical model-1542**: the packed config-item
+  header at `cfg_tool.bin +0x34` decodes to `CFG_ADKEY_ID = 0x20B`, length 20;
+  `syscfg_id.h:272-276` identifies that ID and `adkey_config.c:13-28` puts
+  `u16 io_uuid` first in its payload. The payload begins at `+0x38` with
+  `io_uuid = 0x4F49`, and the pinned
+  `gpio_file_parse.c:60-65` maps `0x4F49` to `IO_PORTB_07`; `0x4F4A` is PB08.
+  The target app contains the same `{0x17, 0x4F49}` / `{0x18, 0x4F4A}` mapping,
+  and the BR35 GPADC header defines the special `AD_CH_IO_PB7` channel but no
+  PB08 counterpart. The pinned `adc_io2ch()` returns
+  `AD_CH_PMU_PADC0` / `0x0002030D` for PB07 and `UINT32_MAX` for PB08. Board
+  code requires exact equality with its allowed 32-bit channel; it never uses
+  stock's stale `!= 0xFF` validity test. A two-button chord aliases button 1 in
+  the stock logical decoder, so the shipping recovery gesture will not use a
+  chord.
+- The model-1552 artifact contains two sequential configurations of the same
+  PB07 PINR0 facility: packaged `isd_config.ini` sets
+  `RESET = PB07_08_0` for the boot/pre-application window; early SDK startup
+  disables it; then the PB07 AD-key record makes stock key initialization arm
+  an eight-second reset. The custom-package contract requires
+  `RESET = PB07_00_0;` (time `00`, disabled), and the board adapter must
+  directly arm PB07 PINR0 for 16 seconds at runtime. The package tool does not
+  encode a 16-second value. Produced artifacts must prove both settings.
+  Physical model-1542 applicability remains **UNVERIFIED** until the PB07-only
+  ADC probe.
 - The current vendor layout and OTA chain are single-bank. JieLi's guidance does
   not support switching a deployed image from single-bank to dual-bank through
   OTA because that changes the partition/boot contract. This trial preserves
@@ -147,7 +163,8 @@ packets are safe and idempotent.
 
 The badge application contains five isolated modules:
 
-- `board`: clocks, PB08 ADC key input, battery input, JD9855 display, backlight,
+- `board`: clocks, board-profile ADC key input (PB07 in the decoded model-1552
+  profile), battery input, JD9855 display, backlight,
   sleep, watchdog, and reset-source handling;
 - `renderer`: strip-based RGB565 face and transient status overlays;
 - `state`: validated RAM-only provider values and visible-mode state machine;
@@ -298,10 +315,11 @@ protection.
 
 The user-facing controls are named `Sync/Pair` (button 1) and `Sleep` (button
 2). Their physical left/right positions and mapping to ADC key0/key1 are a board
-profile value measured before flashing the interactive build; code does not
-hard-code the currently inferred mapping. The Sync/Pair button is timed from
-stable raw PB08 samples rather than stock LONG/HOLD events. One monotonic timer
-survives the transition into pairing mode.
+profile value measured before flashing the interactive build; pure state-machine
+code does not hard-code a GPIO. The Sync/Pair button is timed from stable raw
+samples from the measured board profile (PB07 for decoded model 1552), rather
+than stock LONG/HOLD events. One monotonic timer survives the transition into
+pairing mode.
 
 - Release before 3.0 seconds: treat as a tap and show the battery overlay.
 - Cross 3.0 seconds: fire pairing exactly once and continue timing while held.
@@ -311,7 +329,7 @@ survives the transition into pairing mode.
 - Any release between 3.0 and 10.0 seconds leaves the 60-second pairing window
   active but cancels maintenance entry.
 
-At the 10-second event the firmware disables the pending PB08 pin-reset timer,
+At the 10-second event the firmware disables the pending PB07 pin-reset timer,
 waits for button release while feeding the watchdog, re-arms the 16-second
 fallback, and enters the application-side RCSP maintenance service. Pairing
 advertisements and the normal metrics service are shut down first. This state is
@@ -320,20 +338,34 @@ exchange described in section 9.
 
 ### 7.2 Hardware reset and early recovery
 
-The custom board configuration disables the packaged PB07 eight-second reset
-unless physical tracing establishes a required purpose for PB07. Immediately
-after the early SDK reset handoff, it arms PB08 at 16 seconds instead of letting
-the stock ADC-key initialization arm PB08 at 8 seconds.
+The custom-package contract sets the generated reset time to `00`, so its
+`isd_config.ini` contains disabled `RESET = PB07_00_0;` rather than an
+eight-second boot/pre-application reset. Immediately after `boot_power_init()`,
+firmware records the reset cause, explicitly disables PINR0, and takes the
+early-recovery branch before filesystem, resource, display, or normal BLE
+startup. On an ordinary boot, custom code directly arms PB07 PINR0 at 16
+seconds; it does not let stock AD-key initialization install the model-1552
+eight-second policy. Runtime 16 seconds is used because the PINR implementation
+accepts it even though the package RESET grammar only accepts `00/01/02/04/08`.
+The measured-profile board adapter uses
+`gpio_longpress_pin0_reset_config(IO_PORTB_07, 0, 16, 1, 1)`; the inspected
+implementation encodes active-low, `release = 1` PINR16 as `0x43`.
+The adapter exact-allowlists the implementation's explicit 1/2/4/8/16-second
+mappings. Time 0 disables PINR0 and `UINT32_MAX` leaves it unchanged; other
+values outside the explicit set are not generally rejected and can fall through
+to a raw shift.
 
 If a healthy runtime handles the 10-second event, it enters update mode normally.
-If the runtime is hung, holding button 1 reaches the 16-second PB08 hardware reset.
+If the runtime is hung, holding button 1 reaches the 16-second PB07 hardware reset.
 On the next boot, the earliest application path records and tests
 `P33_PPINR_RST`; that reset cause bypasses normal resources and enters the
-application-side maintenance service directly. PB08 PINR stays disarmed until
+application-side maintenance service directly. PB07 PINR stays disarmed until
 the held key is released, while the watchdog is fed, to avoid another reset.
 GPIO/ADC, clocks, reset-cause recording, and watchdog feeding are the only
 prerequisites for this route. The reset-source bit records a pin-reset cause;
 the early application logic, not the hardware bit itself, selects maintenance.
+The selected key and PB07 electrical behavior are still **UNVERIFIED for the
+physical model-1542** until badge B in the hardware ladder measures them.
 
 This is soft recovery. If the image cannot execute the early hook, or boot
 metadata/bootloader code is destroyed, the buttons cannot repair it; physical
@@ -394,18 +426,25 @@ stops it.
 Battery percentage is computed locally from filtered voltage, not the separate
 curve present in `cfg_tool.bin`. The recovered model-1552 runtime takes eight
 half-VBAT readings, doubles them, sorts them, drops the minimum and maximum, and
-averages the middle six. V1 preserves that filter and starts with the runtime's
+averages the middle six. V1 preserves the target's integer arithmetic exactly:
+convert each half-VBAT reading to millivolts, sum sorted samples 1 through 6,
+then compute `filtered_mv = sum / 6` with truncating integer division. It must
+not round to nearest or use a ties-up rule. V1 starts with the runtime's
 discharge table:
 
 `3565:1, 3625:10, 3660:20, 3693:30, 3737:40, 3797:50, 3866:60, 3971:70,
 4073:80, 4188:90, 4280:100`, with zero below the first point and interpolation
-between points.
+between points. For bracket `(v0, p0)..(v1, p1)`, interpolation is
+`p0 + ((filtered_mv - v0) * (p1 - p0)) / (v1 - v0)`, again using truncating
+integer division. Exact table points remain exact; values above the last point
+clamp to 100.
 
 The target also contains a higher-voltage charging/alternate table, but the
-charger topology on the physical model-1542 is not established, so V1 does not
-pretend it has a coulomb count or reliable charging compensation. Before release,
-the discharge table and ADC scale are checked against DMM readings at several
-loads and adjusted in the board profile if measured evidence requires it.
+charger topology on the physical model-1542 is not established, so V1 uses the
+discharge table both plugged and unplugged and does not pretend it has a coulomb
+count or reliable charging compensation. Before release, the discharge table
+and ADC scale are checked against DMM readings at several loads and adjusted in
+the board profile if measured evidence requires it.
 
 The battery overlay uses the calibrated voltage-derived integer percentage and
 separately shows the hardware charging/full state with the `bolt` glyph. It does
@@ -502,9 +541,9 @@ validated wired/programmer migration; it is outside this trial.
 - Java tests for the exact eight-byte state codec, boundary values, malformed
   packets, and idempotent resend behavior.
 - Firmware C tests for packet validation, atomic state commit, the 3/7/10/16
-  timing state machine, reset-source routing, battery interpolation, maintenance
-  entry, every pre-loader abort path, and all combinations of external power and
-  `manual_sleep`.
+  timing state machine, reset-source routing, truncating battery average and
+  interpolation, maintenance entry, every pre-loader abort path, and all
+  combinations of external power and `manual_sleep`.
 - Golden renders for 0, 1, 50, 99, and 100 percent on both rings, plus battery,
   pairing, countdown, and update screens. Pixel tests check fixed icons,
   clockwise geometry, round caps, clipping, and credit formatting.
@@ -518,34 +557,52 @@ validated wired/programmer migration; it is outside this trial.
   proves that charger events cannot select `ID_WINDOW_BATCHARGE` or
   `IDLE_MODE_CHARGE` in the E87 application.
 
-### Charged sacrificial-badge ladder
+### Charged five-badge hardware ladder
 
-1. Preserve an untouched reference badge and retain the strongest available
-   vendor recovery artifacts. Confirm MaskROM access before deliberate
-   interruption tests; inability to read stock flash does not block host builds.
-2. Flash a heartbeat-only build through the proven vendor transition path.
-3. Validate conservative JD9855 reset/init and solid RGB/white/black screens.
-4. Validate partial windows, orientation, color order, TE behavior, backlight,
-   panel sleep, and 100 wake cycles.
-5. Measure released/button-1/button-2/both ADC clusters across all available
-   badges; then validate tap, pairing, countdown, 10-second update, and
-   16-second hung-runtime reset-source recovery.
-6. Compare battery voltage with a DMM and validate the overlay timeout and
-   charging glyph.
-7. Test boot while plugged in, insertion/removal while awake and while manually
-   asleep, button-2 sleep/wake while charging, charge completion, and metric
-   writes throughout. Run an eight-hour plugged-in display-and-BLE soak while
-   logging current, battery voltage, enclosure/battery temperature, charger
-   state, disconnects, and unintended page or sleep transitions. Stop the test
+Assign and label the five physical badges before the first write; do not reuse a
+later-stage unit to make an earlier probe appear recoverable. Mark badge E as
+untouched before badge A is written:
+
+1. **Badge A — current heartbeat unit.** Flash only the nonconnectable BLE
+   heartbeat image through the proven vendor transition path. It contains no
+   display, key, battery, filesystem, or recovery behavior. Prove boot,
+   advertisement identity/build tag, cadence, and watchdog restart.
+2. **Badge B — PB07 ADC telemetry unit.** Flash a one-input lab image that
+   configures only PB07 and publishes raw released/button-1/button-2/both
+   samples plus the full 32-bit channel value in nonconnectable advertisements.
+   Require exact `AD_CH_PMU_PADC0` equality before sampling. Measure clusters
+   and noise before assigning physical buttons or enabling a long hold. Do not
+   probe PB08 as an ADC substitute: the pinned model-1552 mapping and GPADC
+   surface select PB07.
+3. **Badge C — JD9855 display unit.** Flash the conservative panel probe only
+   after badge A boots. Validate reset/init and solid red/green/blue/white/black
+   fills, then aligned partial windows, orientation, color order, TE behavior,
+   backlight, panel sleep, and 100 wake cycles. It does not enable buttons,
+   normal GATT, or recovery gestures.
+4. **Badge D — full/recovery candidate.** Build the measured PB07 board profile
+   from badge B and the display profile from badge C, then validate tap,
+   pairing, countdown, 10-second maintenance, direct runtime PB07 PINR16, and
+   the `P33_PPINR_RST` early route. Compare battery voltage with a DMM; validate
+   truncating percentage arithmetic, overlay timeout, and charging glyph. Bond
+   the Redmi, send boundary metric packets, disconnect/reconnect silently, and
+   verify no receiving graphic appears.
+5. **Badge E — untouched reference.** Never flash it. Retain the strongest
+   available vendor recovery artifacts and benign identity observations.
+   Inability to read stock flash does not block host builds, but deliberate
+   interruption tests still require confirmed MaskROM access or another proven
+   restore route.
+6. On badge D, test boot while plugged in, insertion/removal while awake and
+   manually asleep, button-2 sleep/wake while charging, charge completion, and
+   metric writes throughout. Run an eight-hour plugged-in display-and-BLE soak
+   while logging current, battery voltage, enclosure/battery temperature,
+   charger state, disconnects, and unintended page or sleep transitions. Stop
    immediately on abnormal heat, charge-current behavior, swelling, or odor.
-8. Bond the Redmi, send boundary metric packets, disconnect/reconnect silently,
-   and verify no receiving graphic appears.
-9. Enter update mode physically and exercise every pre-loader cancel point.
-   After preserving a sacrificial recovery route, interrupt a loader transfer,
-   rediscover its update advertisement, resume the same artifact, and boot it.
-10. Complete a second single-bank rewrite from the newly installed application
-   to prove the staged maintenance path is genuinely reusable.
-11. Repeat normal sync and update tests on the Z Fold 7 after Redmi validation.
+7. On badge D, exercise every pre-loader cancel point. Only after preserving a
+   recovery route, interrupt a loader transfer, rediscover its update
+   advertisement, resume the same artifact, boot it, and complete a second
+   single-bank rewrite to prove the staged path is reusable.
+8. Repeat normal sync and update tests on the Z Fold 7 only after badge D passes
+   Redmi validation. Badge E remains untouched throughout.
 
 Any failure stops the ladder at that stage. Results, hashes, current draw,
 photos, and captured BLE traces are appended to the firmware authoring guide or

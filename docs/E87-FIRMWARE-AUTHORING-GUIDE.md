@@ -8,7 +8,8 @@ AC707N/BR35 baseline instead of repeating the earlier AC697/BR30 hypothesis.
 This is an engineering guide, not a claim that every badge sold as E87 has the
 same PCB.
 
-**Evidence date:** 2026-08-27. The exact stock model-1542 image has not been
+**Evidence date:** 2026-08-27, with the PB07/PINR and integer battery-arithmetic
+correction recorded 2026-08-28. The exact stock model-1542 image has not been
 recovered. The model-1552 reference image has been decoded and has booted on the
 test badge, but its product resources are visibly wrong for that unit.
 
@@ -390,7 +391,7 @@ Bonding policy (**PROPOSED**):
 
 ### 8.1 Model-1552 AD-key evidence
 
-The decoded target configuration uses one PB08 ADC ladder (**PROVEN for the
+The decoded target configuration uses one PB07 ADC ladder (**PROVEN for the
 model-1552 artifact, UNVERIFIED for an untouched model-1542**):
 
 - pull-up setting: 1000 schema units;
@@ -408,11 +409,39 @@ Evidence:
 
 - `C:\Users\jetha\Downloads\e87-reversing\firmware-catalog\jl-misctools-runs\1552\unpacked\files\cfg_tool.bin`,
   SHA-256 `CEC4551FA08F3ED70225095ACBD6CD5584E5EAB9CA418ED37F27102F66CD6833`.
-- The AD-key record header is `CFG_ADKEY_ID = 0x0142` at `cfg_tool.bin +0x36`;
-  this is **not** the pin UUID. Its actual `io_uuid = 0x4F49` is at `+0x38`.
-  The target `uuid2gpio` table maps that value to GPIO `0x18`, PB08. The record
-  also carries pull-up 1000, ADC maximum 4096, `long_press_enable = 1`,
-  `long_press_time = 8`, and resistors 100/330.
+- The packed four-byte config-item header begins at `cfg_tool.bin +0x34` as
+  `53 0B 42 01`. Decoding its bitfields yields CRC `0x53`, item ID `0x20B`
+  (`CFG_ADKEY_ID`), and payload length 20. The tempting little-endian `0x0142`
+  at `+0x36` straddles the packed ID/length fields and is **not** the item ID.
+  The 8/12/12-bit layout is recovered from DWARF for
+  `cfg_tool.a(cfg_bin.c.o)` (`cfg_common.h:14-18`), member SHA-256
+  `DA5CEBB2B82A3CA1FD90FE8048D9BA0226FCD5916AE65D3B4EFB104689D4E25A`.
+  `SDK/interface/utils/syscfg_id.h:272-276` identifies decimal 523/`0x20B` as
+  `CFG_ADKEY_ID`; `SDK/apps/watch/board/adkey_config.c:13-28` defines
+  `struct adkey_info` with `u16 io_uuid` first. The payload begins at `+0x38`;
+  its first `u16` is therefore `io_uuid = 0x4F49`.
+  The pinned `SDK/cpu/config/gpio_file_parse.c:60-65` maps `0x4F49` to
+  `IO_PORTB_07`; `0x4F4A`, not `0x4F49`, maps to `IO_PORTB_08`.
+  `SDK/interface/driver/cpu/br35/asm/gpio_hw.h:8,32-33` evaluates those GPIOs
+  to `0x17` and `0x18`, respectively. The record also carries pull-up 1000,
+  ADC maximum 4096, `long_press_enable = 1`, `long_press_time = 8`, and
+  resistors 100/330. The pinned `gpio_file_parse.c` SHA-256 is
+  `7A57FC99B81C7904EFB2803A1A8F917DF6DBDAEC879F0CE8DE9A63E22E6CB661`.
+- Model-1552 `app.bin`, SHA-256
+  `A38B77E27B1DC73CAE0FBD8A7C4E3A04C64FF393FB4F27BC92A7578336BE0147`,
+  contains the compiled adjacent mapping pairs
+  `{0x0017, 0x4F49}, {0x0018, 0x4F4A}` at file offset `0xD2778`.
+- `SDK/interface/driver/cpu/br35/asm/gpadc_hw.h:151-159` defines the BR35
+  special ADC alias `AD_CH_IO_PB7 = AD_CH_PMU_PADC0`; the pinned interface has
+  no `AD_CH_IO_PB8` counterpart. In the pinned `adc_io2ch()` implementation,
+  PB07 returns `AD_CH_PMU_PADC0` / `0x0002030D`, while PB08 falls through to
+  `UINT32_MAX`. The implementation is `cpu.a(gpadc_hw.c.o)`, member SHA-256
+  `F30D89BDF4198CC0BC2E3F545E01490F0FF7F6F21E605E486AA738C4BD804EB9`.
+  This independently rejects the old PB08 ADC interpretation.
+  Because the API returns `u32` and stock code contains a stale `0xFF`
+  comparison, custom code must require equality with the board profile's exact
+  allowed channel; neither `!= 0xFF` nor merely `!= UINT32_MAX` is a valid
+  acceptance test. Keep diagnostic channel fields 32-bit.
 - The pinned official
   [`adkey_config.c:148-161`](https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200/-/blob/d0167685d032d745d88fe50233302edd46941622/SDK/apps/watch/board/adkey_config.c#L148-161)
   reads the target record, maps `io_uuid` through `uuid2gpio()`, and copies its
@@ -422,7 +451,7 @@ Evidence:
   [`adkey.c:80-82`](https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200/-/blob/d0167685d032d745d88fe50233302edd46941622/SDK/apps/common/device/key/adkey.c#L80-82)
   passes `__this->adkey_pin` to
   `gpio_longpress_pin0_reset_config()`. For this decoded target record, that is
-  PB08, active low, 8 seconds, immediate release, with a 100 kOhm pull-up mode.
+  PB07, active low, 8 seconds, immediate release, with a 100 kOhm pull-up mode.
 - Stock app AD scan parameter block at raw app offset `0xEFEFC`, flat address
   `0x0C0EFFFC`, pointing to RAM `0x0010767C`.
 
@@ -433,27 +462,29 @@ until measured on the physical board**.
 is the upper/lower or otherwise labeled physical button is **UNVERIFIED** and
 must be recorded during the raw-ADC bench test before assigning user gestures.
 
-### 8.2 Reset-layer reconciliation: PB07 is not the AD ladder
+### 8.2 Reset-layer reconciliation: PB07 owns both decoded phases
 
 There are two reset configuration surfaces in the decoded model-1552 image.
 They must be reviewed independently:
 
 | Layer | Exact artifact evidence | Conclusion |
 |---|---|---|
-| Package/post-build | `C:\Users\jetha\Downloads\e87-reversing\firmware-catalog\extracted\e87-11.1.0.2\items\04_isd_config.ini`, SHA-256 `CEC1973E50FB7A3D74D04D6340C671A443D50C538C272E1B14567C71F9AED47A`, line 101: `RESET = PB07_08_0;`; no `RESET1` entry is present. | **PROVEN for model 1552:** the packed image requests PINR0 on PB07, 8 seconds, active low, during boot/pre-application setup. This is not evidence that the buttons use PB07. |
-| Early power code | [`power_app.c:136-151`](https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200/-/blob/d0167685d032d745d88fe50233302edd46941622/SDK/cpu/br35/power/power_app.c#L136-151) calls PINR0 with time 0 before key setup. | **PROVEN source fact:** early application power setup disables the package-established PINR0 owner; it does not create a second concurrent PB07/PB08 reset channel. |
-| Application AD-key record | The `cfg_tool.bin` record above selects PB08 and enables 8-second long press; active SDK code maps that record into `platform_data.adkey_pin`. | **PROVEN for model 1552:** later `adkey_init()` reprograms PINR0 for runtime use on PB08. |
-| Official demo fallback | [`adkey_config.c:77-90`](https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200/-/blob/d0167685d032d745d88fe50233302edd46941622/SDK/apps/watch/board/adkey_config.c#L77-90) contains a hard-coded PB07 example. | **PROVEN source fact, not target behavior:** it is inside `#if 0`; the compiled path reads `CFG_ADKEY_ID`. Citing this fallback as the target runtime pin caused the earlier PB07/PB08 conflation. |
+| Package/post-build | `C:\Users\jetha\Downloads\e87-reversing\firmware-catalog\extracted\e87-11.1.0.2\items\04_isd_config.ini`, SHA-256 `CEC1973E50FB7A3D74D04D6340C671A443D50C538C272E1B14567C71F9AED47A`, line 101: `RESET = PB07_08_0;`; no `RESET1` entry is present. | **PROVEN for model 1552:** the packed image requests PINR0 on PB07, 8 seconds, active low, during boot/pre-application setup. This line alone does not establish the AD ladder; the independent `cfg_tool.bin` plus UUID mapping above does. |
+| Early power code | [`power_app.c:136-151`](https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200/-/blob/d0167685d032d745d88fe50233302edd46941622/SDK/cpu/br35/power/power_app.c#L136-151) calls PINR0 with time 0 before key setup. | **PROVEN source fact:** early application power setup disables the package-established PINR0 owner; it does not create a second concurrent reset channel. |
+| Application AD-key record | The `cfg_tool.bin` record above selects UUID `0x4F49`, which the pinned target mapping resolves to PB07, and enables 8-second long press; active SDK code maps that record into `platform_data.adkey_pin`. | **PROVEN for model 1552:** later `adkey_init()` reprograms PINR0 for runtime use on PB07. |
+| Official demo fallback | [`adkey_config.c:77-90`](https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200/-/blob/d0167685d032d745d88fe50233302edd46941622/SDK/apps/watch/board/adkey_config.c#L77-90) contains a hard-coded PB07 example. | **PROVEN source fact, not target behavior:** it is inside `#if 0`; the compiled path reads `CFG_ADKEY_ID`. Its PB07 value happens to agree, but it is not the target proof. |
 
-PB07 and PB08 are therefore **sequential owners of PINR0, not concurrent reset
-channels**: the package owns PB07 in the boot/pre-app window, early power code
-disables PINR0, and key initialization reprograms it for PB08 at runtime. The
-pinned board defaults are
+PB07 is therefore the **sequential owner of PINR0 in both decoded phases**, not
+one half of a PB07/PB08 handoff: the package owns PB07 in the boot/pre-app
+window, early power code disables PINR0, and key initialization reprograms PB07
+at runtime. The earlier PB08 conclusion came from assigning UUID `0x4F49` the
+numeric GPIO value `0x18`; the pinned mapping proves that UUID is PB07/`0x17`.
+The pinned board defaults are
 [`CONFIG_RESET_PIN=PB07`, `TIME=08`, `LEVEL=0`](https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200/-/blob/d0167685d032d745d88fe50233302edd46941622/SDK/apps/watch/board/br35/board_ac707n_demo/board_ac707n_demo_global_build_cfg.h#L53-56),
 while
 [`isd_config_rule.c:262`](https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200/-/blob/d0167685d032d745d88fe50233302edd46941622/SDK/cpu/br35/tools/isd_config_rule.c#L262)
 states that time `00` disables the packaged policy. Audit both owners because a
-runtime PB08 change does not alter what the next cold boot package requests.
+runtime PB07 change does not alter what the next cold boot package requests.
 Corresponding model-1542 values remain **UNVERIFIED**.
 
 For a custom image, choose and verify one of these policies:
@@ -462,15 +493,27 @@ For a custom image, choose and verify one of these policies:
   `CONFIG_RESET_TIME=00` (or its tool-version equivalent), set the AD-key
   `long_press_enable=0`, and inspect both the generated `isd_config.ini` and
   packed `cfg_tool.bin`. Disabling only one layer is incomplete.
-- **Proposed staged 3/10/16-second design:** disable the inherited PB07 package
-  reset with `CONFIG_RESET_TIME=00`; prevent the stock 8-second AD-key setup
-  (`long_press_enable=0`) unless the generated record itself is deliberately
-  changed to 16 seconds; then have custom code explicitly own PB08 PINR at 16
-  seconds. Confirm the final INI, config record, call argument, and physical
-  behavior before enabling updates.
-- **Intentional PB07 reset:** retain it only after identifying what drives PB07
-  on the actual PCB and proving that it cannot interrupt the PB08 maintenance
-  gesture. Document it as a separate recovery input.
+- **Proposed staged 3/10/16-second design:** set the package producer's
+  `CONFIG_RESET_TIME=00` and verify the generated line
+  `RESET = PB07_00_0;`. Prevent the stock 8-second AD-key setup
+  (`long_press_enable=0`); then have custom code
+  directly own PB07 PINR0 at 16 seconds. The package grammar accepts only
+  `00/01/02/04/08`, while the runtime implementation in
+  `cpu.a(p33_io_pinr_v3.c.o)`, SHA-256
+  `9DE940859A03F91B2552932A17107A136916AD587B5C7035F23B3952FBD74142`,
+  explicitly maps 1, 2, 4, 8, and 16 seconds to codes 0 through 4. Other
+  values outside that set are not generally rejected: apart from time 0
+  (disable) and `UINT32_MAX` (leave unchanged), they can fall through to a raw
+  shift. The board adapter must therefore exact-allowlist those five mappings.
+  Do not try to encode runtime 16 as a package RESET token. The
+  measured-profile board adapter call is
+  `gpio_longpress_pin0_reset_config(IO_PORTB_07, 0, 16, 1, 1)`; the inspected
+  implementation encodes active-low, `release = 1` PINR16 as `0x43`.
+  Confirm the final INI, config record, runtime call argument, reset cause, and
+  physical behavior before enabling updates.
+- **Any alternate reset pin:** treat it as a new board-profile hypothesis. PB08
+  is not an alternate model-1552 ADC ladder and must not be substituted for
+  PB07 without direct model-1542 measurements.
 
 ### 8.3 Chord caveat and staged maintenance gesture
 
@@ -494,27 +537,37 @@ button, using logical raw key 0 only after its physical label has been measured:
 - continue holding: visible countdown;
 - hold 10 seconds: maintenance/update mode.
 
-Both resistor-coded buttons share the PB08 ladder, so software cannot move a
-long-press fallback from one of those buttons to the other: electrically they
-are values on the same pin. PB07 is the separate package reset setting described
-above, not a second ADC button.
+Both resistor-coded buttons share the PB07 ladder in the decoded model-1552
+profile, so software cannot move a long-press fallback from one of those buttons
+to the other: electrically they are values on the same pin. PB08 is a distinct
+GPIO mapping and has no BR35
+`AD_CH_IO_PB8` alias; it is not a second ADC button. Which pin and value bands
+apply to the physical model-1542 remains **UNVERIFIED** until badge B telemetry.
 
-The official API accepts 0 (disable), 1, 2, 4, 8, or 16 seconds, with the
-release flag causing reset at the threshold. After removing the packaged PB07
-reset, configure PB08 for 16 seconds as the normal liveness fallback. When the
-software FSM reaches its 10-second recovery threshold, immediately call the
-same API for **PB08** with time 0 before the user can reach 16 seconds. Wait for
-release, re-arm PB08 at 16 seconds, and only then enter maintenance. If recovery
-aborts, leave the fallback armed. Calling time 0 for the current PINR0 owner does
-not change a retained PB07 policy in the next packaged boot.
+The runtime implementation explicitly maps 1, 2, 4, 8, and 16 seconds; time 0
+disables PINR0 and `UINT32_MAX` leaves it unchanged. Other values outside the
+explicit set are not generally rejected and can fall through to a raw shift,
+so the board adapter must reject them. The package RESET grammar is narrower
+and accepts only `00/01/02/04/08`; it cannot express 16 seconds. After emitting
+package `RESET = PB07_00_0;` (disabled despite the syntactically retained pin
+token), configure PB07 directly through the runtime API for 16 seconds as the
+normal liveness fallback. When the software FSM reaches its 10-second recovery
+threshold, immediately call the
+same API for **PB07** with time 0 before the user can reach 16 seconds. Wait for
+release, re-arm PB07 at 16 seconds, and only then enter maintenance. If recovery
+aborts, leave the fallback armed. Runtime calls never change the RESET token in
+the next packaged boot, which is why the package must independently remain at
+time `00`.
 
-If a hung runtime never services the software FSM, the 16-second PB08 hardware
+If a hung runtime never services the software FSM, the 16-second PB07 hardware
 reset remains useful. At the earliest next application startup, record the reset
-source and, after the minimum clock/GPIO/ADC/watchdog initialization, test
-`is_reset_source(P33_PPINR_RST)`. Route that reset directly to the minimal
-recovery loop without relying on a flash flag. The reset-source bit does not
-encode which sequential PINR0 owner caused the reset, so log boot phase and raw
-button state as well. The official reset API and
+source immediately after `boot_power_init()`, explicitly disable PINR0, and test
+`is_reset_source(P33_PPINR_RST)` before filesystem/resource/display/normal-BLE
+startup. On that cause, wait for a valid released sample while feeding the
+watchdog, re-arm PB07 at 16 seconds, and route directly to the minimal recovery
+loop without relying on a flash flag. The reset-source bit does not encode the
+pin or boot phase, so log boot phase and raw button state as well. The official
+reset API and
 time values are documented in JieLi's
 [PINR reset documentation](https://doc.zh-jieli.com/AD24/zh-cn/master/PMU/softoff_powerdown/reset.html).
 
@@ -547,6 +600,10 @@ shipping curve merely because it is easy to decode.
 Target model-1552 application analysis instead finds the runtime sampler at
 `0x0C0177E6`: it takes eight readings, sorts them, discards the minimum and
 maximum, and averages the middle six (**PROVEN by target disassembly/Ghidra**).
+Preserve its integer semantics: double each half-VBAT reading into millivolts,
+sort, sum indices 1 through 6, and compute `filtered_mv = sum / 6` using
+truncating integer division. Do not round to nearest and do not add a ties-up
+bias.
 The runtime references these two piecewise tables (**PROVEN for model 1552;
 selection policy and model-1542 applicability remain UNVERIFIED**):
 
@@ -564,6 +621,14 @@ selection policy and model-1542 applicability remain UNVERIFIED**):
 | 10 | 3625 | 3795 |
 | 1 | 3565 | 3565 |
 | 0 | below 3565 | below 3565 |
+
+For an ascending bracket `(v0, p0)..(v1, p1)`, calculate
+`p0 + ((filtered_mv - v0) * (p1 - p0)) / (v1 - v0)` with truncating integer
+division. Clamp below the first point to 0 and above the last point to 100;
+exact table voltages return their exact table percentages. The alternate table
+is present, but its selection policy is not established for the physical
+model-1542. V1 therefore uses the discharge table both plugged and unplugged
+until DMM/charger measurements justify a board-profile change.
 
 Validate the divider and ADC scale with a DMM before enabling low-battery
 shutdown. Log raw ADC, calculated millivolts, DMM voltage, radio state,
@@ -733,24 +798,35 @@ all layers from the pinned build inputs.
 
 ### 11.4 Hardware verification ladder
 
-Run on a sacrificial unit in this order:
+Use five explicitly labeled units so a failed low-level probe cannot consume
+the only route to the next stage. Mark badge E untouched before writing badge A:
 
-1. Boot heartbeat and watchdog recovery, no display.
-2. Panel reset/init and static color bars at conservative clock.
-3. Aligned partial windows, then double-buffered full refresh.
-4. Backlight, panel sleep, wake, and 100-cycle repeat.
-5. Raw ADC capture and button gestures, including release/noise cases; scope
-   PB07 and PB08 separately and verify the generated package/runtime reset
-   policy before any deliberately long hold.
-6. DMM-calibrated battery read and low-voltage behavior on a current-limited
-   supply.
-7. BLE advertising, bond, reconnect, replay rejection, and semantic update.
-8. Overnight connection/sleep/current test.
-9. Exercise every pre-loader cancel plus the loader's reconnect/resume path;
-   deliberately interrupt destructive programming only after a verified restore
-   exists.
-10. Restore the preserved stock dump and verify that restoration itself is
-    repeatable.
+1. **Badge A — heartbeat:** boot only the nonconnectable BLE heartbeat and
+   watchdog restart path; include no display, key, battery, filesystem, or
+   recovery code.
+2. **Badge B — PB07 ADC telemetry:** configure only PB07 and publish raw
+   released/button-1/button-2/both samples. Measure clusters, noise, and physical
+   key mapping before enabling any long hold. Require
+   `adc_io2ch(IO_PORTB_07) == AD_CH_PMU_PADC0` from the exact board-profile
+   allowlist and carry the channel as 32 bits in telemetry. PB08 is not the
+   decoded model-1552 ADC input.
+3. **Badge C — JD9855 fills:** at conservative clock, validate reset/init and
+   solid red/green/blue/white/black screens; then aligned partial windows,
+   double-buffered refresh, color/orientation/TE, backlight, panel sleep/wake,
+   and 100 cycles. Do not enable button or update behavior in this image.
+4. **Badge D — full/recovery:** only after B and C establish their profiles,
+   integrate normal GATT/rendering, DMM-calibrated battery behavior, charging,
+   buttons, package `RESET = PB07_00_0;`, direct runtime PB07 PINR16, and the
+   reset-source early-maintenance route. Exercise every pre-loader cancel plus
+   the loader reconnect/resume path; interrupt destructive programming only
+   after a verified restore exists. Complete the plugged soak and a second
+   custom rewrite here.
+5. **Badge E — untouched reference:** keep it unflashed and read-only except
+   benign identity queries.
+
+Badge E remains untouched throughout. Stop the ladder on any mismatch; do not
+move a failed image onto the next role merely because another badge is
+available.
 
 ## 12. Anti-brick architecture
 
@@ -863,10 +939,17 @@ Official forced-upgrade references:
 
 Maintain explicit unit roles:
 
-- **Reference:** untouched, read-only except benign identity queries.
-- **Sacrificial development:** custom builds and fault injection.
-- **Recovery proof:** used to demonstrate that the preserved dump restores.
-- **Control:** known model-1552 firmware when comparing transport behavior.
+- **Badge A / heartbeat:** advertisement-only first-write evidence.
+- **Badge B / PB07 ADC:** one-pin raw telemetry and button-cluster evidence.
+- **Badge C / JD9855:** display reset/init, solid fills, windows, and wake
+  evidence.
+- **Badge D / full-recovery:** integrated firmware, charge-through, RCSP, and
+  controlled fault injection.
+- **Badge E / reference:** untouched and read-only except benign identity
+  queries.
+
+If a separate known-model-1552 control or recovery-proof unit is later added,
+record it as an additional role; do not silently repurpose badge E.
 
 For every session:
 
@@ -892,12 +975,13 @@ write.
 - JD9855 bus mode, clock/fps, pin mapping, polarity, orientation, byte order,
   address-window offsets, and TE electrical behavior.
 - Exact model-1542 touch controller and touch pins, if touch is populated.
-- Measured PB08 ADC clusters across units, temperature, voltage, and tolerance,
-  the physical key-0/key-1 label mapping, and the purpose/drive conditions of
-  PB07 on each board variant.
+- Measured PB07 ADC clusters across units, temperature, voltage, and tolerance,
+  the physical key-0/key-1 label mapping, and confirmation of the actual ADC pin
+  on untouched model-1542 hardware. PB07 is proven only for decoded model 1552;
+  PB08 is not its substitute.
 - Hardware verification that the proposed 16-second fallback, 10-second
-  software handoff, temporary PB08 reset disable, and absence of an unintended
-  package PB07 reset work across every boot phase and abort path.
+  software handoff, temporary PB07 reset disable, direct runtime PB07 re-arm,
+  and package `RESET = PB07_00_0;` work across every boot phase and abort path.
 - Actual deep-sleep current and every wake source on the target PCB.
 - Exact boot-ROM/application boundary that survives every partial-write fault.
 - Whether a stripped A/B package passes the target bootloader's dual-bank
