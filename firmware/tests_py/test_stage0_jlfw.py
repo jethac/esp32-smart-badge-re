@@ -25,6 +25,8 @@ GUARDS = bytes(range(0xA0, 0xB4))
 LAB_ARTIFACT_ROOT = Path(os.environ.get("E87_GENERATED_LAB_ARTIFACT_ROOT", r"B:\esp32\artifacts\panel-package-8ecf5c4"))
 LAB_FLASH_SHA256 = "F3AC889391F57C693FCD7BA98CE4294CD20D61310C3479431BA21409E48D39D3"
 LAB_APP_SHA256 = "D4EEEB268D5E36E1B874F106E5F5F64628E5531D44DDF6B37B5B67D785AC73D9"
+LAB_FW = Path(os.environ.get("E87_GENERATED_LAB_FW", r"B:\esp32\artifacts\ufw-variance-e40a68f\jl_isd.fw"))
+LAB_FW_SHA256 = "7B3EADFACB51BC379AE4BEA63C4E1222A8241B2C4AC8B769F0EDFCB81A160DA2"
 
 
 def fwsc_wrap(logical_ufw: bytes, guards: bytes = GUARDS) -> bytes:
@@ -101,6 +103,7 @@ class JlFwTests(unittest.TestCase):
         cls.app = GOLDEN_APP.read_bytes(); cls.fwsc = fwsc_wrap(cls.payload)
         cls.lab_flash = (LAB_ARTIFACT_ROOT / "jl_isd.bin").read_bytes()
         cls.lab_app = (LAB_ARTIFACT_ROOT / "app.bin").read_bytes()
+        cls.lab_fw = LAB_FW.read_bytes()
 
     def test_crc_and_encryption_literal_vectors(self):
         self.assertEqual(self.jlfw.crc16_xmodem(b"123456789"), 0x31C3)
@@ -302,6 +305,35 @@ class JlFwTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(ValueError, "ambiguous"):
                     prove()
+
+    def test_generated_lab_fw_envelope_proves_exact_raw_flash_and_app(self):
+        envelope = self.jlfw.extract_flash_from_jl_isd_fw(self.lab_fw, proof_profile="generated-lab")
+        self.assertEqual((envelope.kind, envelope.flash_physical_offset), ("GENERATED_LAB_JL_FW", 0x400))
+        self.assertEqual(envelope.flash, self.lab_flash)
+        proof = self.jlfw.prove_embedded_app(
+            self.lab_fw, self.lab_app, container_kind="jl_isd.fw", proof_profile="generated-lab"
+        )
+        self.assertEqual((proof["containerSha256"], proof["flashSha256"]), (LAB_FW_SHA256, LAB_FLASH_SHA256))
+        pair = self.jlfw.prove_package_pair(self.lab_flash, self.lab_fw, self.lab_app, proof_profile="generated-lab")
+        self.assertEqual(pair, {"appSha256": LAB_APP_SHA256, "flashEqual": True, "fwEnvelopeKind": "GENERATED_LAB_JL_FW"})
+        with self.assertRaises(ValueError):
+            self.jlfw.extract_flash_from_jl_isd_fw(self.lab_fw)
+
+    def test_generated_lab_fw_envelope_crc_bounds_membership_and_ambiguity_mutations_fail(self):
+        mutations = {}
+        for name, offset in (("header-crc", 0), ("table-crc", 0x40), ("flash-crc", 0x400 + 7), ("tail-marker", len(self.lab_fw) - 16)):
+            changed = bytearray(self.lab_fw); changed[offset] ^= 1; mutations[name] = bytes(changed)
+        mutations["truncated"] = self.lab_fw[:-1]
+        mutations["trailing"] = self.lab_fw + b"\0"
+        for name, changed in mutations.items():
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.jlfw.extract_flash_from_jl_isd_fw(changed, proof_profile="generated-lab")
+        changed_raw = bytearray(self.lab_flash); changed_raw[-1] ^= 1
+        with self.assertRaisesRegex(ValueError, "flash bytes differ"):
+            self.jlfw.prove_package_pair(bytes(changed_raw), self.lab_fw, self.lab_app, proof_profile="generated-lab")
+        candidate = self.jlfw.FwEnvelope("DIRECT_UFW", self.lab_fw, self.lab_flash, b"", 0x400)
+        with self.assertRaisesRegex(ValueError, "ambiguous"):
+            self.jlfw.select_unique_fw_interpretation(None, candidate, candidate)
 
     def test_generated_lab_profile_proves_real_compact_filesystem_and_separates_reference(self):
         proof = self.jlfw.prove_embedded_app(

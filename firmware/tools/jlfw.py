@@ -280,6 +280,61 @@ def _flash_from_parsed(parsed) -> bytes:
     return data
 
 
+def _parse_generated_lab_fw(data: bytes) -> FwEnvelope:
+    """Parse the native six-member JL_FW envelope emitted for generated LAB images."""
+    ufw = _load_ufw_module()
+    if len(data) < ufw.HEADER_SIZE:
+        raise JlFwError("generated LAB FW is shorter than its header")
+    decoded_header = ufw.cd03_transform(data[:ufw.HEADER_SIZE])
+    header = ufw._HEADER.unpack(decoded_header)
+    header_crc, table_crc, image_size, item_count, version, reserved, chip_field = header[:7]
+    if header_crc != crc16_xmodem(decoded_header[2:]) or table_crc != crc16_xmodem(data[ufw.HEADER_SIZE:ufw.HEADER_SIZE + item_count * ufw.ENTRY_SIZE]):
+        raise JlFwError("generated LAB FW metadata CRC mismatch")
+    if (image_size, item_count, version, reserved, chip_field.rstrip(b"\0"), header[7:]) != (len(data), 6, 4, 0x200, b"AC707N", (0,) * 8):
+        raise JlFwError("generated LAB FW header identity mismatch")
+    table_end = ufw.HEADER_SIZE + item_count * ufw.ENTRY_SIZE
+    if table_end > len(data):
+        raise JlFwError("generated LAB FW item table is truncated")
+    entries = []
+    for position in range(item_count):
+        start = ufw.HEADER_SIZE + position * ufw.ENTRY_SIZE
+        fields = ufw._ENTRY.unpack(ufw.cd03_transform(data[start:start + ufw.ENTRY_SIZE]))
+        type_code, type_reserved, index, data_crc, item_version, offset, size, allocated, crypt_offset, crypt_size, reserved_bytes, name_field = fields
+        name = name_field.split(b"\0", 1)[0].decode("ascii")
+        if index != position or type_reserved or item_version or any(reserved_bytes):
+            raise JlFwError("generated LAB FW item metadata is noncanonical")
+        entries.append({"typeCode": type_code, "index": index, "dataCrc16": data_crc, "offset": offset, "dataSize": size, "allocatedSize": allocated, "cryptOffset": crypt_offset, "cryptSize": crypt_size, "name": name})
+    expected = (("flash.bin", 0x00), ("info.log", 0x02), ("params_flash.bin", 0xEE), ("isd_config.ini", 0x34), ("ota.bin", 0x64), ("tail.bin", 0xFF))
+    if tuple((entry["name"], entry["typeCode"]) for entry in entries) != expected:
+        raise JlFwError("generated LAB FW member profile mismatch")
+    ufw.validate_entry_layout(entries, image_size=image_size, table_end=table_end)
+    tail = entries[-1]
+    if (tail["dataSize"], tail["allocatedSize"], tail["cryptOffset"], tail["cryptSize"]) != (64, 64, 0, 0):
+        raise JlFwError("generated LAB FW tail metadata mismatch")
+    tail_raw = data[tail["offset"]:tail["offset"] + 64]
+    if int.from_bytes(tail_raw[0x20:0x22], "little") != crc16_xmodem(tail_raw[:0x20]) or tail_raw[0x22:0x28] != ufw.TAIL_SIGNATURE or tail_raw[0x28:0x30] != bytes(8) or tail_raw[0x30:0x36] != b"JL_FW\0" or tail_raw[0x36:] != bytes(10):
+        raise JlFwError("generated LAB FW tail identity mismatch")
+    cursor = table_end
+    for entry in entries:
+        offset, allocated = entry["offset"], entry["allocatedSize"]
+        if any(value != 0xFF for value in data[cursor:offset]):
+            raise JlFwError("generated LAB FW inter-member padding is not erased")
+        raw = data[offset:offset + allocated]
+        if entry["name"] in ("flash.bin", "info.log", "tail.bin"):
+            if entry["cryptSize"] != 0 or crc16_xmodem(raw[:entry["dataSize"]]) != entry["dataCrc16"] or any(value != 0xFF for value in raw[entry["dataSize"]:]):
+                raise JlFwError("generated LAB FW identity member CRC or padding mismatch")
+            entry["data"] = raw[:entry["dataSize"]]
+        elif entry["cryptSize"] == 0:
+            entry["data"] = raw[:entry["dataSize"]]
+        else:
+            if entry["cryptOffset"] != 0 or entry["cryptSize"] != allocated:
+                raise JlFwError("generated LAB FW protected member range mismatch")
+            entry["data"] = raw[:entry["dataSize"]]
+        cursor = offset + allocated
+    flash = _flash_from_parsed({"entries": entries})
+    return FwEnvelope("GENERATED_LAB_JL_FW", data, flash, b"", int(entries[0]["offset"]))
+
+
 def collect_container_candidates(
     data: bytes,
     *,
@@ -301,6 +356,17 @@ def collect_container_candidates(
         logical_offset = next(entry["offset"] for entry in parsed["entries"] if entry["name"] == "flash.bin")
         direct = FwEnvelope("DIRECT_UFW", data, flash, b"", int(logical_offset))
     except (ValueError, KeyError, TypeError): pass
+    if proof_profile == GENERATED_LAB_PROFILE:
+        try:
+            generated_direct = _parse_generated_lab_fw(data)
+            if direct is not None:
+                raise JlFwError("container has ambiguous direct UFW interpretations")
+            direct = generated_direct
+        except UnicodeError:
+            pass
+        except JlFwError as error:
+            if "ambiguous" in str(error):
+                raise
     if len(data) >= 960:
         logical = b"".join(data[index * 48:index * 48 + 47] for index in range(20)) + data[960:]
         guards = bytes(data[index * 48 + 47] for index in range(20))
