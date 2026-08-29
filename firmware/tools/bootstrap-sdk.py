@@ -517,8 +517,8 @@ def _run(trace, role: str, runner, argv: list[str], cwd: Path, git_tool: dict[st
     trace.append((role, list(argv), dict(options), result))
     if result.returncode != 0:
         raise ValueError(f"command failed: {role}")
-    combined = (result.stdout + result.stderr).lower()
-    if any(token in combined for token in (b"password", b"username", b"connect usb", b"select a device")):
+    diagnostic = result.stderr.lower()
+    if any(token in diagnostic for token in (b"password", b"username", b"connect usb", b"select a device")):
         raise ValueError("interactive process output is forbidden")
     return result
 
