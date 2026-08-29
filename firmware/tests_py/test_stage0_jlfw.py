@@ -324,10 +324,10 @@ class JlFwTests(unittest.TestCase):
             "malformed-flash-header": bytes([self.lab_flash[0] ^ 1]) + self.lab_flash[1:],
         }
         decoded = bytearray(self.jlfw._decode_sfc(self.lab_flash, 0xFFFF))
-        app_entry = self.jlfw._parse_header(decoded[0x2020:0x2040], location=0x2020)
+        app_entry = self.jlfw._parse_header(bytes(decoded[0x2020:0x2040]), location=0x2020)
         bad_entry = jlfs_header("app.bin", 0x14260, int(app_entry["size"]), 0x82, 0, self.lab_app, reserved=0xFF)
         decoded[0x2020:0x2040] = bad_entry
-        area_end = 0x2000 + self.jlfw._parse_header(decoded[0x2000:0x2020], location=0x2000)["size"]
+        area_end = 0x2000 + self.jlfw._parse_header(bytes(decoded[0x2000:0x2020]), location=0x2000)["size"]
         area = bytes(decoded[0x2020:area_end])
         decoded[0x2000:0x2020] = jlfs_header("app_area_head", APP_ENTRY, area_end - 0x2000, 0x83, 0, area, reserved=2)
         cases["app-bounds"] = self.jlfw._decode_sfc(bytes(decoded), 0xFFFF)
