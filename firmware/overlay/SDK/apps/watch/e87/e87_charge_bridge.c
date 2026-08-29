@@ -375,7 +375,17 @@ enum e87_charge_bridge_poll_result e87_charge_bridge_poll_app(
             return E87_CHARGE_BRIDGE_POLL_PENDING_CLOSE;
         }
         if (retry == E87_CHARGE_RESULT_ERROR) {
-            return E87_CHARGE_BRIDGE_POLL_ERROR;
+            int saved = bridge->private_port.critical_enter(
+                bridge->private_port.context);
+
+            bridge->private_terminal = UINT8_C(1);
+            bridge->private_terminal_handled = UINT8_C(1);
+            bridge->private_head = UINT8_C(0);
+            bridge->private_tail = UINT8_C(0);
+            bridge->private_count = UINT8_C(0);
+            bridge->private_port.critical_exit(
+                bridge->private_port.context, saved);
+            return E87_CHARGE_BRIDGE_POLL_TERMINAL;
         }
         progressed = retry == E87_CHARGE_RESULT_SNAPSHOT_UPDATED;
     }

@@ -29,6 +29,7 @@ struct bridge_fixture {
     bool reject_close;
     bool reject_publish;
     bool critical_violation;
+    bool fault_during_post;
     bool defer_capture_on_exit;
     bool running_deferred_capture;
     bool synchronous_command_callbacks;
@@ -36,6 +37,8 @@ struct bridge_fixture {
     enum e87_charge_event deferred_event;
     uint8_t deferred_online_raw;
     uint8_t endless_callback_raw;
+    uint8_t post_fault_online_raw;
+    enum e87_charge_command commands[64];
     struct e87_charge_snapshot publications[64];
 };
 
@@ -100,6 +103,11 @@ static int fake_post_wake(void *context)
         fixture->critical_violation = true;
     }
     fixture->post_count += UINT32_C(1);
+    if (fixture->fault_during_post) {
+        fixture->fault_during_post = false;
+        fixture->driver_online_raw = fixture->post_fault_online_raw;
+        (void)e87_charge_bridge_note_queue_fault(&fixture->bridge);
+    }
     return fixture->post_result;
 }
 
@@ -124,6 +132,11 @@ static bool fake_emit(void *context, enum e87_charge_command command)
 
     if (fixture->critical_depth != 0) {
         fixture->critical_violation = true;
+    }
+    if (fixture->start_count + fixture->close_count <
+        sizeof(fixture->commands) / sizeof(fixture->commands[0])) {
+        fixture->commands[fixture->start_count + fixture->close_count] =
+            command;
     }
     if (command == E87_CHARGE_COMMAND_START_ELECTRICAL) {
         fixture->start_count += UINT32_C(1);
@@ -244,13 +257,46 @@ E87_TEST(init_rejects_unready_adapter_and_invalid_port_without_mutation)
         NULL, &fixture.adapter, &bridge_port));
     E87_ASSERT_TRUE(!e87_charge_bridge_init(
         &fixture.bridge, NULL, &bridge_port));
+    E87_ASSERT_TRUE(!e87_charge_bridge_init(
+        &fixture.bridge, &fixture.adapter, NULL));
+
+    E87_ASSERT_TRUE(e87_charge_adapter_init(&fixture.adapter, &charge_port));
     bridge_port.critical_enter = NULL;
     E87_ASSERT_TRUE(!e87_charge_bridge_init(
         &fixture.bridge, &fixture.adapter, &bridge_port));
     E87_ASSERT_TRUE(memcmp(&fixture.bridge, &before, sizeof(before)) == 0);
-
     bridge_port.critical_enter = fake_critical_enter;
-    E87_ASSERT_TRUE(e87_charge_adapter_init(&fixture.adapter, &charge_port));
+
+    bridge_port.critical_exit = NULL;
+    E87_ASSERT_TRUE(!e87_charge_bridge_init(
+        &fixture.bridge, &fixture.adapter, &bridge_port));
+    E87_ASSERT_TRUE(memcmp(&fixture.bridge, &before, sizeof(before)) == 0);
+    bridge_port.critical_exit = fake_critical_exit;
+
+    bridge_port.read_driver_online = NULL;
+    E87_ASSERT_TRUE(!e87_charge_bridge_init(
+        &fixture.bridge, &fixture.adapter, &bridge_port));
+    E87_ASSERT_TRUE(memcmp(&fixture.bridge, &before, sizeof(before)) == 0);
+    bridge_port.read_driver_online = fake_read_driver_online;
+
+    bridge_port.post_wake = NULL;
+    E87_ASSERT_TRUE(!e87_charge_bridge_init(
+        &fixture.bridge, &fixture.adapter, &bridge_port));
+    E87_ASSERT_TRUE(memcmp(&fixture.bridge, &before, sizeof(before)) == 0);
+    bridge_port.post_wake = fake_post_wake;
+
+    bridge_port.in_irq = NULL;
+    E87_ASSERT_TRUE(!e87_charge_bridge_init(
+        &fixture.bridge, &fixture.adapter, &bridge_port));
+    E87_ASSERT_TRUE(memcmp(&fixture.bridge, &before, sizeof(before)) == 0);
+    bridge_port.in_irq = fake_in_irq;
+
+    bridge_port.irq_disabled = NULL;
+    E87_ASSERT_TRUE(!e87_charge_bridge_init(
+        &fixture.bridge, &fixture.adapter, &bridge_port));
+    E87_ASSERT_TRUE(memcmp(&fixture.bridge, &before, sizeof(before)) == 0);
+    bridge_port.irq_disabled = fake_irq_disabled;
+
     E87_ASSERT_TRUE(e87_charge_bridge_init(
         &fixture.bridge, &fixture.adapter, &bridge_port));
 }
@@ -296,6 +342,36 @@ E87_TEST(post_failure_reenters_guard_and_preserves_first_fault_provenance)
     E87_ASSERT_EQ_U32(UINT8_C(1),
                       fixture.bridge.private_fault_online_raw);
     assert_guards_balanced(&fixture, 0x2468ACE);
+}
+
+
+E87_TEST(competing_fault_between_post_and_reentry_keeps_competing_provenance)
+{
+    struct bridge_fixture fixture;
+
+    E87_ASSERT_TRUE(fixture_init(&fixture));
+    fixture.driver_online_raw = UINT8_C(1);
+    fixture.post_result = 23;
+    fixture.fault_during_post = true;
+    fixture.post_fault_online_raw = UINT8_C(0);
+
+    E87_ASSERT_TRUE(!e87_charge_bridge_capture(
+        &fixture.bridge, E87_CHARGE_EVENT_LDO5V_IN));
+    E87_ASSERT_EQ_U32(UINT8_C(0),
+                      fixture.bridge.private_fault_online_raw);
+    E87_ASSERT_EQ_U32(UINT8_C(1), fixture.bridge.private_fault_pending);
+    E87_ASSERT_EQ_U32(UINT32_C(2), fixture.read_online_count);
+
+    fixture.post_result = 0;
+    E87_ASSERT_EQ_U32(E87_CHARGE_BRIDGE_POLL_TERMINAL,
+                      e87_charge_bridge_poll_app(&fixture.bridge));
+    E87_ASSERT_EQ_U32(UINT32_C(1), fixture.close_count);
+    E87_ASSERT_EQ_U32(UINT32_C(1), fixture.publish_count);
+    E87_ASSERT_EQ_U32(UINT32_C(0),
+                      fixture.publications[0].external_power_online);
+    E87_ASSERT_EQ_U32(E87_CHARGE_PHASE_FAULT,
+                      fixture.publications[0].phase);
+    assert_guards_balanced(&fixture, UINT32_C(1));
 }
 
 
@@ -374,9 +450,10 @@ E87_TEST(poll_rejects_bad_context_without_masking_or_semantic_work)
 }
 
 
-E87_TEST(pending_close_stops_before_popping_the_next_observation)
+E87_TEST(pending_close_stops_then_accepted_retry_continues_tail_same_poll)
 {
     struct bridge_fixture fixture;
+    struct e87_charge_snapshot snapshot;
     uint8_t count_while_pending;
 
     E87_ASSERT_TRUE(fixture_init(&fixture));
@@ -391,9 +468,9 @@ E87_TEST(pending_close_stops_before_popping_the_next_observation)
         e87_charge_bridge_poll_app(&fixture.bridge));
     E87_ASSERT_TRUE(e87_charge_adapter_has_pending_close(&fixture.adapter));
 
-    fixture.driver_online_raw = UINT8_C(1);
+    fixture.driver_online_raw = UINT8_C(0);
     E87_ASSERT_TRUE(e87_charge_bridge_capture(
-        &fixture.bridge, E87_CHARGE_EVENT_LDO5V_IN));
+        &fixture.bridge, E87_CHARGE_EVENT_LDO5V_OFF));
     count_while_pending = fixture.bridge.private_count;
     E87_ASSERT_EQ_U32(
         E87_CHARGE_BRIDGE_POLL_PENDING_CLOSE,
@@ -406,7 +483,73 @@ E87_TEST(pending_close_stops_before_popping_the_next_observation)
         e87_charge_bridge_poll_app(&fixture.bridge));
     E87_ASSERT_EQ_U32(UINT32_C(0), fixture.bridge.private_count);
     E87_ASSERT_TRUE(!e87_charge_adapter_has_pending_close(&fixture.adapter));
+    E87_ASSERT_EQ_U32(UINT32_C(4), fixture.close_count);
+    E87_ASSERT_EQ_U32(UINT32_C(2), fixture.publish_count);
+    E87_ASSERT_TRUE(e87_charge_adapter_get_snapshot(&fixture.adapter, &snapshot));
+    E87_ASSERT_EQ_U32(UINT32_C(0), snapshot.external_power_online);
+    E87_ASSERT_EQ_U32(E87_CHARGE_PHASE_CLOSED, snapshot.phase);
     assert_guards_balanced(&fixture, UINT32_C(1));
+}
+
+
+static void run_retry_publication_failure(bool with_tail)
+{
+    struct bridge_fixture fixture;
+
+    E87_ASSERT_TRUE(fixture_init(&fixture));
+    fixture.driver_online_raw = UINT8_C(1);
+    E87_ASSERT_TRUE(e87_charge_bridge_capture(
+        &fixture.bridge, E87_CHARGE_EVENT_LDO5V_IN));
+    E87_ASSERT_EQ_U32(E87_CHARGE_BRIDGE_POLL_PROGRESSED,
+                      e87_charge_bridge_poll_app(&fixture.bridge));
+    E87_ASSERT_TRUE(e87_charge_bridge_ack_wake(
+        &fixture.bridge, E87_CHARGE_BRIDGE_WAKE_TOKEN));
+    E87_ASSERT_EQ_U32(E87_CHARGE_PHASE_UNKNOWN,
+                      fixture.adapter.private_snapshot.phase);
+    E87_ASSERT_EQ_U32(UINT32_C(1),
+                      fixture.adapter.private_snapshot.external_power_online);
+
+    fixture.reject_close = true;
+    fixture.driver_online_raw = UINT8_C(1);
+    E87_ASSERT_TRUE(e87_charge_bridge_capture(
+        &fixture.bridge, E87_CHARGE_EVENT_CHARGE_FULL));
+    E87_ASSERT_EQ_U32(E87_CHARGE_BRIDGE_POLL_PENDING_CLOSE,
+                      e87_charge_bridge_poll_app(&fixture.bridge));
+    if (with_tail) {
+        fixture.driver_online_raw = UINT8_C(0);
+        E87_ASSERT_TRUE(e87_charge_bridge_capture(
+            &fixture.bridge, E87_CHARGE_EVENT_LDO5V_OFF));
+        E87_ASSERT_EQ_U32(UINT32_C(1), fixture.bridge.private_count);
+    }
+
+    fixture.reject_close = false;
+    fixture.reject_publish = true;
+    E87_ASSERT_EQ_U32(E87_CHARGE_BRIDGE_POLL_TERMINAL,
+                      e87_charge_bridge_poll_app(&fixture.bridge));
+    E87_ASSERT_TRUE(e87_charge_bridge_is_terminal(&fixture.bridge));
+    E87_ASSERT_TRUE(!e87_charge_bridge_is_ready(&fixture.bridge));
+    E87_ASSERT_EQ_U32(UINT32_C(0), fixture.bridge.private_count);
+    E87_ASSERT_EQ_U32(UINT32_C(2), fixture.close_count);
+    E87_ASSERT_EQ_U32(UINT32_C(2), fixture.publish_count);
+    E87_ASSERT_EQ_U32(E87_CHARGE_PHASE_UNKNOWN,
+                      fixture.adapter.private_snapshot.phase);
+    E87_ASSERT_EQ_U32(UINT32_C(1),
+                      fixture.adapter.private_snapshot.external_power_online);
+    E87_ASSERT_TRUE(fixture.adapter.private_terminal_error);
+    E87_ASSERT_TRUE(!fixture.adapter.private_has_pending_close);
+
+    E87_ASSERT_EQ_U32(E87_CHARGE_BRIDGE_POLL_TERMINAL,
+                      e87_charge_bridge_poll_app(&fixture.bridge));
+    E87_ASSERT_EQ_U32(UINT32_C(2), fixture.close_count);
+    E87_ASSERT_EQ_U32(UINT32_C(2), fixture.publish_count);
+    assert_guards_balanced(&fixture, UINT32_C(1));
+}
+
+
+E87_TEST(retry_publication_failure_terminalizes_empty_and_nonempty_fifo)
+{
+    run_retry_publication_failure(false);
+    run_retry_publication_failure(true);
 }
 
 
@@ -671,10 +814,12 @@ static const struct e87_test_case charge_bridge_cases[] = {
     E87_TEST_CASE(init_rejects_unready_adapter_and_invalid_port_without_mutation),
     E87_TEST_CASE(capture_binds_read_and_append_inside_one_saved_state_guard),
     E87_TEST_CASE(post_failure_reenters_guard_and_preserves_first_fault_provenance),
+    E87_TEST_CASE(competing_fault_between_post_and_reentry_keeps_competing_provenance),
     E87_TEST_CASE(all_callback_error_paths_pair_guards_and_restore_prior_state),
     E87_TEST_CASE(wake_acknowledgement_pairs_guard_on_success_and_wrong_type),
     E87_TEST_CASE(poll_rejects_bad_context_without_masking_or_semantic_work),
-    E87_TEST_CASE(pending_close_stops_before_popping_the_next_observation),
+    E87_TEST_CASE(pending_close_stops_then_accepted_retry_continues_tail_same_poll),
+    E87_TEST_CASE(retry_publication_failure_terminalizes_empty_and_nonempty_fifo),
     E87_TEST_CASE(corrupt_shared_state_faults_with_balanced_prior_state_restore),
     E87_TEST_CASE(all_local_events_capture_exact_closed_observations_in_fifo_order),
     E87_TEST_CASE(task_irq_and_deferred_nested_irq_linearize_without_split_slots),

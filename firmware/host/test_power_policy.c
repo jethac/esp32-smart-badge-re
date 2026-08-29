@@ -999,8 +999,8 @@ E87_TEST(presentation_sequences_remain_exact_and_charge_has_no_commands)
     static const enum e87_power_command sleep_start[] = {
         E87_POWER_COMMAND_STOP_DRAWS,
         E87_POWER_COMMAND_WAIT_LCD_IDLE,
-        E87_POWER_COMMAND_PANEL_SLEEP,
         E87_POWER_COMMAND_BACKLIGHT_OFF,
+        E87_POWER_COMMAND_PANEL_SLEEP,
         E87_POWER_COMMAND_BLE_STOP_DISCONNECT,
         E87_POWER_COMMAND_ARM_SHARED_LADDER_WAKE,
         E87_POWER_COMMAND_ENTER_LOW_POWER

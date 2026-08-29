@@ -13,7 +13,7 @@ static struct e87_ui_inputs inputs(void)
     value.panel_visible = true;
     value.battery_state = E87_UI_BATTERY_VALID;
     value.battery_percent = UINT8_C(50);
-    value.charger_phase = E87_CHARGER_PHASE_UNKNOWN;
+    value.charger_phase = E87_CHARGE_PHASE_UNKNOWN;
     value.maintenance_phase = E87_UI_MAINTENANCE_WAITING_FOR_PHONE;
     return value;
 }
@@ -121,7 +121,7 @@ E87_TEST(battery_overlay_snapshots_model_not_pixels_and_expires_at_2500)
     in.semantic.metrics = metrics(UINT8_C(10), UINT8_C(20));
     in.semantic.revision = UINT32_C(7);
     in.battery_percent = UINT8_C(81);
-    in.charger_phase = E87_CHARGER_PHASE_START;
+    in.charger_phase = E87_CHARGE_PHASE_CHARGING;
 
     E87_ASSERT_TRUE(e87_ui_step(
         &state, start, E87_ACTION_TAP_BATTERY, &in, &out));
@@ -169,7 +169,7 @@ E87_TEST(maintenance_recovery_and_warning_have_total_precedence)
     in.recovery_entry = true;
     in.maintenance_phase = E87_UI_MAINTENANCE_RELEASE_BUTTON;
     in.battery_percent = UINT8_C(49);
-    in.charger_phase = E87_CHARGER_PHASE_FULL;
+    in.charger_phase = E87_CHARGE_PHASE_FULL;
     E87_ASSERT_TRUE(e87_ui_step(
         &state, UINT32_C(2), E87_ACTION_NONE, &in, &out));
     E87_ASSERT_EQ_U32(E87_UI_SCREEN_MAINTENANCE, out.screen);
@@ -209,7 +209,7 @@ E87_TEST(battery_state_and_charge_visual_are_explicit)
     e87_ui_init(&state);
     in.battery_state = E87_UI_BATTERY_INVALID_STALE;
     in.battery_percent = UINT8_C(37);
-    in.charger_phase = E87_CHARGER_PHASE_CLOSE;
+    in.charger_phase = E87_CHARGE_PHASE_CLOSED;
     E87_ASSERT_TRUE(e87_ui_step(
         &state, UINT32_C(1), E87_ACTION_TAP_BATTERY, &in, &out));
     E87_ASSERT_EQ_U32(E87_UI_BATTERY_INVALID_STALE, out.battery_state);
@@ -219,7 +219,7 @@ E87_TEST(battery_state_and_charge_visual_are_explicit)
     e87_ui_init(&state);
     in.battery_state = E87_UI_BATTERY_UNAVAILABLE_FAULT;
     in.battery_percent = UINT8_C(0);
-    in.charger_phase = E87_CHARGER_PHASE_UNKNOWN;
+    in.charger_phase = E87_CHARGE_PHASE_UNKNOWN;
     E87_ASSERT_TRUE(e87_ui_step(
         &state, UINT32_C(2), E87_ACTION_TAP_BATTERY, &in, &out));
     E87_ASSERT_EQ_U32(E87_UI_BATTERY_UNAVAILABLE_FAULT,

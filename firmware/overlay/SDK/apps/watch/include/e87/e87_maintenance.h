@@ -49,7 +49,7 @@ struct e87_maintenance_power_sample {
     bool low_voltage_warning;
     bool board_voltage_stable;
     bool external_power_online;
-    enum e87_charger_phase charger_phase;
+    enum e87_charge_phase charger_phase;
 };
 
 struct e87_maintenance_handoff {

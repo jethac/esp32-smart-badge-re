@@ -49,7 +49,7 @@ struct e87_ui_inputs {
     struct e87_state_snapshot semantic;
     enum e87_ui_battery_state battery_state;
     uint8_t battery_percent;
-    enum e87_charger_phase charger_phase;
+    enum e87_charge_phase charger_phase;
     enum e87_ui_maintenance_phase maintenance_phase;
     uint8_t maintenance_progress_percent;
 };

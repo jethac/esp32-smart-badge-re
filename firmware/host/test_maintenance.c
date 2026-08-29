@@ -85,7 +85,7 @@ static struct e87_maintenance_event power_at(
     bool low_voltage_warning,
     bool board_voltage_stable,
     bool external_power_online,
-    enum e87_charger_phase charger_phase)
+    enum e87_charge_phase charger_phase)
 {
     struct e87_maintenance_event event =
         event_at(E87_MAINTENANCE_EVENT_POWER_SAMPLE, now_ms);
@@ -330,7 +330,7 @@ static bool prepare_abort_case(struct e87_maintenance *maintenance,
     }
     if (phase == 3U) {
         sample = power_at(UINT32_C(2), 50U, false, true, false,
-                          E87_CHARGER_PHASE_CLOSE);
+                          E87_CHARGE_PHASE_CLOSED);
         if (e87_maintenance_step(maintenance, &sample) !=
             E87_MAINTENANCE_RESULT_STATUS_UPDATED) {
             return false;
@@ -399,11 +399,11 @@ E87_TEST(charging_never_bypasses_49_percent_and_50_is_inclusive)
             &maintenance, UINT32_C(0), &report));
 
     sample = power_at(UINT32_C(0), 49U, false, true, true,
-                      E87_CHARGER_PHASE_START);
+                      E87_CHARGE_PHASE_CHARGING);
     E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                       e87_maintenance_step(&maintenance, &sample));
     sample.now_ms = UINT32_C(5000);
-    sample.power.charger_phase = E87_CHARGER_PHASE_FULL;
+    sample.power.charger_phase = E87_CHARGE_PHASE_FULL;
     E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                       e87_maintenance_step(&maintenance, &sample));
     E87_ASSERT_EQ_U32(UINT32_C(0),
@@ -412,16 +412,16 @@ E87_TEST(charging_never_bypasses_49_percent_and_50_is_inclusive)
                           E87_MAINTENANCE_COMMAND_OFFICIAL_HANDOFF));
 
     sample = power_at(UINT32_C(6000), 50U, false, true, false,
-                      E87_CHARGER_PHASE_CLOSE);
+                      E87_CHARGE_PHASE_CLOSED);
     E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                       e87_maintenance_step(&maintenance, &sample));
     sample.now_ms = UINT32_C(10999);
     sample.power.external_power_online = true;
-    sample.power.charger_phase = E87_CHARGER_PHASE_FULL;
+    sample.power.charger_phase = E87_CHARGE_PHASE_FULL;
     E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                       e87_maintenance_step(&maintenance, &sample));
     sample.now_ms = UINT32_C(11000);
-    sample.power.charger_phase = E87_CHARGER_PHASE_CLOSE;
+    sample.power.charger_phase = E87_CHARGE_PHASE_CLOSED;
     E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_HANDOFF_REQUESTED,
                       e87_maintenance_step(&maintenance, &sample));
     E87_ASSERT_EQ_U32(UINT32_C(1),
@@ -445,19 +445,19 @@ E87_TEST(low_voltage_or_unstable_voltage_resets_five_second_window)
         e87_rcsp_official_loader_callback(
             &maintenance, UINT32_C(0), &report));
     sample = power_at(UINT32_C(0), 50U, false, true, false,
-                      E87_CHARGER_PHASE_CLOSE);
+                      E87_CHARGE_PHASE_CLOSED);
     E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                       e87_maintenance_step(&maintenance, &sample));
     sample = power_at(UINT32_C(5000), 100U, true, true, true,
-                      E87_CHARGER_PHASE_FULL);
+                      E87_CHARGE_PHASE_FULL);
     E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                       e87_maintenance_step(&maintenance, &sample));
     sample = power_at(UINT32_C(6000), 100U, false, false, true,
-                      E87_CHARGER_PHASE_FULL);
+                      E87_CHARGE_PHASE_FULL);
     E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                       e87_maintenance_step(&maintenance, &sample));
     sample = power_at(UINT32_C(7000), 100U, false, true, true,
-                      E87_CHARGER_PHASE_FULL);
+                      E87_CHARGE_PHASE_FULL);
     E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                       e87_maintenance_step(&maintenance, &sample));
     sample.now_ms = UINT32_C(11999);
@@ -485,7 +485,7 @@ E87_TEST(power_window_handles_wrap_and_restarts_on_backward_sample)
             e87_rcsp_official_loader_callback(
                 &maintenance, UINT32_C(0), &report));
         sample = power_at(UINT32_MAX - UINT32_C(2500), 50U, false,
-                          true, false, E87_CHARGER_PHASE_CLOSE);
+                          true, false, E87_CHARGE_PHASE_CLOSED);
         E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                           e87_maintenance_step(&maintenance, &sample));
         sample.now_ms = UINT32_C(2498);
@@ -511,7 +511,7 @@ E87_TEST(power_window_handles_wrap_and_restarts_on_backward_sample)
             e87_rcsp_official_loader_callback(
                 &maintenance, UINT32_C(0), &report));
         sample = power_at(UINT32_C(10000), 50U, false, true, false,
-                          E87_CHARGER_PHASE_CLOSE);
+                          E87_CHARGE_PHASE_CLOSED);
         E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                           e87_maintenance_step(&maintenance, &sample));
         sample.now_ms = UINT32_C(9999);
@@ -601,11 +601,11 @@ E87_TEST(valid_official_callback_approves_then_commits_at_official_boundary)
     E87_ASSERT_TRUE(enter_at(&maintenance, UINT32_C(100)));
     E87_ASSERT_TRUE(authenticate_at(&maintenance, UINT32_C(100)));
     sample = power_at(UINT32_C(100), 50U, false, true, true,
-                      E87_CHARGER_PHASE_FULL);
+                      E87_CHARGE_PHASE_FULL);
     E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                       e87_maintenance_step(&maintenance, &sample));
     sample.now_ms = UINT32_C(5100);
-    sample.power.charger_phase = E87_CHARGER_PHASE_CLOSE;
+    sample.power.charger_phase = E87_CHARGE_PHASE_CLOSED;
     E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                       e87_maintenance_step(&maintenance, &sample));
     E87_ASSERT_EQ_U32(
@@ -662,7 +662,7 @@ E87_TEST(approved_handoff_remains_cancelable_until_official_commit)
         E87_ASSERT_TRUE(enter_at(&maintenance, UINT32_C(0)));
         E87_ASSERT_TRUE(authenticate_at(&maintenance, UINT32_C(0)));
         event = power_at(UINT32_C(0), 50U, false, true, false,
-                         E87_CHARGER_PHASE_CLOSE);
+                         E87_CHARGE_PHASE_CLOSED);
         E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                           e87_maintenance_step(&maintenance, &event));
         event.now_ms = UINT32_C(5000);
@@ -690,7 +690,7 @@ E87_TEST(approved_handoff_remains_cancelable_until_official_commit)
                               e87_maintenance_step(&maintenance, &event));
         } else {
             event = power_at(UINT32_C(5001), 100U, true, true, true,
-                             E87_CHARGER_PHASE_FULL);
+                             E87_CHARGE_PHASE_FULL);
             E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                               e87_maintenance_step(&maintenance, &event));
         }
@@ -1077,7 +1077,7 @@ E87_TEST(target_adapter_revalidates_internal_attestation_fail_closed)
     E87_ASSERT_TRUE(enter_at(&maintenance, UINT32_C(0)));
     E87_ASSERT_TRUE(authenticate_at(&maintenance, UINT32_C(0)));
     sample = power_at(UINT32_C(0), 50U, false, true, false,
-                      E87_CHARGER_PHASE_CLOSE);
+                      E87_CHARGE_PHASE_CLOSED);
     E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_STATUS_UPDATED,
                       e87_maintenance_step(&maintenance, &sample));
     sample.now_ms = UINT32_C(5000);
@@ -1141,12 +1141,12 @@ E87_TEST(invalid_events_and_power_samples_do_not_mutate_or_emit)
                       e87_maintenance_step(&maintenance, &event));
     E87_ASSERT_TRUE(bytes_equal(&maintenance, &before, sizeof(maintenance)));
     event = power_at(UINT32_C(1), 101U, false, true, false,
-                     E87_CHARGER_PHASE_UNKNOWN);
+                     E87_CHARGE_PHASE_UNKNOWN);
     E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_ERROR,
                       e87_maintenance_step(&maintenance, &event));
     E87_ASSERT_TRUE(bytes_equal(&maintenance, &before, sizeof(maintenance)));
     event = power_at(UINT32_C(1), 50U, false, true, false,
-                     (enum e87_charger_phase)UINT8_MAX);
+                     (enum e87_charge_phase)UINT8_MAX);
     E87_ASSERT_EQ_U32(E87_MAINTENANCE_RESULT_ERROR,
                       e87_maintenance_step(&maintenance, &event));
     E87_ASSERT_TRUE(bytes_equal(&maintenance, &before, sizeof(maintenance)));

@@ -25,8 +25,8 @@ static bool e87_inputs_valid(const struct e87_ui_inputs *inputs,
         inputs->battery_state < E87_UI_BATTERY_VALID ||
         inputs->battery_state > E87_UI_BATTERY_UNAVAILABLE_FAULT ||
         inputs->battery_percent > UINT8_C(100) ||
-        inputs->charger_phase < E87_CHARGER_PHASE_UNKNOWN ||
-        inputs->charger_phase > E87_CHARGER_PHASE_CLOSE ||
+        inputs->charger_phase < E87_CHARGE_PHASE_UNKNOWN ||
+        inputs->charger_phase > E87_CHARGE_PHASE_FAULT ||
         inputs->maintenance_phase < E87_UI_MAINTENANCE_RELEASE_BUTTON ||
         inputs->maintenance_phase > E87_UI_MAINTENANCE_UPDATE_ERROR ||
         inputs->maintenance_progress_percent > UINT8_C(100)) {
@@ -64,12 +64,12 @@ static uint8_t e87_countdown_seconds(uint32_t remaining_ms)
 }
 
 static enum e87_ui_charge_visual
-e87_charge_visual(enum e87_charger_phase phase)
+e87_charge_visual(enum e87_charge_phase phase)
 {
-    if (phase == E87_CHARGER_PHASE_START) {
+    if (phase == E87_CHARGE_PHASE_CHARGING) {
         return E87_UI_CHARGE_CHARGING;
     }
-    if (phase == E87_CHARGER_PHASE_FULL) {
+    if (phase == E87_CHARGE_PHASE_FULL) {
         return E87_UI_CHARGE_FULL;
     }
     return E87_UI_CHARGE_NONE;

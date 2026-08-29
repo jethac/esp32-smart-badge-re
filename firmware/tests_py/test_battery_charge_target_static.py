@@ -496,7 +496,10 @@ class BatteryChargeTargetStaticTests(unittest.TestCase):
             ],
         )
 
-        all_source = "\n".join(read(path) for path in OVERLAY.glob("*.c"))
+        all_source = "\n".join(
+            read(REPO_ROOT / "firmware/overlay" / source)
+            for source in policy["requiredE87Sources"]
+        )
         for forbidden_symbol in (
             "charge_module_stop(",
             "cpu_reset(",

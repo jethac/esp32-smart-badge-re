@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "evidenceId": "E87-BR35-GPADC-INIT",
+  "sdkCommit": "d0167685d032d745d88fe50233302edd46941622",
+  "sdkTree": "854734595be49510aca5afb89f5885e8bce6a00f",
+  "archive": {
+    "path": "SDK/cpu/br35/liba/cpu.a",
+    "sha256": "787b6fc0913a0a8a634ee8c7606d5e4a68dc5604d8feacf806fd60dc1e2fc8ca"
+  },
+  "member": {
+    "name": "gpadc.c.o",
+    "sha256": "82502b6dfb7c74c8261c9b640b6d11603ee084e1d895734c02bd857e0384be3b"
+  },
+  "ir": {
+    "command": "clang -x ir -S -emit-llvm <member> -o <output>",
+    "clangVersion": "4.0.1",
+    "clangSha256": "42b94f9e11140b0fcab8f807b2872ad245b8eeca03a2d792f8706c5a3a35d34c",
+    "sha256": "497e7cbb4ee0cfc955245ed5bf993f6febec07218cd31a528ee8d995a7b85ccf"
+  },
+  "registration": {
+    "owner": "adc_init",
+    "call": "adc_add_sample_ch(i32 131846)",
+    "voltageModeCall": "adc_set_voltage_mode(i32 131846, i32 1)",
+    "channelToken": "AD_CH_PMU_VBAT",
+    "channelValue": "0x00020306"
+  }
+}

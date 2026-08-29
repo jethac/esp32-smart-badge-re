@@ -42,13 +42,14 @@ static bool valid_event_type(enum e87_maintenance_event_type type)
     }
 }
 
-static bool valid_charger_phase(enum e87_charger_phase phase)
+static bool valid_charger_phase(enum e87_charge_phase phase)
 {
     switch (phase) {
-    case E87_CHARGER_PHASE_UNKNOWN:
-    case E87_CHARGER_PHASE_START:
-    case E87_CHARGER_PHASE_FULL:
-    case E87_CHARGER_PHASE_CLOSE:
+    case E87_CHARGE_PHASE_UNKNOWN:
+    case E87_CHARGE_PHASE_CHARGING:
+    case E87_CHARGE_PHASE_FULL:
+    case E87_CHARGE_PHASE_CLOSED:
+    case E87_CHARGE_PHASE_FAULT:
         return true;
     default:
         return false;

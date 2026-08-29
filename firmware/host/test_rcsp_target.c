@@ -211,7 +211,7 @@ static struct e87_maintenance_event power_at(
     event.power.low_voltage_warning = low_voltage_warning;
     event.power.board_voltage_stable = board_voltage_stable;
     event.power.external_power_online = false;
-    event.power.charger_phase = E87_CHARGER_PHASE_CLOSE;
+    event.power.charger_phase = E87_CHARGE_PHASE_CLOSED;
     return event;
 }
 

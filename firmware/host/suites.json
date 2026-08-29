@@ -7,11 +7,58 @@
     "firmware/generated"
   ],
   "suites": {
+    "app_core": [
+      {
+        "name": "full-lifecycle-coordinator",
+        "test": "firmware/host/test_app_core.c",
+        "sources": [
+          "firmware/overlay/SDK/apps/watch/e87/e87_app_core.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_state.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ui.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_button_classifier.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_button_fsm.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_power_policy.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_recovery.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_mode_fsm.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_maintenance.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_rcsp_profile.c"
+        ]
+      }
+    ],
+    "app-runtime": [
+      {
+        "name": "serialized-target-runtime",
+        "test": "firmware/host/test_app_runtime.c",
+        "sources": [
+          "firmware/overlay/SDK/apps/watch/e87/e87_app_runtime.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_app_core.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_state.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ui.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_button_classifier.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_button_fsm.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_power_policy.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_recovery.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_ble_mode_fsm.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_maintenance.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_rcsp_profile.c"
+        ]
+      }
+    ],
     "battery": [
       {
         "name": "battery-policy",
         "test": "firmware/host/test_battery.c",
         "sources": ["firmware/overlay/SDK/apps/watch/e87/e87_battery.c"]
+      }
+    ],
+    "battery-sampler": [
+      {
+        "name": "battery-sampler",
+        "test": "firmware/host/test_battery_sampler.c",
+        "sources": [
+          "firmware/overlay/SDK/apps/watch/e87/e87_battery_sampler.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_battery.c"
+        ]
       }
     ],
     "ble": [
@@ -154,6 +201,16 @@
         "name": "charge-adapter",
         "test": "firmware/host/test_charge_adapter.c",
         "sources": ["firmware/overlay/SDK/apps/watch/e87/e87_charge_adapter.c"]
+      }
+    ],
+    "charge-bridge": [
+      {
+        "name": "charge-bridge",
+        "test": "firmware/host/test_charge_bridge.c",
+        "sources": [
+          "firmware/overlay/SDK/apps/watch/e87/e87_charge_bridge.c",
+          "firmware/overlay/SDK/apps/watch/e87/e87_charge_adapter.c"
+        ]
       }
     ],
     "button": [
