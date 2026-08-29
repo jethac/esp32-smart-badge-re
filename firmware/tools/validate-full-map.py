@@ -958,6 +958,14 @@ def generate_candidate(arguments: argparse.Namespace) -> tuple[int, int]:
     candidate["archiveLoadOrder"] = archive_loads
     candidate["mapContract"]["archiveInclusionRowCount"] = len(rows)
     candidate["mapContract"]["archiveInclusionRowsSha256"] = graph_digest(rows)
+    candidate["mapContract"]["requiredProvenance"] = [
+        {"archiveMember": member, "referrer": referrer, "symbol": symbol}
+        for member, referrer, symbol in PRODUCTION_PROVENANCE
+    ]
+    candidate["mapContract"]["requiredResolution"] = [
+        {"requester": requester, "provider": provider, "symbol": symbol}
+        for requester, provider, symbol in PRODUCTION_RESOLUTION
+    ]
     encoded = (json.dumps(candidate, indent=2, ensure_ascii=True) + "\n").encode("ascii")
     with tempfile.TemporaryDirectory(prefix="e87-full-candidate-") as directory:
         candidate_path = Path(directory) / "candidate.json"
