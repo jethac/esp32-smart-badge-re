@@ -326,6 +326,13 @@ def _parse_local_config(root: Path, label: str) -> None:
             ("branch", "main", "remote", "origin"),
             ("branch", "main", "merge", "refs/heads/main"),
         }
+        current = (expected - {
+            ("remote", "origin", "fetch", "+refs/heads/main:refs/remotes/origin/main"),
+        }) | {
+            ("remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*"),
+        }
+        if len(entries) == len(current) and set(entries) == current:
+            return
     else:
         raise ValueError("unknown repository role")
     if len(entries) != len(expected) or set(entries) != expected:
