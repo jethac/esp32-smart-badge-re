@@ -313,6 +313,12 @@ def _parse_local_config(root: Path, label: str) -> None:
             ("branch", "codex/e87-local-rendering", "remote", "bootstrap"),
             ("branch", "codex/e87-local-rendering", "merge", "refs/heads/codex/e87-local-rendering"),
         }
+        current = common | {
+            ("remote", "origin", "url", "https://github.com/jethac/esp32-smart-badge-re.git"),
+            ("remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*"),
+        }
+        if len(entries) == len(current) and set(entries) == current:
+            return
     elif label == "sdk":
         expected = common | {
             ("remote", "origin", "url", "https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200.git"),
