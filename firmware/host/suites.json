@@ -44,6 +44,15 @@
         ]
       }
     ],
+    "app-target": [
+      {
+        "name": "authoritative-boot-adapter",
+        "test": "firmware/host/test_app_target.c",
+        "sources": [
+          "firmware/overlay/SDK/apps/watch/e87/e87_app_target.c"
+        ]
+      }
+    ],
     "battery": [
       {
         "name": "battery-policy",

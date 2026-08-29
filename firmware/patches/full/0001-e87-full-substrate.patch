@@ -191,7 +191,7 @@ diff --git a/SDK/build/Makefile.mk b/SDK/build/Makefile.mk
 index 8b6e87e4bb22c4c502391b4b0ade6bb4c97752a2..3709ada1ce5204c8cb0c3c6ba0235174a570405e 100644
 --- a/SDK/build/Makefile.mk
 +++ b/SDK/build/Makefile.mk
-@@ -859,201 +859,284 @@ cxx_SRC_FILES :=
+@@ -859,201 +859,285 @@ cxx_SRC_FILES :=
  include build/fileList.mk
 -
 +# E87 full replaces the generated source closure below.
@@ -204,6 +204,7 @@ index 8b6e87e4bb22c4c502391b4b0ade6bb4c97752a2..3709ada1ce5204c8cb0c3c6ba0235174
 +	apps/watch/app_main.c \
 +	apps/watch/board/br35/board_e87_1542_full/board_e87_1542_full.c \
 +	apps/watch/e87/e87_app.c \
++	apps/watch/e87/e87_app_target.c \
 +	apps/watch/e87/e87_app_runtime.c \
 +	apps/watch/e87/e87_app_core.c \
 +	apps/watch/e87/e87_ui.c \

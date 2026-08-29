@@ -1374,7 +1374,6 @@ bool e87_app_core_init(struct e87_app_core *core,
                        const struct e87_app_core_config *config,
                        const struct e87_app_core_port *port)
 {
-    struct e87_app_core initialized;
     const struct e87_state_sync state_sync = {
         NULL, state_enter, state_leave
     };
@@ -1393,30 +1392,31 @@ bool e87_app_core_init(struct e87_app_core *core,
         return false;
     }
 
-    memset(&initialized, 0, sizeof(initialized));
-    initialized.private_port = *port;
-    initialized.private_phase = E87_APP_CORE_PHASE_READY;
-    initialized.private_current_key = E87_KEY_NONE;
-    initialized.private_battery_state =
-        E87_UI_BATTERY_UNAVAILABLE_FAULT;
-    initialized.private_maintenance_phase =
+    /*
+     * All fallible contract checks are complete before core is touched.  The
+     * component initializers below can only reject the pointers/callbacks and
+     * classifier configuration already checked above.  Initializing in place
+     * therefore preserves failure atomicity without putting a complete app
+     * core (hundreds of bytes) on the app_core task stack.
+     */
+    memset(core, 0, sizeof(*core));
+    core->private_port = *port;
+    core->private_phase = E87_APP_CORE_PHASE_READY;
+    core->private_current_key = E87_KEY_NONE;
+    core->private_battery_state = E87_UI_BATTERY_UNAVAILABLE_FAULT;
+    core->private_maintenance_phase =
         E87_UI_MAINTENANCE_WAITING_FOR_PHONE;
-    if (!e87_state_store_init(&initialized.private_state, &state_sync) ||
-        !e87_button_classifier_init(&initialized.private_classifier,
-                                    &config->button_classifier) ||
-        !e87_recovery_init(&initialized.private_recovery,
-                           &recovery_port) ||
-        !e87_maintenance_init(&initialized.private_maintenance,
-                              &maintenance_port)) {
-        return false;
-    }
-    e87_ui_init(&initialized.private_ui);
-    e87_button_init(&initialized.private_button);
-    initialized.private_initialized = true;
-
-    *core = initialized;
+    (void)e87_state_store_init(&core->private_state, &state_sync);
+    (void)e87_button_classifier_init(&core->private_classifier,
+                                     &config->button_classifier);
+    (void)e87_recovery_init(&core->private_recovery, &recovery_port);
+    (void)e87_maintenance_init(&core->private_maintenance,
+                               &maintenance_port);
+    e87_ui_init(&core->private_ui);
+    e87_button_init(&core->private_button);
     core->private_recovery.private_port.context = core;
     core->private_maintenance.private_port.context = core;
+    core->private_initialized = true;
     return true;
 }
 

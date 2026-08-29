@@ -156,8 +156,10 @@ class FullMapValidatorTests(unittest.TestCase):
 
     def make_evidence(self) -> dict[str, object]:
         return {
-            "schemaVersion": 1,
-            "evidenceId": "TEST-E87-FULL-LINK-CLOSURE",
+            "schemaVersion": 2,
+            "qualificationIdentity": "FULL_RUNTIME_NORMAL_BLE",
+            "qualificationState": "TEST",
+            "evidenceId": "TEST-E87-FULL-RUNTIME-NORMAL-BLE-LINK-CLOSURE",
             "sdkCommit": "d0167685d032d745d88fe50233302edd46941622",
             "clangVersion": "4.0.1",
             "qualificationArtifact": {
@@ -298,6 +300,20 @@ class FullMapValidatorTests(unittest.TestCase):
             check=False,
         )
 
+    def run_generator(self, output: Path) -> subprocess.CompletedProcess[str]:
+        command = [
+            sys.executable, str(VALIDATOR), "--generate-candidate",
+            "--source-commit", "08981f1ae224f62d8321194965bab3cdb79ad884",
+            "--output", str(output), "--map", str(self.map_path),
+            "--elf", str(self.elf_path), "--lto-object", str(self.lto_object_path),
+            "--resolution", str(self.resolution_path),
+            "--object-list", str(self.object_list_path), "--link-log", str(self.link_log_path),
+            "--evidence", str(self.evidence_path), "--sdk-root", str(self.sdk),
+            "--toolchain-root", str(self.toolchain),
+        ]
+        return subprocess.run(command, text=True, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, check=False)
+
     def rewrite_map(self, old: bytes, new: bytes) -> None:
         self.map_bytes = self.map_path.read_bytes().replace(old, new)
         self.map_path.write_bytes(self.map_bytes)
@@ -319,7 +335,21 @@ class FullMapValidatorTests(unittest.TestCase):
     def test_valid_exact_artifacts_and_archive_bytes_are_accepted(self) -> None:
         result = self.run_validator()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("full substrate link qualified", result.stdout)
+        self.assertIn("full runtime + normal BLE link qualified", result.stdout)
+
+    def test_candidate_generation_rejects_incomplete_normal_ble_before_emission(self) -> None:
+        output = self.root / "candidate.json"
+        result = self.run_generator(output)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("normal BLE source closure is incomplete", result.stderr)
+        self.assertFalse(output.exists())
+
+    def test_qualification_identity_mutation_is_rejected(self) -> None:
+        self.evidence["qualificationIdentity"] = "FULL_RUNTIME_CLASSIC_BT"
+        self.write_evidence()
+        result = self.run_validator()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("qualificationIdentity", result.stderr)
 
     def test_default_mode_authenticates_evidence_before_artifacts(self) -> None:
         result = self.run_validator(test_only=False)
@@ -327,19 +357,18 @@ class FullMapValidatorTests(unittest.TestCase):
         self.assertIn("committed production evidence", result.stderr)
         self.assertNotIn("map digest", result.stderr)
 
-    def test_committed_production_evidence_reaches_artifact_validation(self) -> None:
+    def test_committed_legacy_pin_cannot_qualify_the_combined_runtime(self) -> None:
         self.evidence_path.write_bytes(PRODUCTION_EVIDENCE.read_bytes())
         result = self.run_validator(test_only=False)
         self.assertEqual(result.returncode, 2)
-        self.assertIn("map digest", result.stderr)
-        self.assertNotIn("committed production evidence", result.stderr)
+        self.assertIn("committed production evidence", result.stderr)
 
     def test_test_only_mode_requires_the_exact_test_evidence_id(self) -> None:
-        self.evidence["evidenceId"] = "E87-FULL-LINK-CLOSURE"
+        self.evidence["evidenceId"] = "E87-FULL-RUNTIME-NORMAL-BLE-LINK-CLOSURE"
         self.write_evidence()
         result = self.run_validator()
         self.assertEqual(result.returncode, 2)
-        self.assertIn("exact test evidence ID", result.stderr)
+        self.assertIn("exact test or candidate evidence ID", result.stderr)
 
     def test_raw_map_digest_is_verified_before_semantics(self) -> None:
         self.map_path.write_bytes(self.map_path.read_bytes() + b"# drift\n")
@@ -563,11 +592,13 @@ class FullMapValidatorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("generic initcall", result.stderr)
 
-    def test_production_evidence_pins_the_fd9fb68_link(self) -> None:
+    def test_production_evidence_requires_combined_runtime_repin(self) -> None:
         self.assertTrue(PRODUCTION_EVIDENCE.is_file(), PRODUCTION_EVIDENCE)
         evidence = json.loads(PRODUCTION_EVIDENCE.read_text(encoding="ascii"))
-        self.assertEqual(evidence["schemaVersion"], 1)
-        self.assertEqual(evidence["evidenceId"], "E87-FULL-LINK-CLOSURE")
+        self.assertEqual(evidence["schemaVersion"], 2)
+        self.assertEqual(evidence["qualificationIdentity"], "FULL_RUNTIME_NORMAL_BLE")
+        self.assertEqual(evidence["qualificationState"], "LEGACY_PIN_REPIN_REQUIRED")
+        self.assertEqual(evidence["evidenceId"], "E87-FULL-RUNTIME-NORMAL-BLE-LINK-CLOSURE")
         self.assertEqual(
             evidence["sdkCommit"],
             "d0167685d032d745d88fe50233302edd46941622",

@@ -5,7 +5,20 @@
 #include "system/includes.h"
 
 static struct e87_app_runtime e87_runtime;
-static volatile uint32_t e87_runtime_now_ms;
+static struct e87_app_target_boot_port e87_boot_port;
+static uint32_t e87_authoritative_now_ms;
+static bool e87_boot_port_configured;
+
+bool e87_app_configure_boot_port(
+    const struct e87_app_target_boot_port *port)
+{
+    if (port == NULL || e87_boot_port_configured) {
+        return false;
+    }
+    e87_boot_port = *port;
+    e87_boot_port_configured = true;
+    return true;
+}
 
 static int e87_critical_enter(void *context)
 {
@@ -24,12 +37,18 @@ static void e87_critical_exit(void *context, int saved)
 static uint32_t e87_now_ms(void *context)
 {
     (void)context;
-    return e87_runtime_now_ms;
+    return e87_authoritative_now_ms;
 }
 
 static bool e87_poll_ble(void *context)
 {
+    uint32_t now_ms;
     (void)context;
+    if (!e87_boot_port.read_now_ms(e87_boot_port.context, &now_ms) ||
+        (int32_t)(now_ms - e87_authoritative_now_ms) < 0) {
+        return false;
+    }
+    e87_authoritative_now_ms = now_ms;
     return e87_ble_target_poll();
 }
 
@@ -62,6 +81,7 @@ static bool e87_try_enqueue_state(
 
 bool e87_app_start(void)
 {
+    struct e87_app_core_event boot;
     const struct e87_app_core_config config = {
         {UINT16_C(100), UINT16_C(10), UINT16_C(20000), UINT16_C(1), UINT16_C(1),
          {UINT16_C(10), UINT16_C(19)}, {UINT16_C(30), UINT16_C(39)},
@@ -75,12 +95,17 @@ bool e87_app_start(void)
         &e87_runtime, e87_try_enqueue_state
     };
 
-    if (!e87_app_runtime_init(&e87_runtime, &config, &port) ||
-        !e87_ble_target_init(&ingress)) {
+    if (!e87_boot_port_configured ||
+        !e87_app_target_build_boot(&e87_boot_port, &boot)) {
         return false;
     }
-
-    return false;
+    e87_authoritative_now_ms = boot.now_ms;
+    if (!e87_app_runtime_init(&e87_runtime, &config, &port) ||
+        !e87_ble_target_init(&ingress) ||
+        !e87_app_runtime_try_enqueue(&e87_runtime, &boot)) {
+        return false;
+    }
+    return true;
 }
 
 void e87_app_dispatch_forever(void)
@@ -92,6 +117,5 @@ void e87_app_dispatch_forever(void)
             }
         }
         os_time_dly(1);
-        e87_runtime_now_ms += UINT32_C(10);
     }
 }

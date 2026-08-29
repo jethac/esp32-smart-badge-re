@@ -33,6 +33,7 @@ REQUIRED_SOURCES = {
     "apps/watch/app_main.c",
     "apps/watch/board/br35/board_e87_1542_full/board_e87_1542_full.c",
     "apps/watch/e87/e87_app.c",
+    "apps/watch/e87/e87_app_target.c",
     "apps/watch/e87/e87_app_runtime.c",
     "apps/watch/e87/e87_app_core.c",
     "apps/watch/e87/e87_ui.c",
@@ -144,10 +145,10 @@ class FullTargetStaticTests(unittest.TestCase):
         self.assertEqual(
             profile,
             {
-                "schemaVersion": 1,
-                "profileId": "E87-1542-FULL-SUBSTRATE-H",
+                "schemaVersion": 2,
+                "profileId": "E87-1542-FULL-RUNTIME-NORMAL-BLE-H",
                 "sdkCommit": "d0167685d032d745d88fe50233302edd46941622",
-                "status": "LINK_SUBSTRATE_ONLY",
+                "status": "FULL_RUNTIME_NORMAL_BLE_REPIN_REQUIRED",
                 "boot": {
                     "applicationTask": "app_core",
                     "explicitCalls": [
@@ -158,6 +159,7 @@ class FullTargetStaticTests(unittest.TestCase):
                         "e87_app_dispatch_forever",
                     ],
                     "genericInitcalls": [],
+                    "normalBleRuntime": "EXPLICIT_TARGET_AND_VENDOR_STACK",
                     "immutableSetupArchSeam": (
                         "RETAINED_SDFILE_SYSCFG_UNTIL_DEDICATED_SETUP_PATCH"
                     ),
@@ -178,7 +180,8 @@ class FullTargetStaticTests(unittest.TestCase):
                 "excludedUntilNamedIntegration": [
                     "panel",
                     "gpu-dbi",
-                    "bluetooth",
+                    "classic-bluetooth",
+                    "tws",
                     "rcsp",
                     "charger",
                     "generic-initcalls",
@@ -263,6 +266,17 @@ class FullTargetStaticTests(unittest.TestCase):
         self.assertNotIn("used-symbol-file", archive_block)
         for forbidden in ("btstack.a", "btctrler.a", "gpu.a", "media.a", "update.a", "rcsp_stack.a"):
             self.assertNotIn(forbidden, archive_block)
+
+    def test_app_core_init_does_not_copy_a_core_on_the_task_stack(self) -> None:
+        source = read(OVERLAY / "e87/e87_app_core.c")
+        init = source.split("bool e87_app_core_init(", 1)[1].split(
+            "static bool is_fail_closed_cleanup_event", 1
+        )[0]
+        self.assertNotRegex(init, r"struct\s+e87_app_core\s+[A-Za-z_]")
+        validation = init.index("if (core == NULL")
+        mutation = init.index("memset(core, 0, sizeof(*core));")
+        self.assertLess(validation, mutation)
+        self.assertIn("e87_button_classifier_config_valid", init[:mutation])
 
     def test_app_shell_uses_only_the_exact_explicit_boot_sequence(self) -> None:
         app = read(OVERLAY / "e87/e87_app.c")

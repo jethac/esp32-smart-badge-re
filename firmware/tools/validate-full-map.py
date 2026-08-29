@@ -11,6 +11,7 @@ import posixpath
 import re
 import stat
 import sys
+import tempfile
 from typing import Any
 
 
@@ -19,11 +20,30 @@ COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 TOOLCHAIN_SUFFIX_RE = re.compile(r"^.*/lib/r3-large/([^/]+\.a)$")
 DISCARDED_SECTIONS_MARKER = "\nDiscarded input sections\n"
 LINKER_MEMORY_MAP_MARKER = "\nLinker script and memory map\n"
-PRODUCTION_EVIDENCE_SHA256 = (
-    "6747b6d3207af01beeb19cfd82bfb0ee6dd05e8a718f80969fc19fab9f9f9cd4"
+PRODUCTION_EVIDENCE_SHA256 = ""
+PRODUCTION_EVIDENCE_ID = "E87-FULL-RUNTIME-NORMAL-BLE-LINK-CLOSURE"
+CANDIDATE_EVIDENCE_ID = "CANDIDATE-E87-FULL-RUNTIME-NORMAL-BLE-LINK-CLOSURE"
+TEST_EVIDENCE_ID = "TEST-E87-FULL-RUNTIME-NORMAL-BLE-LINK-CLOSURE"
+
+NORMAL_BLE_SOURCE_OBJECTS = (
+    "objs/apps/watch/e87/e87_ble_target.c.o",
+    "objs/apps/watch/e87/e87_ble_target_journal.c.o",
+    "objs/apps/watch/e87/e87_ble_target_platform_config.c.o",
+    "objs/apps/watch/e87/e87_bond_policy.c.o",
+    "objs/apps/watch/e87/e87_build_info.c.o",
+    "objs/apps/watch/e87/e87_gatt_db.c.o",
+    "objs/apps/watch/e87/e87_state.c.o",
+    "objs/apps/watch/log_config/app_config.c.o",
+    "objs/apps/watch/log_config/lib_btctrler_config.c.o",
+    "objs/apps/watch/log_config/lib_btstack_config.c.o",
 )
-PRODUCTION_EVIDENCE_ID = "E87-FULL-LINK-CLOSURE"
-TEST_EVIDENCE_ID = "TEST-E87-FULL-LINK-CLOSURE"
+NORMAL_BLE_ARCHIVES = {
+    "cpu/br35/liba/btstack.a",
+    "cpu/br35/liba/btctrler.a",
+    "cpu/br35/liba/cbuf.a",
+    "cpu/br35/liba/crypto_toolbox_Osize.a",
+    "cpu/br35/liba/lib_ccm_cipher.a",
+}
 
 PRODUCTION_SOURCE_OBJECTS = (
     "objs/apps/common/debug/debug.c.o",
@@ -33,6 +53,17 @@ PRODUCTION_SOURCE_OBJECTS = (
     "objs/apps/watch/app_main.c.o",
     "objs/apps/watch/board/br35/board_e87_1542_full/board_e87_1542_full.c.o",
     "objs/apps/watch/e87/e87_app.c.o",
+    "objs/apps/watch/e87/e87_app_target.c.o",
+    "objs/apps/watch/e87/e87_app_runtime.c.o",
+    "objs/apps/watch/e87/e87_app_core.c.o",
+    "objs/apps/watch/e87/e87_ui.c.o",
+    "objs/apps/watch/e87/e87_button_classifier.c.o",
+    "objs/apps/watch/e87/e87_button_fsm.c.o",
+    "objs/apps/watch/e87/e87_power_policy.c.o",
+    "objs/apps/watch/e87/e87_recovery.c.o",
+    "objs/apps/watch/e87/e87_ble_mode_fsm.c.o",
+    "objs/apps/watch/e87/e87_maintenance.c.o",
+    "objs/apps/watch/e87/e87_rcsp_profile.c.o",
     "objs/apps/watch/e87/e87_full_platform_config.c.o",
     "objs/apps/watch/log_config/lib_driver_config.c.o",
     "objs/apps/watch/log_config/lib_system_config.c.o",
@@ -284,6 +315,8 @@ def decode_evidence(raw: bytes) -> dict[str, Any]:
         value,
         {
             "schemaVersion",
+            "qualificationIdentity",
+            "qualificationState",
             "evidenceId",
             "sdkCommit",
             "clangVersion",
@@ -297,8 +330,12 @@ def decode_evidence(raw: bytes) -> dict[str, Any]:
         },
         "evidence",
     )
-    if root["schemaVersion"] != 1:
+    if root["schemaVersion"] != 2:
         fail("evidence.schemaVersion: unsupported")
+    if root["qualificationIdentity"] != "FULL_RUNTIME_NORMAL_BLE":
+        fail("evidence.qualificationIdentity: unsupported")
+    if root["qualificationState"] not in {"LEGACY_PIN_REPIN_REQUIRED", "CANDIDATE", "TEST"}:
+        fail("evidence.qualificationState: unsupported")
     ascii_string(root["evidenceId"], "evidence.evidenceId")
     commit(root["sdkCommit"], "evidence.sdkCommit")
     ascii_string(root["clangVersion"], "evidence.clangVersion")
@@ -502,8 +539,8 @@ def authorized_evidence(raw: bytes, accept_untrusted_test_evidence: bool) -> dic
         fail("evidence: bytes differ from exact committed production evidence")
     evidence = decode_evidence(raw)
     if accept_untrusted_test_evidence:
-        if evidence["evidenceId"] != TEST_EVIDENCE_ID:
-            fail("test-only untrusted evidence must use the exact test evidence ID")
+        if evidence["evidenceId"] not in {TEST_EVIDENCE_ID, CANDIDATE_EVIDENCE_ID}:
+            fail("untrusted evidence must use the exact test or candidate evidence ID")
     elif not production_contract_is_exact(evidence):
         fail("evidence: contract differs from exact committed production evidence")
     return evidence
@@ -852,6 +889,90 @@ def validate_artifacts(
     return len(rows), len(source_loads)
 
 
+def generate_candidate(arguments: argparse.Namespace) -> tuple[int, int]:
+    template = decode_evidence(read_regular(arguments.evidence, "evidence template"))
+    raw_inputs = {
+        "map": read_regular(arguments.map, "map"),
+        "ELF": read_regular(arguments.elf, "ELF"),
+        "LTO object": read_regular(arguments.lto_object, "LTO object"),
+        "resolution": read_regular(arguments.resolution, "resolution"),
+        "object list": read_regular(arguments.object_list, "object list"),
+        "link log": read_regular(arguments.link_log, "link log"),
+    }
+    text = decode_map(raw_inputs["map"])
+    live = live_map(text)
+    loads = parse_loads(live)
+    sources = [item for item in loads if item.startswith("objs/")]
+    if not set(NORMAL_BLE_SOURCE_OBJECTS).issubset(sources):
+        fail("candidate: normal BLE source closure is incomplete")
+    expected_object_list = (" " + " ".join(sources) + "\n").encode("ascii")
+    if raw_inputs["object list"] != expected_object_list:
+        fail("candidate: object list does not exactly match map source LOAD order")
+    forbidden_sources = set(template["policy"]["forbiddenSourceObjects"])
+    rejected_sources = forbidden_sources.intersection(sources)
+    if rejected_sources:
+        fail(f"candidate: forbidden source object loaded: {sorted(rejected_sources)[0]}")
+    archive_loads = [normalize_archive(item) for item in loads if item.endswith(".a")]
+    if not NORMAL_BLE_ARCHIVES.issubset(archive_loads):
+        fail("candidate: normal BLE archive closure is incomplete")
+    forbidden_archives = set(template["policy"]["forbiddenArchives"])
+    rejected_archives = forbidden_archives.intersection(archive_loads)
+    if rejected_archives:
+        fail(f"candidate: forbidden archive loaded: {sorted(rejected_archives)[0]}")
+    unique_archives = list(dict.fromkeys(archive_loads))
+    old_roles = {item["path"]: item["role"] for item in template["archives"]}
+    archives = []
+    for path in unique_archives:
+        raw = read_regular(
+            resolve_archive(path, arguments.sdk_root, arguments.toolchain_root),
+            f"archive {path}",
+        )
+        archives.append({
+            "path": path,
+            "sha256": sha256(raw),
+            "role": old_roles.get(path, "PINNED_NORMAL_BLE_RUNTIME"),
+        })
+    rows, _ = inclusion_entries(text)
+    candidate = json.loads(json.dumps(template))
+    candidate["evidenceId"] = CANDIDATE_EVIDENCE_ID
+    candidate["qualificationState"] = "CANDIDATE"
+    candidate["qualificationArtifact"] = {
+        "sourceCommit": arguments.source_commit,
+        "elfSha256": sha256(raw_inputs["ELF"]),
+        "elfSize": len(raw_inputs["ELF"]),
+        "ltoObjectSha256": sha256(raw_inputs["LTO object"]),
+        "ltoObjectSize": len(raw_inputs["LTO object"]),
+        "mapSha256": sha256(raw_inputs["map"]),
+        "mapSize": len(raw_inputs["map"]),
+        "resolutionSha256": sha256(raw_inputs["resolution"]),
+        "resolutionSize": len(raw_inputs["resolution"]),
+        "objectListSha256": sha256(raw_inputs["object list"]),
+        "objectListSize": len(raw_inputs["object list"]),
+        "linkLogSha256": sha256(raw_inputs["link log"]),
+        "linkLogSize": len(raw_inputs["link log"]),
+        "buildMode": "VENDOR_MAKE_EXPLICIT_LINK_TARGET_NO_POST",
+        "postLinkStatus": "NOT_INVOKED_BY_EXPLICIT_LINK_TARGET",
+    }
+    candidate["sourceObjects"] = sources
+    candidate["archives"] = archives
+    candidate["archiveLoadOrder"] = archive_loads
+    candidate["mapContract"]["archiveInclusionRowCount"] = len(rows)
+    candidate["mapContract"]["archiveInclusionRowsSha256"] = graph_digest(rows)
+    encoded = (json.dumps(candidate, indent=2, ensure_ascii=True) + "\n").encode("ascii")
+    with tempfile.TemporaryDirectory(prefix="e87-full-candidate-") as directory:
+        candidate_path = Path(directory) / "candidate.json"
+        candidate_path.write_bytes(encoded)
+        result = validate_artifacts(
+            arguments.map, arguments.elf, arguments.lto_object,
+            arguments.resolution, arguments.object_list, arguments.link_log,
+            candidate_path, arguments.sdk_root, arguments.toolchain_root, True,
+        )
+    if arguments.output.exists():
+        fail("candidate output already exists; refusing to overwrite")
+    arguments.output.write_bytes(encoded)
+    return result
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--map", required=True, type=Path)
@@ -863,6 +984,9 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--evidence", required=True, type=Path)
     parser.add_argument("--sdk-root", required=True, type=Path)
     parser.add_argument("--toolchain-root", required=True, type=Path)
+    parser.add_argument("--generate-candidate", action="store_true")
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--source-commit", type=lambda value: commit(value, "source commit"))
     parser.add_argument(
         "--test-only-accept-untrusted-evidence",
         action="store_true",
@@ -874,7 +998,16 @@ def parse_arguments() -> argparse.Namespace:
 def main() -> int:
     arguments = parse_arguments()
     try:
-        rows, sources = validate_artifacts(
+        if arguments.generate_candidate:
+            if arguments.output is None or arguments.source_commit is None:
+                fail("candidate generation requires --output and --source-commit")
+            if arguments.test_only_accept_untrusted_evidence:
+                fail("candidate generation cannot use test-only evidence acceptance")
+            rows, sources = generate_candidate(arguments)
+        else:
+            if arguments.output is not None or arguments.source_commit is not None:
+                fail("--output and --source-commit require --generate-candidate")
+            rows, sources = validate_artifacts(
             arguments.map,
             arguments.elf,
             arguments.lto_object,
@@ -889,7 +1022,8 @@ def main() -> int:
     except ValidationError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    print(f"full substrate link qualified: {sources} sources, {rows} archive members")
+    noun = "candidate generated" if arguments.generate_candidate else "link qualified"
+    print(f"full runtime + normal BLE {noun}: {sources} sources, {rows} archive members")
     return 0
 
 
