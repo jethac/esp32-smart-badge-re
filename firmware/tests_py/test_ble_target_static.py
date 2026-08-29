@@ -31,7 +31,7 @@ FROZEN_FULL_SHA256 = {
     "firmware/board-profiles/E87-1542-FULL-SUBSTRATE-H.json":
         "65b3dcc2218135d4575249566f700fed8083769497f3eb2f72b67591e2199769",
     "firmware/patches/full/0001-e87-full-substrate.patch":
-        "18e650a8b992784e5f5bf09ba6c7137533dffa32d98a1d4b176995fe99528056",
+        "5a7870d10baca9ef06133c702a83b9738eec6db1c0c7decedb59fbf18495c4b8",
     "firmware/evidence/full/link-closure.json":
         "6747b6d3207af01beeb19cfd82bfb0ee6dd05e8a718f80969fc19fab9f9f9cd4",
 }
