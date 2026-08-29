@@ -502,6 +502,8 @@ def _apply_lab_delta(
             commands.append(record)
     finally:
         shutil.rmtree(boundary)
+    for relative in LAB_PATCH_TARGETS:
+        os.chmod(generated / relative, before[relative][0])
     after = _tree_file_snapshot(generated)
     if set(after) != set(before):
         raise ValueError("LAB delta changed the generated SDK inventory")
