@@ -791,13 +791,32 @@ def _load_ufw():
     module = importlib.util.module_from_spec(spec); sys.modules[spec.name] = module; spec.loader.exec_module(module); return module
 
 
-def compare_ufw_or_raise(first: Path, second: Path) -> dict[str, object]:
+def compare_ufw_or_raise(
+    first: Path,
+    second: Path,
+    *,
+    same_transaction_provenance: dict[str, object] | None = None,
+) -> dict[str, object]:
     left = _regular_bytes(Path(first)); right = _regular_bytes(Path(second)); ufw = _load_ufw()
+    allow_blimit = same_transaction_provenance is not None
+    if allow_blimit:
+        expected_keys = {"isdRole", "ufwRole", "ufwInput", "isdUfwOutput", "ufwOutput", "jlIsdFwPath", "jlIsdFwSha256", "isdToolPath", "isdToolSha256", "ufwToolPath", "ufwToolSha256"}
+        if set(same_transaction_provenance) != expected_keys:
+            raise ValueError("incomplete same-transaction UFW provenance")
+        if (same_transaction_provenance["isdRole"], same_transaction_provenance["ufwRole"], same_transaction_provenance["ufwInput"], same_transaction_provenance["isdUfwOutput"], same_transaction_provenance["ufwOutput"]) != ("isdDownload", "ufwMaker", "jl_isd.fw", Path(first).name, Path(second).name):
+            raise ValueError("invalid same-transaction UFW command provenance")
+        for field in ("jlIsdFwSha256", "isdToolSha256", "ufwToolSha256"):
+            if not isinstance(same_transaction_provenance[field], str) or HEX64.fullmatch(same_transaction_provenance[field]) is None:
+                raise ValueError("invalid same-transaction UFW identity provenance")
+        for path_field, hash_field in (("jlIsdFwPath", "jlIsdFwSha256"), ("isdToolPath", "isdToolSha256"), ("ufwToolPath", "ufwToolSha256")):
+            path = Path(str(same_transaction_provenance[path_field]))
+            if _sha(_regular_bytes(path)) != same_transaction_provenance[hash_field]:
+                raise ValueError("same-transaction UFW provenance identity changed")
     equivalence = getattr(ufw, "prove_ufw_payload_equivalence", None)
     if not callable(equivalence):
         raise ValueError("UFW validator has no payload-equivalence API")
     try:
-        proof = equivalence(left, right)
+        proof = equivalence(left, right, allow_generated_blimit=allow_blimit)
     except ValueError as error:
         limit = min(len(left), len(right)); offset = next((index for index in range(limit) if left[index] != right[index]), limit)
         left_byte = left[offset] if offset < len(left) else None; right_byte = right[offset] if offset < len(right) else None
@@ -972,6 +991,7 @@ def _derive_package_proofs_uncached(
     qix_name: str,
     qix_version: str,
     event_sink=None,
+    allow_generated_blimit: bool = False,
 ) -> dict[str, object]:
     required = {"app.bin", "jl_isd.bin", "jl_isd.fw", "update.ufw", "independently-made.ufw", qix_name}
     if set(data) != required or any(not isinstance(value, bytes) or not value for value in data.values()):
@@ -1003,7 +1023,7 @@ def _derive_package_proofs_uncached(
 
     native = ufw_summary(data["update.ufw"])
     independent = ufw_summary(data["independently-made.ufw"])
-    equivalence = ufw.prove_ufw_payload_equivalence(data["update.ufw"], data["independently-made.ufw"])
+    equivalence = ufw.prove_ufw_payload_equivalence(data["update.ufw"], data["independently-made.ufw"], allow_generated_blimit=allow_generated_blimit)
     if any(native[field] != independent[field] for field in ("flashSha256", "iniSha256", "itemCount", "size")):
         raise ValueError("independent UFW semantic summary differs")
     if native["flashSha256"] != bin_proof["flashSha256"] or native["iniSha256"] != staged_ini_sha256:
@@ -1060,6 +1080,7 @@ def _cached_package_proofs(
     staged_ini_sha256: str,
     qix_name: str,
     qix_version: str,
+    allow_generated_blimit: bool,
 ) -> dict[str, object]:
     return _derive_package_proofs_uncached(
         {
@@ -1076,6 +1097,7 @@ def _cached_package_proofs(
         qix_name=qix_name,
         qix_version=qix_version,
         event_sink=None,
+        allow_generated_blimit=allow_generated_blimit,
     )
 
 
@@ -1088,6 +1110,7 @@ def _derive_package_proofs(
     qix_name: str,
     qix_version: str,
     event_sink=None,
+    allow_generated_blimit: bool = False,
 ) -> dict[str, object]:
     _validate_file_record(app_record, filename="app.bin")
     required = {"app.bin", "jl_isd.bin", "jl_isd.fw", "update.ufw", "independently-made.ufw", qix_name}
@@ -1106,6 +1129,7 @@ def _derive_package_proofs(
         staged_ini_sha256,
         qix_name,
         qix_version,
+        allow_generated_blimit,
     )
     if event_sink is not None:
         for event in ("proof:jlfw", "proof:ufw", "proof:qix"):

@@ -90,6 +90,21 @@ def build_synthetic_ufw() -> bytes:
     return encode_header(image_size, 3, table) + table + bytes([0xFF]) * (0x140 - 0x40 - len(table)) + flash + TAIL
 
 
+def build_synthetic_blimit_ufw(blimit: bytes, *, type_code: int = 0xA1, allocated: int = 160, crypt_size: int = 160) -> bytes:
+    if len(blimit) != 144:
+        raise AssertionError("blimit fixture must be 144 bytes")
+    flash = bytes(range(64)); blimit_offset = 0x1C0; tail_offset = blimit_offset + allocated
+    blimit_allocation = blimit + bytes([0xFF]) * (allocated - len(blimit))
+    table = b"".join((
+        raw_entry(0x00, 0, crc16(flash), 0x180, len(flash), len(flash), 0, 0, "flash.bin"),
+        raw_entry(0x02, 1, 0, 0x1C0, 0, 0, 0, 0, "info.log"),
+        raw_entry(type_code, 2, crc16(blimit), blimit_offset, len(blimit), allocated, 0, crypt_size, "blimit.bin"),
+        raw_entry(0xFF, 3, crc16(TAIL), tail_offset, len(TAIL), len(TAIL), 0, 0, "tail.bin"),
+    ))
+    image_size = tail_offset + len(TAIL)
+    return encode_header(image_size, 4, table) + table + flash + crypt_allocation(blimit_allocation, 0x9847, blimit_offset) + TAIL
+
+
 def mutate_header(golden: bytes, mutator) -> bytes:
     decoded = bytearray(meta(golden[:0x40])); mutator(decoded)
     count = int.from_bytes(decoded[8:10], "little")
@@ -230,6 +245,27 @@ class UfwTests(unittest.TestCase):
         self.assertEqual(parsed["entries"][0]["data"], bytes(range(64)))
         self.assertEqual(parsed["tail"]["chipKey"], 0x9847)
         self.assertIsNone(parsed["postImage"])
+
+    def test_generated_blimit_requires_opt_in_and_exact_closed_shape(self):
+        first = build_synthetic_blimit_ufw(bytes(range(144)))
+        second = build_synthetic_blimit_ufw(bytes((value * 7 + 3) & 0xFF for value in range(144)))
+        with self.assertRaisesRegex(ValueError, "installed member differs: blimit.bin"):
+            self.ufw.prove_ufw_payload_equivalence(first, second)
+        proof = self.ufw.prove_ufw_payload_equivalence(first, second, allow_generated_blimit=True)
+        self.assertEqual(proof["relation"], "SAME_TRANSACTION_GENERATED_BLIMIT_EQUIVALENT")
+
+        for label, changed in (
+            ("type", build_synthetic_blimit_ufw(bytes((value * 7 + 3) & 0xFF for value in range(144)), type_code=0xA0)),
+            ("allocation", build_synthetic_blimit_ufw(bytes((value * 7 + 3) & 0xFF for value in range(144)), allocated=176, crypt_size=176)),
+        ):
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                self.ufw.prove_ufw_payload_equivalence(first, changed, allow_generated_blimit=True)
+        member_changed = bytearray(second); member_changed[0x180] ^= 1
+        with self.assertRaises(ValueError):
+            self.ufw.prove_ufw_payload_equivalence(first, bytes(member_changed), allow_generated_blimit=True)
+        padding_changed = bytearray(second); padding_changed[0x1C0 + 144] ^= 1
+        with self.assertRaises(ValueError):
+            self.ufw.prove_ufw_payload_equivalence(first, bytes(padding_changed), allow_generated_blimit=True)
 
     def test_tail_randomization_equivalence_is_closed_to_proven_fields(self):
         original = build_synthetic_ufw()

@@ -1009,6 +1009,19 @@ def run_lab_native_packagers(
     comparison = STAGE0_PACKAGE.compare_ufw_or_raise(
         staging / "update.ufw",
         staging / "independently-made.ufw",
+        same_transaction_provenance={
+            "isdRole": "isdDownload",
+            "ufwRole": "ufwMaker",
+            "ufwInput": "jl_isd.fw",
+            "isdUfwOutput": "update.ufw",
+            "ufwOutput": "independently-made.ufw",
+            "jlIsdFwPath": str(staging / "jl_isd.fw"),
+            "jlIsdFwSha256": _sha(_regular(staging / "jl_isd.fw", "jl_isd.fw", allow_empty=False)),
+            "isdToolPath": str(isd_path),
+            "isdToolSha256": isd_tool["sha256"],
+            "ufwToolPath": str(ufw_path),
+            "ufwToolSha256": ufw_tool["sha256"],
+        },
     )
     outputs = {
         name: staging / name
@@ -1222,6 +1235,7 @@ def run_lab_package(
         staged_ini_sha256=next(item["sha256"] for item in staged["inputs"] if item["filename"] == "isd_config.ini"),
         qix_name=name,
         qix_version=LAB_QIX_VERSION,
+        allow_generated_blimit=True,
     )
 
     delivery_sources = {

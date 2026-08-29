@@ -543,7 +543,12 @@ def parse_ufw(
     }
 
 
-def prove_ufw_payload_equivalence(first: bytes, second: bytes) -> dict[str, Any]:
+def prove_ufw_payload_equivalence(
+    first: bytes,
+    second: bytes,
+    *,
+    allow_generated_blimit: bool = False,
+) -> dict[str, Any]:
     """Prove two UFWs install the same payload despite tail-key randomization.
 
     Native producers randomize tail.bin[0:0x20].  Its CRC at 0x20, the tail
@@ -570,6 +575,8 @@ def prove_ufw_payload_equivalence(first: bytes, second: bytes) -> dict[str, Any]
     if len(left_entries) != len(right_entries):
         raise UfwError("UFW entry counts differ")
     tail_index = None
+    varied_blimit_index = None
+    blimit_shape = (0xA1, 144, 160, 0, 160)
     for index, (left_entry, right_entry) in enumerate(zip(left_entries, right_entries)):
         left_metadata = {key: value for key, value in left_entry.items() if key not in ignored_entry_fields}
         right_metadata = {key: value for key, value in right_entry.items() if key not in ignored_entry_fields}
@@ -580,7 +587,13 @@ def prove_ufw_payload_equivalence(first: bytes, second: bytes) -> dict[str, Any]
             if left_entry["data"][0x22:] != right_entry["data"][0x22:]:
                 raise UfwError("UFW tail fixed semantics differ")
         elif left_entry["decodedAllocation"] != right_entry["decodedAllocation"]:
-            raise UfwError(f"UFW installed member differs: {left_entry['name']}")
+            shape = tuple(left_entry[field] for field in ("typeCode", "dataSize", "allocatedSize", "cryptOffset", "cryptSize"))
+            if not allow_generated_blimit or left_entry["name"] != "blimit.bin" or shape != blimit_shape:
+                raise UfwError(f"UFW installed member differs: {left_entry['name']}")
+            if varied_blimit_index is not None:
+                raise UfwError("UFW has multiple varying blimit members")
+            # parse_ufw already proved both logical CRCs and erased decoded padding.
+            varied_blimit_index = index
     if tail_index is None:
         raise UfwError("UFW tail entry is absent")
 
@@ -589,13 +602,24 @@ def prove_ufw_payload_equivalence(first: bytes, second: bytes) -> dict[str, Any]
     allowed = set(range(0, 4))
     allowed.update(range(tail_record + 4, tail_record + 6))
     allowed.update(range(tail_offset, tail_offset + 0x22))
+    if varied_blimit_index is not None:
+        blimit = left_entries[varied_blimit_index]
+        blimit_record = HEADER_SIZE + varied_blimit_index * ENTRY_SIZE
+        allowed.update(range(blimit_record + 4, blimit_record + 6))
+        allowed.update(range(blimit["offset"], blimit["offset"] + blimit["dataSize"]))
     differences = {index for index, pair in enumerate(zip(left_source, right_source)) if pair[0] != pair[1]}
     if len(left_source) != len(right_source) or not differences.issubset(allowed):
         raise UfwError("UFW bytes differ outside randomized tail and cryptographic closure fields")
+    if varied_blimit_index is not None:
+        relation = "SAME_TRANSACTION_GENERATED_BLIMIT_EQUIVALENT"
+    elif differences:
+        relation = "TAIL_RANDOMIZED_PAYLOAD_EQUIVALENT"
+    else:
+        relation = "BYTE_IDENTICAL"
     return {
-        "relation": "TAIL_RANDOMIZED_PAYLOAD_EQUIVALENT" if differences else "BYTE_IDENTICAL",
+        "relation": relation,
         "differentByteCount": len(differences),
-        "installedPayloadSha256": hashlib.sha256(b"".join(entry["decodedAllocation"] for entry in left_entries if entry["name"] != "tail.bin")).hexdigest().upper(),
+        "stableMembersSha256": hashlib.sha256(b"".join(entry["decodedAllocation"] for entry in left_entries if entry["name"] != "tail.bin" and (varied_blimit_index is None or entry["name"] != "blimit.bin"))).hexdigest().upper(),
     }
 
 
