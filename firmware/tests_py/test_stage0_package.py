@@ -2862,9 +2862,8 @@ class PackageTests(unittest.TestCase):
             self.package.compare_ufw_or_raise(first, second)
         first.write_bytes(stage0); changed = bytearray(stage0); changed[-1] ^= 1; second.write_bytes(changed)
         exact_message = (
-            f"first difference at 0x{len(stage0) - 1:X}: {stage0[-1]:02X}!={changed[-1]:02X}; semantic difference: "
-            "first=AC707N/v4/items=10/image=0x102220/postImage.bodySha256=3CA44F3A12E08FF12C26E6B87024DB6B7446B8A5A936EA999AC920DABE150FF1; "
-            "second=AC707N/v4/items=10/image=0x102220/postImage.bodySha256=779914B5A50A47D7388FC2C4557CC4E88299A80E3580BB6251C637AE3836C45F"
+            f"first difference at 0x{len(stage0) - 1:X}: {stage0[-1]:02X}!={changed[-1]:02X}; "
+            "UFW payload equivalence failed: UFW post-image payloads differ"
         )
         with self.assertRaisesRegex(ValueError, "^" + re.escape(exact_message) + "$"):
             self.package.compare_ufw_or_raise(first, second)

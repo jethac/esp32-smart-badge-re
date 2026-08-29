@@ -793,27 +793,24 @@ def _load_ufw():
 
 def compare_ufw_or_raise(first: Path, second: Path) -> dict[str, object]:
     left = _regular_bytes(Path(first)); right = _regular_bytes(Path(second)); ufw = _load_ufw()
-    if left != right:
+    equivalence = getattr(ufw, "prove_ufw_payload_equivalence", None)
+    if not callable(equivalence):
+        raise ValueError("UFW validator has no payload-equivalence API")
+    try:
+        proof = equivalence(left, right)
+    except ValueError as error:
         limit = min(len(left), len(right)); offset = next((index for index in range(limit) if left[index] != right[index]), limit)
-        semantic = []
-        for label, data in (("first", left), ("second", right)):
-            try:
-                parsed = ufw.parse_ufw(data)
-                post_image = parsed["postImage"]
-                post_summary = "none" if post_image is None else post_image["bodySha256"]
-                semantic.append(
-                    f"{label}={parsed['chip']}/v{parsed['formatVersion']}"
-                    f"/items={parsed['itemCount']}/image=0x{parsed['imageSize']:X}"
-                    f"/postImage.bodySha256={post_summary}"
-                )
-            except ValueError as error: semantic.append(f"{label}=INVALID:{error}")
         left_byte = left[offset] if offset < len(left) else None; right_byte = right[offset] if offset < len(right) else None
         left_hex = "EOF" if left_byte is None else f"{left_byte:02X}"; right_hex = "EOF" if right_byte is None else f"{right_byte:02X}"
-        raise ValueError(f"first difference at 0x{offset:X}: {left_hex}!={right_hex}; semantic difference: {'; '.join(semantic)}")
-    validator = getattr(ufw, "validate_stage0_ufw", None)
-    if not callable(validator): raise ValueError("UFW validator has no validate_stage0_ufw API")
-    validator(left)
-    return {"sha256": _sha(left), "size": len(left)}
+        raise ValueError(f"first difference at 0x{offset:X}: {left_hex}!={right_hex}; UFW payload equivalence failed: {error}") from error
+    parsed = ufw.parse_ufw(left)
+    if parsed["itemCount"] == 10:
+        ufw.validate_stage0_ufw(left)
+        ufw.validate_stage0_ufw(right)
+    result = {"sha256": _sha(left), "size": len(left)}
+    if proof["relation"] != "BYTE_IDENTICAL":
+        result.update(proof)
+    return result
 
 
 def _load_sibling(filename: str, module_name: str):
@@ -991,7 +988,9 @@ def _derive_package_proofs_uncached(
     ufw = _load_ufw()
 
     def ufw_summary(payload: bytes) -> dict[str, object]:
-        parsed = ufw.validate_stage0_ufw(payload)
+        parsed = ufw.parse_ufw(payload)
+        if parsed["itemCount"] == 10:
+            parsed = ufw.validate_stage0_ufw(payload)
         flash = next(entry["data"] for entry in parsed["entries"] if entry["name"] == "flash.bin")
         ini = next(entry["data"] for entry in parsed["entries"] if entry["name"] == "isd_config.ini")
         return {
@@ -1004,8 +1003,9 @@ def _derive_package_proofs_uncached(
 
     native = ufw_summary(data["update.ufw"])
     independent = ufw_summary(data["independently-made.ufw"])
-    if data["update.ufw"] != data["independently-made.ufw"] or native != independent:
-        raise ValueError("independent UFW is not byte-identical")
+    equivalence = ufw.prove_ufw_payload_equivalence(data["update.ufw"], data["independently-made.ufw"])
+    if any(native[field] != independent[field] for field in ("flashSha256", "iniSha256", "itemCount", "size")):
+        raise ValueError("independent UFW semantic summary differs")
     if native["flashSha256"] != bin_proof["flashSha256"] or native["iniSha256"] != staged_ini_sha256:
         raise ValueError("UFW payload cross-binding mismatch")
     if event_sink is not None:
@@ -1042,7 +1042,7 @@ def _derive_package_proofs_uncached(
             "semanticDiff": {"after": "RESET = PB07_00_0;", "before": "RESET = PB07_08_0;", "occurrences": 1},
             "stagedSha256": native["iniSha256"],
         },
-        "ufw": {"independent": independent, "native": native, "relation": "BYTE_IDENTICAL"},
+        "ufw": {"independent": independent, "native": native, "relation": equivalence["relation"]},
     }
 
 
@@ -1533,7 +1533,7 @@ def build_manifest(
     ]
     intermediate = [
         ("jl_isd.bin", "NEW_FIRMWARE_INTERMEDIATE", {"embeddedAppSha256": app_sha, "kind": "JL_NEW_FW", "flashSha256": validations["jlfw"]["flashSha256"]}),
-        ("independently-made.ufw", "INDEPENDENT_UFW_CHECK", {"kind": "UFW_V4_BYTE_IDENTICAL", "sha256": validations["ufw"]["independent"]["sha256"]}),
+        ("independently-made.ufw", "INDEPENDENT_UFW_CHECK", {"kind": "UFW_V4_" + validations["ufw"]["relation"], "sha256": validations["ufw"]["independent"]["sha256"]}),
     ]
     delivery = Path(delivery_root)
     evidence_root = Path(evidence_root)

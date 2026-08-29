@@ -543,6 +543,62 @@ def parse_ufw(
     }
 
 
+def prove_ufw_payload_equivalence(first: bytes, second: bytes) -> dict[str, Any]:
+    """Prove two UFWs install the same payload despite tail-key randomization.
+
+    Native producers randomize tail.bin[0:0x20].  Its CRC at 0x20, the tail
+    entry's data CRC, and the table/header CRCs are deterministic closure fields.
+    No other encoded byte is permitted to differ.  Both random tails must derive
+    the same chip key, and every non-tail decoded allocation must be identical.
+    """
+    left_source = _as_bytes(first, "first UFW payload")
+    right_source = _as_bytes(second, "second UFW payload")
+    left = parse_ufw(left_source)
+    right = parse_ufw(right_source)
+
+    header_fields = ("chip", "formatVersion", "imageSize", "itemCount", "reserved")
+    if any(left[field] != right[field] for field in header_fields):
+        raise UfwError("UFW container semantics differ")
+    if left["postImage"] != right["postImage"]:
+        raise UfwError("UFW post-image payloads differ")
+    if left["tail"]["chipKey"] != right["tail"]["chipKey"]:
+        raise UfwError("UFW randomized tails derive different chip keys")
+
+    ignored_entry_fields = {"dataCrc16", "rawAllocation", "decodedAllocation", "data"}
+    left_entries = left["entries"]
+    right_entries = right["entries"]
+    if len(left_entries) != len(right_entries):
+        raise UfwError("UFW entry counts differ")
+    tail_index = None
+    for index, (left_entry, right_entry) in enumerate(zip(left_entries, right_entries)):
+        left_metadata = {key: value for key, value in left_entry.items() if key not in ignored_entry_fields}
+        right_metadata = {key: value for key, value in right_entry.items() if key not in ignored_entry_fields}
+        if left_metadata != right_metadata:
+            raise UfwError("UFW member metadata differs")
+        if left_entry["name"] == "tail.bin":
+            tail_index = index
+            if left_entry["data"][0x22:] != right_entry["data"][0x22:]:
+                raise UfwError("UFW tail fixed semantics differ")
+        elif left_entry["decodedAllocation"] != right_entry["decodedAllocation"]:
+            raise UfwError(f"UFW installed member differs: {left_entry['name']}")
+    if tail_index is None:
+        raise UfwError("UFW tail entry is absent")
+
+    tail_offset = left_entries[tail_index]["offset"]
+    tail_record = HEADER_SIZE + tail_index * ENTRY_SIZE
+    allowed = set(range(0, 4))
+    allowed.update(range(tail_record + 4, tail_record + 6))
+    allowed.update(range(tail_offset, tail_offset + 0x22))
+    differences = {index for index, pair in enumerate(zip(left_source, right_source)) if pair[0] != pair[1]}
+    if len(left_source) != len(right_source) or not differences.issubset(allowed):
+        raise UfwError("UFW bytes differ outside randomized tail and cryptographic closure fields")
+    return {
+        "relation": "TAIL_RANDOMIZED_PAYLOAD_EQUIVALENT" if differences else "BYTE_IDENTICAL",
+        "differentByteCount": len(differences),
+        "installedPayloadSha256": hashlib.sha256(b"".join(entry["decodedAllocation"] for entry in left_entries if entry["name"] != "tail.bin")).hexdigest().upper(),
+    }
+
+
 def validate_stage0_ufw(payload: bytes) -> dict[str, Any]:
     """Apply the exact recovered AC707N single-bank Stage 0-H profile."""
     parsed = parse_ufw(

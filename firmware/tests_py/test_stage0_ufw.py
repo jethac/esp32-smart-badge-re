@@ -231,6 +231,35 @@ class UfwTests(unittest.TestCase):
         self.assertEqual(parsed["tail"]["chipKey"], 0x9847)
         self.assertIsNone(parsed["postImage"])
 
+    def test_tail_randomization_equivalence_is_closed_to_proven_fields(self):
+        original = build_synthetic_ufw()
+        original_key = self.ufw.parse_ufw(original)["tail"]["chipKey"]
+        variant = None
+        for relative in range(0x20):
+            for value in range(256):
+                changed = bytearray(original)
+                if value == changed[0x180 + relative]:
+                    continue
+                changed[0x180 + relative] = value
+                changed[0x1A0:0x1A2] = crc16(changed[0x180:0x1A0]).to_bytes(2, "little")
+                candidate = mutate_entry(bytes(changed), 2, lambda entry: entry.__setitem__(slice(4, 6), crc16(changed[0x180:0x1C0]).to_bytes(2, "little")))
+                if self.ufw.parse_ufw(candidate)["tail"]["chipKey"] == original_key:
+                    variant = candidate
+                    break
+            if variant is not None:
+                break
+        self.assertIsNotNone(variant)
+        proof = self.ufw.prove_ufw_payload_equivalence(original, variant)
+        self.assertEqual(proof["relation"], "TAIL_RANDOMIZED_PAYLOAD_EQUIVALENT")
+        self.assertGreater(proof["differentByteCount"], 0)
+
+        payload_change = bytearray(variant); payload_change[0x140] ^= 1
+        with self.assertRaises(ValueError):
+            self.ufw.prove_ufw_payload_equivalence(original, bytes(payload_change))
+        closure_escape = bytearray(variant); closure_escape[0x3F] ^= 1
+        with self.assertRaises(ValueError):
+            self.ufw.prove_ufw_payload_equivalence(original, bytes(closure_escape))
+
     def test_model1552_golden_decodes_exact_header_entries_tail_and_suffix(self):
         self.assertEqual((len(self.golden), hashlib.sha256(self.golden).hexdigest().upper()), (1_080_360, "ECDFAA06377A00056ADB15D3486A4B059ACDE762C0F4A2BC8DCE43E0D120A80B"))
         parsed = self.ufw.parse_ufw(self.golden, expected_chip="AC707N", expected_members=NAMES)
