@@ -409,6 +409,23 @@ def prove_embedded_app(container: bytes, expected_app: bytes, *, container_kind:
     return {"appOffset": app.offset, "appSha256": app.sha256, "appSize": app.size, "containerKind": kind, "containerSha256": container_sha, "entryAddress": f"0x{app.entry_address:08X}", "flashSha256": hashlib.sha256(flash).hexdigest().upper()}
 
 
+def prove_generated_lab_ufw_flash(raw_flash: bytes, installed_flash: bytes, expected_app: bytes, *, expected_entry_address: int = EXPECTED_ENTRY) -> dict[str, object]:
+    """Prove the generated UFW flash differs only by its six-byte closure trailer."""
+    if not isinstance(raw_flash, bytes) or not isinstance(installed_flash, bytes) or not isinstance(expected_app, bytes):
+        raise TypeError("generated LAB flash proof inputs must be bytes")
+    if len(raw_flash) != len(installed_flash) or len(raw_flash) < 8:
+        raise JlFwError("generated LAB UFW flash length mismatch")
+    trailer = range(len(raw_flash) - 8, len(raw_flash) - 2)
+    differences = {index for index, pair in enumerate(zip(raw_flash, installed_flash)) if pair[0] != pair[1]}
+    if differences != set(trailer) or any(raw_flash[index] != 0xFF for index in trailer) or installed_flash[-2:] != b"\xFF\xFF":
+        raise JlFwError("generated LAB UFW flash differs outside its closure trailer")
+    raw_app = extract_embedded_app(raw_flash, expected_entry_address=expected_entry_address, proof_profile=GENERATED_LAB_PROFILE)
+    installed_app = extract_embedded_app(installed_flash, expected_entry_address=expected_entry_address, proof_profile=GENERATED_LAB_PROFILE)
+    if raw_app.data != expected_app or installed_app.data != expected_app or raw_app.sha256 != installed_app.sha256:
+        raise JlFwError("generated LAB UFW flash app equivalence failed")
+    return {"differentByteCount": len(differences), "installedFlashSha256": hashlib.sha256(installed_flash).hexdigest().upper(), "rawFlashSha256": hashlib.sha256(raw_flash).hexdigest().upper(), "relation": "GENERATED_LAB_CLOSURE_TRAILER_EQUIVALENT"}
+
+
 def prove_package_pair(jl_isd_bin: bytes, jl_isd_fw: bytes, expected_app: bytes, *, expected_entry_address: int = EXPECTED_ENTRY, proof_profile: str = REFERENCE_PROFILE) -> dict[str, object]:
     if proof_profile not in PROOF_PROFILES: raise JlFwError("unknown new-flash proof profile")
     envelope = extract_flash_from_jl_isd_fw(jl_isd_fw, proof_profile=proof_profile)

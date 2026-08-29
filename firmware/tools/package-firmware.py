@@ -1015,6 +1015,7 @@ def _derive_package_proofs_uncached(
         flash = next(entry["data"] for entry in parsed["entries"] if entry["name"] == "flash.bin")
         ini = next(entry["data"] for entry in parsed["entries"] if entry["name"] == "isd_config.ini")
         return {
+            "_flash": flash,
             "flashSha256": _sha(flash),
             "iniSha256": _sha(ini),
             "itemCount": parsed["itemCount"],
@@ -1027,7 +1028,15 @@ def _derive_package_proofs_uncached(
     equivalence = ufw.prove_ufw_payload_equivalence(data["update.ufw"], data["independently-made.ufw"], allow_generated_blimit=allow_generated_blimit)
     if any(native[field] != independent[field] for field in ("flashSha256", "iniSha256", "itemCount", "size")):
         raise ValueError("independent UFW semantic summary differs")
-    if native["flashSha256"] != bin_proof["flashSha256"] or native["iniSha256"] != staged_ini_sha256:
+    native_flash = native.pop("_flash")
+    independent.pop("_flash")
+    if jlfw_proof_profile == "generated-lab":
+        flash_cross_binding = jlfw.prove_generated_lab_ufw_flash(data["jl_isd.bin"], native_flash, data["app.bin"])
+    else:
+        if native["flashSha256"] != bin_proof["flashSha256"]:
+            raise ValueError("UFW payload cross-binding mismatch")
+        flash_cross_binding = {"relation": "BYTE_IDENTICAL"}
+    if native["iniSha256"] != staged_ini_sha256:
         raise ValueError("UFW payload cross-binding mismatch")
     if event_sink is not None:
         event_sink("proof:ufw")
@@ -1038,6 +1047,9 @@ def _derive_package_proofs_uncached(
         raise ValueError("Qix payload is not byte-identical to update.ufw")
     if event_sink is not None:
         event_sink("proof:qix")
+    ufw_proof = {"independent": independent, "native": native, "relation": equivalence["relation"]}
+    if jlfw_proof_profile == "generated-lab":
+        ufw_proof["flashCrossBinding"] = flash_cross_binding
     return {
         "jlfw": {
             "appSha256": pair["appSha256"],
@@ -1063,7 +1075,7 @@ def _derive_package_proofs_uncached(
             "semanticDiff": {"after": "RESET = PB07_00_0;", "before": "RESET = PB07_08_0;", "occurrences": 1},
             "stagedSha256": native["iniSha256"],
         },
-        "ufw": {"independent": independent, "native": native, "relation": equivalence["relation"]},
+        "ufw": ufw_proof,
     }
 
 

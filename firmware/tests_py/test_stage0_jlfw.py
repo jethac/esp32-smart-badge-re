@@ -27,6 +27,7 @@ LAB_FLASH_SHA256 = "F3AC889391F57C693FCD7BA98CE4294CD20D61310C3479431BA21409E48D
 LAB_APP_SHA256 = "D4EEEB268D5E36E1B874F106E5F5F64628E5531D44DDF6B37B5B67D785AC73D9"
 LAB_FW = Path(os.environ.get("E87_GENERATED_LAB_FW", r"B:\esp32\artifacts\ufw-variance-e40a68f\jl_isd.fw"))
 LAB_FW_SHA256 = "7B3EADFACB51BC379AE4BEA63C4E1222A8241B2C4AC8B769F0EDFCB81A160DA2"
+LAB_FAILED_PACKAGE_ROOT = Path(os.environ.get("E87_GENERATED_LAB_FAILED_PACKAGE_ROOT", r"B:\esp32\artifacts\panel-package-3590b88"))
 
 
 def fwsc_wrap(logical_ufw: bytes, guards: bytes = GUARDS) -> bytes:
@@ -104,6 +105,9 @@ class JlFwTests(unittest.TestCase):
         cls.lab_flash = (LAB_ARTIFACT_ROOT / "jl_isd.bin").read_bytes()
         cls.lab_app = (LAB_ARTIFACT_ROOT / "app.bin").read_bytes()
         cls.lab_fw = LAB_FW.read_bytes()
+        ufw = load_tool()._load_ufw_module()
+        parsed_update = ufw.parse_ufw((LAB_FAILED_PACKAGE_ROOT / "update.ufw").read_bytes())
+        cls.lab_installed_flash = next(entry["data"] for entry in parsed_update["entries"] if entry["name"] == "flash.bin")
 
     def test_crc_and_encryption_literal_vectors(self):
         self.assertEqual(self.jlfw.crc16_xmodem(b"123456789"), 0x31C3)
@@ -305,6 +309,20 @@ class JlFwTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(ValueError, "ambiguous"):
                     prove()
+
+    def test_generated_lab_ufw_flash_cross_binding_allows_only_real_closure_trailer(self):
+        proof = self.jlfw.prove_generated_lab_ufw_flash(self.lab_flash, self.lab_installed_flash, self.lab_app)
+        self.assertEqual(proof["relation"], "GENERATED_LAB_CLOSURE_TRAILER_EQUIVALENT")
+        self.assertEqual(proof["differentByteCount"], 6)
+        self.assertEqual(proof["rawFlashSha256"], LAB_FLASH_SHA256)
+        changed = bytearray(self.lab_installed_flash); changed[0x2100] ^= 1
+        missing = bytearray(self.lab_installed_flash); missing[-8] = 0xFF
+        trailing = self.lab_installed_flash + b"\xFF"
+        for name, candidate in (("app", bytes(changed)), ("incomplete-closure", bytes(missing)), ("length", trailing)):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.jlfw.prove_generated_lab_ufw_flash(self.lab_flash, candidate, self.lab_app)
+        with self.assertRaises(ValueError):
+            self.jlfw.prove_generated_lab_ufw_flash(self.lab_flash, self.lab_installed_flash, self.lab_app[:-1])
 
     def test_generated_lab_fw_envelope_proves_exact_raw_flash_and_app(self):
         envelope = self.jlfw.extract_flash_from_jl_isd_fw(self.lab_fw, proof_profile="generated-lab")
