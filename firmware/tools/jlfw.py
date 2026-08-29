@@ -17,6 +17,9 @@ APP_BASE = 0x2000
 APP_END = 0xF5200
 EXPECTED_ENTRY = 0x0C000100
 EXPECTED_KEY = 0x9847
+REFERENCE_PROFILE = "model-1552-reference"
+GENERATED_LAB_PROFILE = "generated-lab"
+PROOF_PROFILES = (REFERENCE_PROFILE, GENERATED_LAB_PROFILE)
 
 
 class JlFwError(ValueError):
@@ -171,18 +174,35 @@ def _validate_reservations(decoded: bytes) -> None:
         raise JlFwError("reserved-range table drift")
 
 
-def extract_embedded_app(flash: bytes, *, expected_entry_address: int = EXPECTED_ENTRY) -> EmbeddedApp:
+def extract_embedded_app(
+    flash: bytes,
+    *,
+    expected_entry_address: int = EXPECTED_ENTRY,
+    proof_profile: str = REFERENCE_PROFILE,
+) -> EmbeddedApp:
     if not isinstance(flash, bytes): raise TypeError("flash must be bytes")
-    _validate_flash_header(flash)
+    if proof_profile not in PROOF_PROFILES: raise JlFwError("unknown new-flash proof profile")
+    if proof_profile == REFERENCE_PROFILE:
+        _validate_flash_header(flash)
+    else:
+        if len(flash) < APP_BASE + 64:
+            raise JlFwError("generated LAB flash image is truncated")
+        decoded_header = jl_enc(flash[:32], 0xFFFF)
+        if int.from_bytes(decoded_header[:2], "little") != crc16_xmodem(decoded_header[2:]):
+            raise JlFwError("flash header CRC mismatch")
+        if flash[16:22] != b"AC707N":
+            raise JlFwError("wrong flash PID")
     key, app_base = _validate_top_chain(flash)
     if key != EXPECTED_KEY or app_base != APP_BASE:
         raise JlFwError("wrong chip key or app base")
     decoded = _decode_sfc(flash, key)
     app_head = _parse_header(decoded[APP_BASE:APP_BASE + 32], location=APP_BASE)
-    if (app_head["name"], int(app_head["offset"]), int(app_head["size"]), int(app_head["flags"])) != ("app_area_head", expected_entry_address, 0xF3200, 0x83):
+    expected_size = 0xF3200 if proof_profile == REFERENCE_PROFILE else len(decoded) - APP_BASE
+    if (app_head["name"], int(app_head["offset"]), int(app_head["size"]), int(app_head["flags"])) != ("app_area_head", expected_entry_address, expected_size, 0x83):
         raise JlFwError("application-area identity mismatch")
     app_area_end = APP_BASE + int(app_head["size"])
-    if app_area_end != APP_END or app_area_end > len(decoded):
+    expected_end = APP_END if proof_profile == REFERENCE_PROFILE else len(decoded)
+    if app_area_end != expected_end or app_area_end > len(decoded):
         raise JlFwError("application-area bounds mismatch")
     if crc16_xmodem(decoded[APP_BASE + 32:app_area_end]) != int(app_head["dataCrc"]):
         raise JlFwError("application-area CRC mismatch")
@@ -203,7 +223,8 @@ def extract_embedded_app(flash: bytes, *, expected_entry_address: int = EXPECTED
     data = decoded[offset:offset + size]
     if crc16_xmodem(data) != int(app["dataCrc"]):
         raise JlFwError("application data CRC mismatch")
-    _validate_reservations(decoded)
+    if proof_profile == REFERENCE_PROFILE:
+        _validate_reservations(decoded)
     return EmbeddedApp(data=data, offset=offset, size=size, entry_address=int(app_head["offset"]), chip_key=key, sha256=hashlib.sha256(data).hexdigest().upper(), app_entry_count=len(apps))
 
 
@@ -227,11 +248,14 @@ def _flash_from_parsed(parsed) -> bytes:
 
 def collect_container_candidates(
     data: bytes,
+    *,
+    proof_profile: str = REFERENCE_PROFILE,
 ) -> tuple[FwEnvelope | None, FwEnvelope | None, FwEnvelope | None]:
     if not isinstance(data, bytes): raise TypeError("container must be bytes")
+    if proof_profile not in PROOF_PROFILES: raise JlFwError("unknown new-flash proof profile")
     raw = None
     try:
-        extract_embedded_app(data)
+        extract_embedded_app(data, proof_profile=proof_profile)
         raw = FwEnvelope("RAW_JL_NEW_FW", b"", data, b"", 0)
     except (ValueError, KeyError, TypeError):
         pass
@@ -256,8 +280,8 @@ def collect_container_candidates(
     return raw, direct, fwsc
 
 
-def extract_flash_from_jl_isd_fw(data: bytes) -> FwEnvelope:
-    return select_unique_fw_interpretation(*collect_container_candidates(data))
+def extract_flash_from_jl_isd_fw(data: bytes, *, proof_profile: str = REFERENCE_PROFILE) -> FwEnvelope:
+    return select_unique_fw_interpretation(*collect_container_candidates(data, proof_profile=proof_profile))
 
 
 def classify_container(data: bytes) -> str:
@@ -271,24 +295,26 @@ def classify_container(data: bytes) -> str:
     return selected.kind
 
 
-def prove_embedded_app(container: bytes, expected_app: bytes, *, container_kind: str, expected_entry_address: int = EXPECTED_ENTRY) -> dict[str, object]:
+def prove_embedded_app(container: bytes, expected_app: bytes, *, container_kind: str, expected_entry_address: int = EXPECTED_ENTRY, proof_profile: str = REFERENCE_PROFILE) -> dict[str, object]:
     if not isinstance(expected_app, bytes): raise TypeError("expected app must be bytes")
+    if proof_profile not in PROOF_PROFILES: raise JlFwError("unknown new-flash proof profile")
     if container_kind == "jl_isd.bin":
         flash = container; kind = "JL_ISD_BIN"; container_sha = hashlib.sha256(container).hexdigest().upper()
     elif container_kind == "jl_isd.fw":
-        envelope = extract_flash_from_jl_isd_fw(container); flash = envelope.flash; kind = envelope.kind; container_sha = hashlib.sha256(container).hexdigest().upper()
+        envelope = extract_flash_from_jl_isd_fw(container, proof_profile=proof_profile); flash = envelope.flash; kind = envelope.kind; container_sha = hashlib.sha256(container).hexdigest().upper()
     else: raise JlFwError("unknown container kind")
-    app = extract_embedded_app(flash, expected_entry_address=expected_entry_address)
+    app = extract_embedded_app(flash, expected_entry_address=expected_entry_address, proof_profile=proof_profile)
     if app.data != expected_app:
         raise JlFwError("embedded app does not equal reviewed app")
     return {"appOffset": app.offset, "appSha256": app.sha256, "appSize": app.size, "containerKind": kind, "containerSha256": container_sha, "entryAddress": f"0x{app.entry_address:08X}", "flashSha256": hashlib.sha256(flash).hexdigest().upper()}
 
 
-def prove_package_pair(jl_isd_bin: bytes, jl_isd_fw: bytes, expected_app: bytes, *, expected_entry_address: int = EXPECTED_ENTRY) -> dict[str, object]:
-    envelope = extract_flash_from_jl_isd_fw(jl_isd_fw)
+def prove_package_pair(jl_isd_bin: bytes, jl_isd_fw: bytes, expected_app: bytes, *, expected_entry_address: int = EXPECTED_ENTRY, proof_profile: str = REFERENCE_PROFILE) -> dict[str, object]:
+    if proof_profile not in PROOF_PROFILES: raise JlFwError("unknown new-flash proof profile")
+    envelope = extract_flash_from_jl_isd_fw(jl_isd_fw, proof_profile=proof_profile)
     if jl_isd_bin != envelope.flash: raise JlFwError("jl_isd.bin and jl_isd.fw flash bytes differ")
-    bin_proof = prove_embedded_app(jl_isd_bin, expected_app, container_kind="jl_isd.bin", expected_entry_address=expected_entry_address)
-    fw_app = extract_embedded_app(envelope.flash, expected_entry_address=expected_entry_address)
+    bin_proof = prove_embedded_app(jl_isd_bin, expected_app, container_kind="jl_isd.bin", expected_entry_address=expected_entry_address, proof_profile=proof_profile)
+    fw_app = extract_embedded_app(envelope.flash, expected_entry_address=expected_entry_address, proof_profile=proof_profile)
     if fw_app.data != expected_app: raise JlFwError("embedded app does not equal reviewed app")
     if bin_proof["appSha256"] != fw_app.sha256: raise JlFwError("package app proofs differ")
     return {"appSha256": bin_proof["appSha256"], "flashEqual": True, "fwEnvelopeKind": envelope.kind}

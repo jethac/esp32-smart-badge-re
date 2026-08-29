@@ -1236,6 +1236,7 @@ def run_lab_package(
         qix_name=name,
         qix_version=LAB_QIX_VERSION,
         allow_generated_blimit=True,
+        jlfw_proof_profile="generated-lab",
     )
 
     delivery_sources = {

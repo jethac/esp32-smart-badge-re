@@ -7,6 +7,7 @@ import importlib.util
 import os
 import sys
 import unittest
+import struct
 from pathlib import Path
 from unittest import mock
 
@@ -51,6 +52,19 @@ def sfc_transform(flash: bytes) -> bytes:
     for block in range(0x2000, len(flash), 32):
         output[block:block + 32] = cipher(flash[block:block + 32], (0x9847 ^ ((block - 0x2000) >> 2)) & 0xFFFF)
     return bytes(output)
+
+
+def jlfs_header(name: str, offset: int, size: int, flags: int, index: int, data: bytes) -> bytes:
+    tail = struct.pack("<HIIBBH16s", crc16(data), offset, size, flags, 0, index, name.encode("ascii").ljust(16, b"\0"))
+    return crc16(tail).to_bytes(2, "little") + tail
+
+
+def generated_lab_fixture(reference: bytes, app: bytes) -> bytes:
+    entry = jlfs_header("app.bin", 0x40, len(app), 0x82, 1, app)
+    area_body = entry + app
+    head = jlfs_header("app_area_head", APP_ENTRY, 32 + len(area_body), 0x83, 0, area_body)
+    decoded = bytearray(reference[:0x2000]) + head + area_body
+    return sfc_transform(bytes(decoded))
 
 
 def duplicate_app_fixture(flash: bytes) -> bytes:
@@ -283,6 +297,45 @@ class JlFwTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(ValueError, "ambiguous"):
                     prove()
+
+    def test_generated_lab_profile_proves_compact_filesystem_and_separates_reference(self):
+        app = b"generated-lab-application" * 9
+        flash = generated_lab_fixture(self.flash, app)
+        proof = self.jlfw.prove_embedded_app(
+            flash, app, container_kind="jl_isd.bin", proof_profile="generated-lab"
+        )
+        self.assertEqual((proof["appOffset"], proof["appSize"]), (0x2040, len(app)))
+        self.assertEqual(proof["appSha256"], hashlib.sha256(app).hexdigest().upper())
+        self.assertLess(len(flash), FLASH_SIZE)
+        with self.assertRaisesRegex(ValueError, "exactly 0xFB000"):
+            self.jlfw.prove_embedded_app(flash, app, container_kind="jl_isd.bin")
+        with self.assertRaises(ValueError):
+            self.jlfw.prove_embedded_app(
+                self.flash, self.app, container_kind="jl_isd.bin", proof_profile="generated-lab"
+            )
+
+    def test_generated_lab_truncation_bounds_wrong_app_and_malformed_header_fail_closed(self):
+        app = b"bounded-generated-lab-app" * 7
+        flash = generated_lab_fixture(self.flash, app)
+        cases = {
+            "truncated": flash[:-1],
+            "malformed-flash-header": bytes([flash[0] ^ 1]) + flash[1:],
+        }
+        decoded = bytearray(sfc_transform(flash))
+        bad_entry = jlfs_header("app.bin", len(decoded), len(app), 0x82, 1, app)
+        decoded[0x2020:0x2040] = bad_entry
+        area = bytes(decoded[0x2020:])
+        decoded[0x2000:0x2020] = jlfs_header("app_area_head", APP_ENTRY, len(decoded) - 0x2000, 0x83, 0, area)
+        cases["app-bounds"] = sfc_transform(bytes(decoded))
+        for name, changed in cases.items():
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.jlfw.prove_embedded_app(
+                    changed, app, container_kind="jl_isd.bin", proof_profile="generated-lab"
+                )
+        with self.assertRaisesRegex(ValueError, "does not equal"):
+            self.jlfw.prove_embedded_app(
+                flash, app[:-1] + bytes([app[-1] ^ 1]), container_kind="jl_isd.bin", proof_profile="generated-lab"
+            )
 
     def test_new_firmware_crc_bounds_identity_and_membership_mutations_fail_closed(self):
         mutations = {}

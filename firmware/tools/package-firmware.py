@@ -992,6 +992,7 @@ def _derive_package_proofs_uncached(
     qix_version: str,
     event_sink=None,
     allow_generated_blimit: bool = False,
+    jlfw_proof_profile: str = "model-1552-reference",
 ) -> dict[str, object]:
     required = {"app.bin", "jl_isd.bin", "jl_isd.fw", "update.ufw", "independently-made.ufw", qix_name}
     if set(data) != required or any(not isinstance(value, bytes) or not value for value in data.values()):
@@ -1000,9 +1001,9 @@ def _derive_package_proofs_uncached(
     if len(data["app.bin"]) != app_record["size"] or _sha(data["app.bin"]) != app_record["sha256"]:
         raise ValueError("package app does not match build receipt")
     jlfw = _load_sibling("jlfw.py", "e87_stage0_package_jlfw")
-    bin_proof = jlfw.prove_embedded_app(data["jl_isd.bin"], data["app.bin"], container_kind="jl_isd.bin")
-    fw_proof = jlfw.prove_embedded_app(data["jl_isd.fw"], data["app.bin"], container_kind="jl_isd.fw")
-    pair = jlfw.prove_package_pair(data["jl_isd.bin"], data["jl_isd.fw"], data["app.bin"])
+    bin_proof = jlfw.prove_embedded_app(data["jl_isd.bin"], data["app.bin"], container_kind="jl_isd.bin", proof_profile=jlfw_proof_profile)
+    fw_proof = jlfw.prove_embedded_app(data["jl_isd.fw"], data["app.bin"], container_kind="jl_isd.fw", proof_profile=jlfw_proof_profile)
+    pair = jlfw.prove_package_pair(data["jl_isd.bin"], data["jl_isd.fw"], data["app.bin"], proof_profile=jlfw_proof_profile)
     if event_sink is not None:
         event_sink("proof:jlfw")
     ufw = _load_ufw()
@@ -1081,6 +1082,7 @@ def _cached_package_proofs(
     qix_name: str,
     qix_version: str,
     allow_generated_blimit: bool,
+    jlfw_proof_profile: str,
 ) -> dict[str, object]:
     return _derive_package_proofs_uncached(
         {
@@ -1098,6 +1100,7 @@ def _cached_package_proofs(
         qix_version=qix_version,
         event_sink=None,
         allow_generated_blimit=allow_generated_blimit,
+        jlfw_proof_profile=jlfw_proof_profile,
     )
 
 
@@ -1111,6 +1114,7 @@ def _derive_package_proofs(
     qix_version: str,
     event_sink=None,
     allow_generated_blimit: bool = False,
+    jlfw_proof_profile: str = "model-1552-reference",
 ) -> dict[str, object]:
     _validate_file_record(app_record, filename="app.bin")
     required = {"app.bin", "jl_isd.bin", "jl_isd.fw", "update.ufw", "independently-made.ufw", qix_name}
@@ -1130,6 +1134,7 @@ def _derive_package_proofs(
         qix_name,
         qix_version,
         allow_generated_blimit,
+        jlfw_proof_profile,
     )
     if event_sink is not None:
         for event in ("proof:jlfw", "proof:ufw", "proof:qix"):
