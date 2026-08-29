@@ -158,6 +158,31 @@ def _validate_top_chain(flash: bytes) -> tuple[int, int]:
     return key, int(app_dir["offset"])
 
 
+def _validate_generated_lab_reservations(decoded: bytes, location: int) -> None:
+    if location > len(decoded) or 32 > len(decoded) - location:
+        raise JlFwError("generated LAB reserved-range directory is truncated")
+    ext = _parse_header(decoded[location:location + 32], location=location)
+    if (ext["name"], int(ext["offset"]), int(ext["size"]), int(ext["flags"]), int(ext["reserved"])) != ("EXT_RESERVED", 0x20, 0xA0, 0x93, 0xFF):
+        raise JlFwError("generated LAB reserved-range directory mismatch")
+    table_start = location + int(ext["offset"])
+    table_size = int(ext["size"]) - int(ext["offset"])
+    if table_start > len(decoded) or table_size > len(decoded) - table_start:
+        raise JlFwError("generated LAB reserved-range table bounds mismatch")
+    table = decoded[table_start:table_start + table_size]
+    if crc16_xmodem(table) != int(ext["dataCrc"]):
+        raise JlFwError("generated LAB reserved-range directory CRC mismatch")
+    expected = [("UIRES", 0x180000, 0x15E000, 0), ("USER", 0x2DE000, 0x28000, 0), ("WATCH", 0x306000, 0x1000, 0), ("INORFS", 0x307000, 0x4F8000, 1)]
+    actual = []
+    for index in range(4):
+        item_location = table_start + index * 32
+        item = _parse_header(decoded[item_location:item_location + 32], location=item_location)
+        if (int(item["flags"]), int(item["reserved"])) != (0x92, 0x81):
+            raise JlFwError("generated LAB reserved-range entry attributes mismatch")
+        actual.append((item["name"], int(item["offset"]), int(item["size"]), int(item["index"])))
+    if actual != expected:
+        raise JlFwError("generated LAB reserved-range table drift")
+
+
 def _validate_reservations(decoded: bytes) -> None:
     ext = _parse_header(decoded[0xF5200:0xF5220], location=0xF5200)
     if (ext["name"], int(ext["size"]), int(ext["flags"])) != ("EXT_RESERVED", 0xA0, 0x93):
@@ -193,16 +218,21 @@ def extract_embedded_app(
         if flash[16:22] != b"AC707N":
             raise JlFwError("wrong flash PID")
     key, app_base = _validate_top_chain(flash)
-    if key != EXPECTED_KEY or app_base != APP_BASE:
+    expected_key = EXPECTED_KEY if proof_profile == REFERENCE_PROFILE else 0xFFFF
+    if key != expected_key or app_base != APP_BASE:
         raise JlFwError("wrong chip key or app base")
     decoded = _decode_sfc(flash, key)
     app_head = _parse_header(decoded[APP_BASE:APP_BASE + 32], location=APP_BASE)
-    expected_size = 0xF3200 if proof_profile == REFERENCE_PROFILE else len(decoded) - APP_BASE
+    expected_size = 0xF3200 if proof_profile == REFERENCE_PROFILE else int(app_head["size"])
     if (app_head["name"], int(app_head["offset"]), int(app_head["size"]), int(app_head["flags"])) != ("app_area_head", expected_entry_address, expected_size, 0x83):
         raise JlFwError("application-area identity mismatch")
+    if proof_profile == GENERATED_LAB_PROFILE and int(app_head["reserved"]) != 2:
+        raise JlFwError("generated LAB application-area attributes mismatch")
     app_area_end = APP_BASE + int(app_head["size"])
-    expected_end = APP_END if proof_profile == REFERENCE_PROFILE else len(decoded)
-    if app_area_end != expected_end or app_area_end > len(decoded):
+    if proof_profile == REFERENCE_PROFILE:
+        if app_area_end != APP_END or app_area_end > len(decoded):
+            raise JlFwError("application-area bounds mismatch")
+    elif int(app_head["size"]) < 64 or app_area_end > len(decoded):
         raise JlFwError("application-area bounds mismatch")
     if crc16_xmodem(decoded[APP_BASE + 32:app_area_end]) != int(app_head["dataCrc"]):
         raise JlFwError("application-area CRC mismatch")
@@ -217,6 +247,8 @@ def extract_embedded_app(
     apps = [item for item in entries if item["name"] == "app.bin"]
     if len(apps) != 1: raise JlFwError("application entry must be unique")
     app = apps[0]
+    if proof_profile == GENERATED_LAB_PROFILE and (int(app["offset"]), int(app["flags"]), int(app["reserved"])) != (0x100, 0x82, 0xFF):
+        raise JlFwError("generated LAB application entry attributes mismatch")
     offset = APP_BASE + int(app["offset"]); size = int(app["size"])
     if offset < APP_BASE + 32 or offset > app_area_end or size > app_area_end - offset:
         raise JlFwError("application data bounds mismatch")
@@ -225,6 +257,8 @@ def extract_embedded_app(
         raise JlFwError("application data CRC mismatch")
     if proof_profile == REFERENCE_PROFILE:
         _validate_reservations(decoded)
+    else:
+        _validate_generated_lab_reservations(decoded, app_area_end)
     return EmbeddedApp(data=data, offset=offset, size=size, entry_address=int(app_head["offset"]), chip_key=key, sha256=hashlib.sha256(data).hexdigest().upper(), app_entry_count=len(apps))
 
 
