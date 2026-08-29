@@ -73,6 +73,8 @@ PATCH_TARGETS = (
     "SDK/apps/watch/app_main.c",
     "SDK/build/genFileList.c",
     "SDK/build/Makefile.mk",
+    "SDK/cpu/br35/power/power_app.c",
+    "SDK/cpu/br35/sdk_ld.c",
 )
 PATCH_RELATIVE = "firmware/patches/stage0/0001-e87-stage0-hooks.patch"
 SDK_ARCHIVE_SHA256 = "63FC570329AECE5032C3968B2C7EEA636E16F6322990E9578F330CD5A8DA8A35"
