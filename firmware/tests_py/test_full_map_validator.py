@@ -357,11 +357,12 @@ class FullMapValidatorTests(unittest.TestCase):
         self.assertIn("committed production evidence", result.stderr)
         self.assertNotIn("map digest", result.stderr)
 
-    def test_committed_legacy_pin_cannot_qualify_the_combined_runtime(self) -> None:
+    def test_committed_production_evidence_reaches_artifact_validation(self) -> None:
         self.evidence_path.write_bytes(PRODUCTION_EVIDENCE.read_bytes())
         result = self.run_validator(test_only=False)
         self.assertEqual(result.returncode, 2)
-        self.assertIn("committed production evidence", result.stderr)
+        self.assertIn("map digest", result.stderr)
+        self.assertNotIn("committed production evidence", result.stderr)
 
     def test_test_only_mode_requires_the_exact_test_evidence_id(self) -> None:
         self.evidence["evidenceId"] = "E87-FULL-RUNTIME-NORMAL-BLE-LINK-CLOSURE"
@@ -592,12 +593,12 @@ class FullMapValidatorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("generic initcall", result.stderr)
 
-    def test_production_evidence_requires_combined_runtime_repin(self) -> None:
+    def test_production_evidence_pins_combined_runtime(self) -> None:
         self.assertTrue(PRODUCTION_EVIDENCE.is_file(), PRODUCTION_EVIDENCE)
         evidence = json.loads(PRODUCTION_EVIDENCE.read_text(encoding="ascii"))
         self.assertEqual(evidence["schemaVersion"], 2)
         self.assertEqual(evidence["qualificationIdentity"], "FULL_RUNTIME_NORMAL_BLE")
-        self.assertEqual(evidence["qualificationState"], "LEGACY_PIN_REPIN_REQUIRED")
+        self.assertEqual(evidence["qualificationState"], "PRODUCTION")
         self.assertEqual(evidence["evidenceId"], "E87-FULL-RUNTIME-NORMAL-BLE-LINK-CLOSURE")
         self.assertEqual(
             evidence["sdkCommit"],
@@ -606,30 +607,31 @@ class FullMapValidatorTests(unittest.TestCase):
         self.assertEqual(
             evidence["qualificationArtifact"],
             {
-                "sourceCommit": "fd9fb68d1818edfaee59cd55810702efd31ef5ab",
-                "elfSha256": "eedc16ebe58cc94779f0f55b7b89a3da483a21c1d82787e5b17133209be59369",
-                "elfSize": 621584,
-                "ltoObjectSha256": "3ca10860c050ee7d48e051c0cc0a982ca47bf5caa0a8dd9981274d6de1575408",
-                "ltoObjectSize": 913924,
-                "mapSha256": "fb0c77d10b51736445b49fe737109e91fa3b469e8368c34912c9d0a95294e0bc",
-                "mapSize": 154711,
-                "resolutionSha256": "b293769275d65d68658bbbab871d17bc32a2ef1d9a3023fb9f21228dc3b06c96",
-                "resolutionSize": 215051,
-                "objectListSha256": "8baf0281dc3cd31d2078657a35d411b6fd3828cc936056c8a188ba8739e13f97",
-                "objectListSize": 558,
-                "linkLogSha256": "974af9ac8fa4253b0bc5931460af66d0a19451bb7906977b88176d73bfea551c",
-                "linkLogSize": 1122,
+                "sourceCommit": "9abfb8fa8272728bb3286b741fd2c21d0da8a535",
+                "elfSha256": "8f5b488662cf87d05892b47af4933a44c72e3cde6872842021e2a803ff885432",
+                "elfSize": 1630064,
+                "ltoObjectSha256": "15d5df3c5b080e083b2b1485e758ecc48750b1699042bebe0df9ebb63bcff0f5",
+                "ltoObjectSize": 2701368,
+                "mapSha256": "85d6cb267a580e26ef438d8e60eb002d8b5afcbbb6b402a6636e8693e0abb2d3",
+                "mapSize": 205383,
+                "resolutionSha256": "64712084ee32819a58a9f8c25dbbc2eec2b97eb9a24d41733b73cec5ad6d709f",
+                "resolutionSize": 1028137,
+                "objectListSha256": "c27b4e9e08df0b4347d1e958c34142a966c4f7d582df5afb6df7f008f90b3989",
+                "objectListSize": 1423,
+                "linkLogSha256": "29ada99ea8747ff291aef229b49eec2b8301ff1ac8c49e18b50896ec682107de",
+                "linkLogSize": 2146,
                 "buildMode": "VENDOR_MAKE_EXPLICIT_LINK_TARGET_NO_POST",
                 "postLinkStatus": "NOT_INVOKED_BY_EXPLICIT_LINK_TARGET",
             },
         )
-        self.assertEqual(len(evidence["sourceObjects"]), 14)
-        self.assertEqual(len(evidence["archives"]), 11)
-        self.assertEqual(len(evidence["archiveLoadOrder"]), 12)
-        self.assertEqual(evidence["mapContract"]["archiveInclusionRowCount"], 102)
+        self.assertEqual(len(evidence["sourceObjects"]), 35)
+        self.assertIn("objs/apps/watch/e87/e87_app_target.c.o", evidence["sourceObjects"])
+        self.assertEqual(len(evidence["archives"]), 16)
+        self.assertEqual(len(evidence["archiveLoadOrder"]), 17)
+        self.assertEqual(evidence["mapContract"]["archiveInclusionRowCount"], 306)
         self.assertEqual(
             evidence["mapContract"]["archiveInclusionRowsSha256"],
-            "52cd79e5598589f471c4ae548cb0281b2a4bda7472f12d1bf9a4718018b6e1c9",
+            "a4577fd2eb5b3ebb1abb488b751697625dfceafb2af467527d4ddaae98d67cb7",
         )
         self.assertEqual(len(evidence["mapContract"]["requiredResolution"]), 3)
 

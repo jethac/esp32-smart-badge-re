@@ -148,7 +148,7 @@ class FullTargetStaticTests(unittest.TestCase):
                 "schemaVersion": 2,
                 "profileId": "E87-1542-FULL-RUNTIME-NORMAL-BLE-H",
                 "sdkCommit": "d0167685d032d745d88fe50233302edd46941622",
-                "status": "FULL_RUNTIME_NORMAL_BLE_REPIN_REQUIRED",
+                "status": "FULL_RUNTIME_NORMAL_BLE_QUALIFIED",
                 "boot": {
                     "applicationTask": "app_core",
                     "explicitCalls": [

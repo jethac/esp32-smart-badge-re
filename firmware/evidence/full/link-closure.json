@@ -1,24 +1,24 @@
 {
   "schemaVersion": 2,
   "qualificationIdentity": "FULL_RUNTIME_NORMAL_BLE",
-  "qualificationState": "LEGACY_PIN_REPIN_REQUIRED",
+  "qualificationState": "PRODUCTION",
   "evidenceId": "E87-FULL-RUNTIME-NORMAL-BLE-LINK-CLOSURE",
   "sdkCommit": "d0167685d032d745d88fe50233302edd46941622",
   "clangVersion": "4.0.1",
   "qualificationArtifact": {
-    "sourceCommit": "fd9fb68d1818edfaee59cd55810702efd31ef5ab",
-    "elfSha256": "eedc16ebe58cc94779f0f55b7b89a3da483a21c1d82787e5b17133209be59369",
-    "elfSize": 621584,
-    "ltoObjectSha256": "3ca10860c050ee7d48e051c0cc0a982ca47bf5caa0a8dd9981274d6de1575408",
-    "ltoObjectSize": 913924,
-    "mapSha256": "fb0c77d10b51736445b49fe737109e91fa3b469e8368c34912c9d0a95294e0bc",
-    "mapSize": 154711,
-    "resolutionSha256": "b293769275d65d68658bbbab871d17bc32a2ef1d9a3023fb9f21228dc3b06c96",
-    "resolutionSize": 215051,
-    "objectListSha256": "8baf0281dc3cd31d2078657a35d411b6fd3828cc936056c8a188ba8739e13f97",
-    "objectListSize": 558,
-    "linkLogSha256": "974af9ac8fa4253b0bc5931460af66d0a19451bb7906977b88176d73bfea551c",
-    "linkLogSize": 1122,
+    "sourceCommit": "9abfb8fa8272728bb3286b741fd2c21d0da8a535",
+    "elfSha256": "8f5b488662cf87d05892b47af4933a44c72e3cde6872842021e2a803ff885432",
+    "elfSize": 1630064,
+    "ltoObjectSha256": "15d5df3c5b080e083b2b1485e758ecc48750b1699042bebe0df9ebb63bcff0f5",
+    "ltoObjectSize": 2701368,
+    "mapSha256": "85d6cb267a580e26ef438d8e60eb002d8b5afcbbb6b402a6636e8693e0abb2d3",
+    "mapSize": 205383,
+    "resolutionSha256": "64712084ee32819a58a9f8c25dbbc2eec2b97eb9a24d41733b73cec5ad6d709f",
+    "resolutionSize": 1028137,
+    "objectListSha256": "c27b4e9e08df0b4347d1e958c34142a966c4f7d582df5afb6df7f008f90b3989",
+    "objectListSize": 1423,
+    "linkLogSha256": "29ada99ea8747ff291aef229b49eec2b8301ff1ac8c49e18b50896ec682107de",
+    "linkLogSize": 2146,
     "buildMode": "VENDOR_MAKE_EXPLICIT_LINK_TARGET_NO_POST",
     "postLinkStatus": "NOT_INVOKED_BY_EXPLICIT_LINK_TARGET"
   },
@@ -30,13 +30,34 @@
     "objs/apps/watch/app_main.c.o",
     "objs/apps/watch/board/br35/board_e87_1542_full/board_e87_1542_full.c.o",
     "objs/apps/watch/e87/e87_app.c.o",
+    "objs/apps/watch/e87/e87_app_target.c.o",
+    "objs/apps/watch/e87/e87_app_runtime.c.o",
+    "objs/apps/watch/e87/e87_app_core.c.o",
+    "objs/apps/watch/e87/e87_ui.c.o",
+    "objs/apps/watch/e87/e87_button_classifier.c.o",
+    "objs/apps/watch/e87/e87_button_fsm.c.o",
+    "objs/apps/watch/e87/e87_power_policy.c.o",
+    "objs/apps/watch/e87/e87_recovery.c.o",
+    "objs/apps/watch/e87/e87_ble_mode_fsm.c.o",
+    "objs/apps/watch/e87/e87_maintenance.c.o",
+    "objs/apps/watch/e87/e87_rcsp_profile.c.o",
     "objs/apps/watch/e87/e87_full_platform_config.c.o",
     "objs/apps/watch/log_config/lib_driver_config.c.o",
     "objs/apps/watch/log_config/lib_system_config.c.o",
     "objs/cpu/br35/power/power_app.c.o",
     "objs/cpu/br35/setup.c.o",
     "objs/cpu/config/lib_power_config.c.o",
-    "objs/cpu/power/msg.c.o"
+    "objs/cpu/power/msg.c.o",
+    "objs/apps/watch/e87/e87_ble_target.c.o",
+    "objs/apps/watch/e87/e87_ble_target_journal.c.o",
+    "objs/apps/watch/e87/e87_ble_target_platform_config.c.o",
+    "objs/apps/watch/e87/e87_bond_policy.c.o",
+    "objs/apps/watch/e87/e87_build_info.c.o",
+    "objs/apps/watch/e87/e87_gatt_db.c.o",
+    "objs/apps/watch/e87/e87_state.c.o",
+    "objs/apps/watch/log_config/app_config.c.o",
+    "objs/apps/watch/log_config/lib_btctrler_config.c.o",
+    "objs/apps/watch/log_config/lib_btstack_config.c.o"
   ],
   "archives": [
     {
@@ -80,6 +101,31 @@
       "role": "IMMUTABLE_BOOT_VM_BTIF_SEAM"
     },
     {
+      "path": "cpu/br35/liba/btstack.a",
+      "sha256": "4a5c48ba0658647ecde1a59c7032448eeda1bdfe4a3899dd14903b5d75e8347d",
+      "role": "PINNED_NORMAL_BLE_RUNTIME"
+    },
+    {
+      "path": "cpu/br35/liba/btctrler.a",
+      "sha256": "7b6d18d9589aa5990731cd7a92124b2ba1d9330b71359938eb9a711da15b1f2e",
+      "role": "PINNED_NORMAL_BLE_RUNTIME"
+    },
+    {
+      "path": "cpu/br35/liba/cbuf.a",
+      "sha256": "03740c7da23a02570ed618b144eca607373ae8debb374ed15e3c3840ad0e3bb8",
+      "role": "PINNED_NORMAL_BLE_RUNTIME"
+    },
+    {
+      "path": "cpu/br35/liba/crypto_toolbox_Osize.a",
+      "sha256": "b16901cea79a369ad5f8db918c7799b5965b3013be986f31f24e5cc09c607b8f",
+      "role": "PINNED_NORMAL_BLE_RUNTIME"
+    },
+    {
+      "path": "cpu/br35/liba/lib_ccm_cipher.a",
+      "sha256": "bb3accd5d94fe58e61dcfeff2fb73eeeebc7a129fbeb5f474b5eb6c9d7cb43d2",
+      "role": "PINNED_NORMAL_BLE_RUNTIME"
+    },
+    {
       "path": "toolchain/lib/r3-large/libm.a",
       "sha256": "96bc6239ab76d5f7186781bc5612534c05dc1b49a2bb4ec4b1c2a160447d3816",
       "role": "PINNED_TOOLCHAIN_RUNTIME"
@@ -104,6 +150,11 @@
     "cpu/br35/liba/fs.a",
     "cpu/br35/liba/printf.a",
     "cpu/br35/liba/vm.a",
+    "cpu/br35/liba/btstack.a",
+    "cpu/br35/liba/btctrler.a",
+    "cpu/br35/liba/cbuf.a",
+    "cpu/br35/liba/crypto_toolbox_Osize.a",
+    "cpu/br35/liba/lib_ccm_cipher.a",
     "toolchain/lib/r3-large/libm.a",
     "toolchain/lib/r3-large/libc.a",
     "toolchain/lib/r3-large/libm.a",
@@ -126,8 +177,8 @@
     "psramBytes": 0
   },
   "mapContract": {
-    "archiveInclusionRowCount": 102,
-    "archiveInclusionRowsSha256": "52cd79e5598589f471c4ae548cb0281b2a4bda7472f12d1bf9a4718018b6e1c9",
+    "archiveInclusionRowCount": 306,
+    "archiveInclusionRowsSha256": "a4577fd2eb5b3ebb1abb488b751697625dfceafb2af467527d4ddaae98d67cb7",
     "requiredProvenance": [
       {
         "archiveMember": "cpu/br35/liba/cpu.a(wdt_p33.c.o)",
@@ -141,7 +192,7 @@
       },
       {
         "archiveMember": "cpu/br35/liba/cfg_tool.a(syscfg_api.c.o)",
-        "referrer": "A:cpu/br35/liba/cpu.a(clock.c.o)",
+        "referrer": "O:objs/apps/watch/e87/e87_ble_target_journal.c.o",
         "symbol": "syscfg_read"
       },
       {

@@ -20,7 +20,7 @@ COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 TOOLCHAIN_SUFFIX_RE = re.compile(r"^.*/lib/r3-large/([^/]+\.a)$")
 DISCARDED_SECTIONS_MARKER = "\nDiscarded input sections\n"
 LINKER_MEMORY_MAP_MARKER = "\nLinker script and memory map\n"
-PRODUCTION_EVIDENCE_SHA256 = ""
+PRODUCTION_EVIDENCE_SHA256 = "771be3bdd47451552d37df798f09071035347e8d4504402613f6331b472f2a61"
 PRODUCTION_EVIDENCE_ID = "E87-FULL-RUNTIME-NORMAL-BLE-LINK-CLOSURE"
 CANDIDATE_EVIDENCE_ID = "CANDIDATE-E87-FULL-RUNTIME-NORMAL-BLE-LINK-CLOSURE"
 TEST_EVIDENCE_ID = "TEST-E87-FULL-RUNTIME-NORMAL-BLE-LINK-CLOSURE"
@@ -71,6 +71,16 @@ PRODUCTION_SOURCE_OBJECTS = (
     "objs/cpu/br35/setup.c.o",
     "objs/cpu/config/lib_power_config.c.o",
     "objs/cpu/power/msg.c.o",
+    "objs/apps/watch/e87/e87_ble_target.c.o",
+    "objs/apps/watch/e87/e87_ble_target_journal.c.o",
+    "objs/apps/watch/e87/e87_ble_target_platform_config.c.o",
+    "objs/apps/watch/e87/e87_bond_policy.c.o",
+    "objs/apps/watch/e87/e87_build_info.c.o",
+    "objs/apps/watch/e87/e87_gatt_db.c.o",
+    "objs/apps/watch/e87/e87_state.c.o",
+    "objs/apps/watch/log_config/app_config.c.o",
+    "objs/apps/watch/log_config/lib_btctrler_config.c.o",
+    "objs/apps/watch/log_config/lib_btstack_config.c.o",
 )
 
 PRODUCTION_ARCHIVES = (
@@ -107,6 +117,26 @@ PRODUCTION_ARCHIVES = (
         "bebc7934c785e75da2cb216a6150992126798a7abfd3936c500add6ee46f9900",
     ),
     (
+        "cpu/br35/liba/btstack.a",
+        "4a5c48ba0658647ecde1a59c7032448eeda1bdfe4a3899dd14903b5d75e8347d",
+    ),
+    (
+        "cpu/br35/liba/btctrler.a",
+        "7b6d18d9589aa5990731cd7a92124b2ba1d9330b71359938eb9a711da15b1f2e",
+    ),
+    (
+        "cpu/br35/liba/cbuf.a",
+        "03740c7da23a02570ed618b144eca607373ae8debb374ed15e3c3840ad0e3bb8",
+    ),
+    (
+        "cpu/br35/liba/crypto_toolbox_Osize.a",
+        "b16901cea79a369ad5f8db918c7799b5965b3013be986f31f24e5cc09c607b8f",
+    ),
+    (
+        "cpu/br35/liba/lib_ccm_cipher.a",
+        "bb3accd5d94fe58e61dcfeff2fb73eeeebc7a129fbeb5f474b5eb6c9d7cb43d2",
+    ),
+    (
         "toolchain/lib/r3-large/libm.a",
         "96bc6239ab76d5f7186781bc5612534c05dc1b49a2bb4ec4b1c2a160447d3816",
     ),
@@ -129,6 +159,11 @@ PRODUCTION_ARCHIVE_LOAD_ORDER = (
     "cpu/br35/liba/fs.a",
     "cpu/br35/liba/printf.a",
     "cpu/br35/liba/vm.a",
+    "cpu/br35/liba/btstack.a",
+    "cpu/br35/liba/btctrler.a",
+    "cpu/br35/liba/cbuf.a",
+    "cpu/br35/liba/crypto_toolbox_Osize.a",
+    "cpu/br35/liba/lib_ccm_cipher.a",
     "toolchain/lib/r3-large/libm.a",
     "toolchain/lib/r3-large/libc.a",
     "toolchain/lib/r3-large/libm.a",
@@ -334,7 +369,7 @@ def decode_evidence(raw: bytes) -> dict[str, Any]:
         fail("evidence.schemaVersion: unsupported")
     if root["qualificationIdentity"] != "FULL_RUNTIME_NORMAL_BLE":
         fail("evidence.qualificationIdentity: unsupported")
-    if root["qualificationState"] not in {"LEGACY_PIN_REPIN_REQUIRED", "CANDIDATE", "TEST"}:
+    if root["qualificationState"] not in {"PRODUCTION", "CANDIDATE", "TEST"}:
         fail("evidence.qualificationState: unsupported")
     ascii_string(root["evidenceId"], "evidence.evidenceId")
     commit(root["sdkCommit"], "evidence.sdkCommit")
@@ -522,6 +557,7 @@ def production_contract_is_exact(evidence: dict[str, Any]) -> bool:
     )
     return (
         evidence["evidenceId"] == PRODUCTION_EVIDENCE_ID
+        and evidence["qualificationState"] == "PRODUCTION"
         and tuple(evidence["sourceObjects"]) == PRODUCTION_SOURCE_OBJECTS
         and archives == PRODUCTION_ARCHIVES
         and tuple(evidence["archiveLoadOrder"]) == PRODUCTION_ARCHIVE_LOAD_ORDER
@@ -532,15 +568,25 @@ def production_contract_is_exact(evidence: dict[str, Any]) -> bool:
 
 
 def authorized_evidence(raw: bytes, accept_untrusted_test_evidence: bool) -> dict[str, Any]:
+    if b"\r" in raw and (b"\r\n" not in raw or raw.replace(b"\r\n", b"").find(b"\r") >= 0):
+        fail("evidence: noncanonical line endings")
+    canonical_raw = raw.replace(b"\r\n", b"\n")
     if (
         not accept_untrusted_test_evidence
-        and sha256(raw) != PRODUCTION_EVIDENCE_SHA256
+        and sha256(canonical_raw) != PRODUCTION_EVIDENCE_SHA256
     ):
         fail("evidence: bytes differ from exact committed production evidence")
     evidence = decode_evidence(raw)
     if accept_untrusted_test_evidence:
-        if evidence["evidenceId"] not in {TEST_EVIDENCE_ID, CANDIDATE_EVIDENCE_ID}:
+        expected_states = {
+            TEST_EVIDENCE_ID: "TEST",
+            CANDIDATE_EVIDENCE_ID: "CANDIDATE",
+        }
+        expected_state = expected_states.get(evidence["evidenceId"])
+        if expected_state is None:
             fail("untrusted evidence must use the exact test or candidate evidence ID")
+        if evidence["qualificationState"] != expected_state:
+            fail("untrusted evidence ID/state mismatch")
     elif not production_contract_is_exact(evidence):
         fail("evidence: contract differs from exact committed production evidence")
     return evidence

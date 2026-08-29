@@ -29,11 +29,11 @@ PATCH_PREIMAGES = {
 }
 FROZEN_FULL_SHA256 = {
     "firmware/board-profiles/E87-1542-FULL-SUBSTRATE-H.json":
-        "94905a67b3628b30ec41a7d3dd1781759bb5bb92e745a58b38f071ac38460eb9",
+        "531403aa084dda2ca86eac43868c6da53a6991c2b26685327790bc390429d930",
     "firmware/patches/full/0001-e87-full-substrate.patch":
         "41a829e6a073a11c2be1956ba5eccc353448e6a0b1e96ff2b4824e42b077a8ed",
     "firmware/evidence/full/link-closure.json":
-        "c2e6c29bdcbb93e316a233ab0f28bfbee256768d2b69541580a37629e7a54832",
+        "771be3bdd47451552d37df798f09071035347e8d4504402613f6331b472f2a61",
 }
 REQUIRED_SOURCES = {
     "apps/watch/e87/e87_ble_target.c",
