@@ -754,14 +754,13 @@ def _build_lab_target(
     if re.search(rb"(?:password|username|connect usb|select a device)", combined, re.I):
         raise ValueError("LAB build emitted interactive output")
     try:
-        lines = result.stdout.decode("utf-8").splitlines()
+        lines = combined.decode("utf-8").splitlines()
     except UnicodeDecodeError as error:
-        raise ValueError("LAB build stdout is not UTF-8") from error
+        raise ValueError("LAB build output is not UTF-8") from error
     link_lines = [
         line
         for line in lines
-        if " -o cpu/br35/tools/sdk.elf " in line
-        and "/pi32v2/bin/ld" in line
+        if "sdk.elf" in line and "/pi32v2/bin/ld" in line
     ]
     if len(link_lines) != 1:
         raise ValueError("LAB build did not expose one exact linker command")
