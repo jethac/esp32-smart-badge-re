@@ -355,7 +355,10 @@ def probe_tool_versions(tools: dict[str, dict[str, object]], *, cwd: Path, envir
         argv = [str(path), "--version"]
         result = runner(argv, check=False, cwd=cwd, env=environment, shell=False, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE)
         expected_stdout, normalized = BUILD_TOOL_VERSIONS[name]
-        if not isinstance(result, subprocess.CompletedProcess) or result.args != argv or result.returncode != 0 or result.stdout != expected_stdout or result.stderr != b"" or prompt.search(result.stdout + result.stderr):
+        if (not isinstance(result, subprocess.CompletedProcess) or
+                result.args != argv or result.returncode != 0 or
+                result.stdout.splitlines(keepends=True)[:1] != [expected_stdout] or
+                result.stderr != b"" or prompt.search(result.stdout + result.stderr)):
             raise ValueError(f"{name} version probe failed")
         receipts[name] = {
             "argv": argv, "cwd": "$BUILD_ROOT", "environment": receipt_environment,
@@ -1710,7 +1713,10 @@ def _run_version_probes(
         argv = [str(tools[name]["path"]), "--version"]
         result = runner(argv, **expected_kwargs)
         expected_stdout, normalized = BUILD_TOOL_VERSIONS[name]
-        if not isinstance(result, subprocess.CompletedProcess) or list(result.args) != argv or result.returncode != 0 or result.stdout != expected_stdout or result.stderr != b"" or prompt.search(result.stdout + result.stderr):
+        if (not isinstance(result, subprocess.CompletedProcess) or
+                list(result.args) != argv or result.returncode != 0 or
+                result.stdout.splitlines(keepends=True)[:1] != [expected_stdout] or
+                result.stderr != b"" or prompt.search(result.stdout + result.stderr)):
             raise ValueError(f"{name} version probe failed")
         records.append({
             "argv": argv, "cwd": "$BUILD_ROOT", "environment": dict(receipt_environment),
