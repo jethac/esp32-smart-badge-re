@@ -148,7 +148,7 @@ PRODUCTION_PROVENANCE = (
     ),
     (
         "cpu/br35/liba/cfg_tool.a(syscfg_api.c.o)",
-        "A:cpu/br35/liba/cpu.a(clock.c.o)",
+        "O:objs/apps/watch/e87/e87_ble_target_journal.c.o",
         "syscfg_read",
     ),
     (
