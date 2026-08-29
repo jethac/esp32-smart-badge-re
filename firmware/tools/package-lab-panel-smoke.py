@@ -760,7 +760,7 @@ def _build_lab_target(
     link_lines = [
         line
         for line in lines
-        if "sdk.elf" in line and "/pi32v2/bin/ld" in line
+        if "sdk.elf" in line and "/pi32v2/bin/lto-wrapper" in line
     ]
     if len(link_lines) != 1:
         raise ValueError("LAB build did not expose one exact linker command")
