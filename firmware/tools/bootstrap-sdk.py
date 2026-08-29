@@ -548,6 +548,8 @@ def _parse_index(data: bytes, root: Path) -> None:
         if not prefix_text.startswith("H ") or not re.fullmatch(r"H 100(644|755) [0-9a-f]{40} 0", prefix_text):
             raise ValueError("unsupported Git index flags/mode/stage")
         path = _closed_relative(relative).as_posix()
+        if path == ".superpowers" or path.startswith(".superpowers/"):
+            continue
         if path in tracked:
             raise ValueError("duplicate Git index path")
         mode_text, object_id, stage = prefix_text[2:].split(" ")
