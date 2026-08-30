@@ -21,12 +21,14 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.ParcelUuid;
 import android.util.Log;
 import android.text.format.DateFormat;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -46,9 +48,10 @@ import java.util.UUID;
 public final class ProbeActivity extends Activity
         implements UploadStartCoordinator.Host {
     private static final String TAG = "E87Probe";
-    private static final String DEFAULT_MAC = "46:83:00:01:8A:E9";
     private static final int CONNECT_PERMISSION_REQUEST = 87;
     private static final long SETUP_TIMEOUT_MS = 10_000L;
+    private static final long PICKER_SCAN_DURATION_MS = 15_000L;
+    private static final int MAX_PICKER_CANDIDATES = 24;
     private static final long SCAN_DURATION_MS = 300_000L;
     private static final long UPDATE_RESPONSE_TIMEOUT_MS = 60_000L;
     private static final long FINAL_RESULT_TIMEOUT_MS = 60_000L;
@@ -58,6 +61,7 @@ public final class ProbeActivity extends Activity
     private final Handler main = new Handler(Looper.getMainLooper());
     private final QixFrameAssembler fd01Assembler = new QixFrameAssembler();
     private final QixFrameAssembler fd03Assembler = new QixFrameAssembler();
+    private final BlePickerState pickerState = new BlePickerState(MAX_PICKER_CANDIDATES);
     private String waitingFor = "startup";
     private String targetMac;
     private boolean scanning;
@@ -103,6 +107,7 @@ public final class ProbeActivity extends Activity
     private UploadStartCoordinator startCoordinator;
 
     private final Runnable setupTimeout = () -> fail("Timed out waiting for " + waitingFor);
+    private final Runnable pickerScanTimeout = this::stopPickerScan;
     private final Runnable scanTimeout = () -> {
         if (!scanning) return;
         stopScan();
@@ -114,12 +119,19 @@ public final class ProbeActivity extends Activity
             + " pendingLength=" + pendingBlockLength);
 
     private TextView output;
+    private TextView selectedTarget;
+    private LinearLayout candidateList;
     private CheckBox receiveModeConfirmation;
+    private Button scanButton;
     private Button startButton;
+    private boolean pickerScanning;
+    private boolean pickerPermissionPending;
+    private long pickerGeneration;
     private File outputDirectory;
     private File logFile;
     private BluetoothGatt gatt;
     private BluetoothLeScanner scanner;
+    private ScanCallback pickerScanCallback;
     private BluetoothDevice targetDevice;
     private BluetoothGattCharacteristic fd01;
     private BluetoothGattCharacteristic fd02;
@@ -131,10 +143,6 @@ public final class ProbeActivity extends Activity
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        String requestedMac = getIntent().getStringExtra("mac");
-        if (requestedMac == null || requestedMac.trim().isEmpty()) requestedMac = DEFAULT_MAC;
-        targetMac = requestedMac.trim().toUpperCase(Locale.ROOT);
-
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(24, 24, 24, 24);
@@ -144,11 +152,19 @@ public final class ProbeActivity extends Activity
         title.setTextSize(22);
         content.addView(title);
 
-        TextView target = new TextView(this);
-        target.setText("TARGET DEVICE - EXACT MAC ONLY\n\n" + targetMac);
-        target.setTextSize(18);
-        target.setPadding(0, 24, 0, 24);
-        content.addView(target);
+        selectedTarget = new TextView(this);
+        selectedTarget.setText("TARGET DEVICE - NO EXACT MAC SELECTED");
+        selectedTarget.setTextSize(18);
+        selectedTarget.setPadding(0, 24, 0, 24);
+        content.addView(selectedTarget);
+
+        scanButton = new Button(this);
+        scanButton.setText("SCAN FOR E87 DEVICES");
+        content.addView(scanButton);
+
+        candidateList = new LinearLayout(this);
+        candidateList.setOrientation(LinearLayout.VERTICAL);
+        content.addView(candidateList);
 
         TextView warning = new TextView(this);
         warning.setText("DESTRUCTIVE ONE-SHOT LAB UPLOAD\n\n"
@@ -180,12 +196,15 @@ public final class ProbeActivity extends Activity
         setContentView(scroll);
 
         startCoordinator = new UploadStartCoordinator(this);
+        scanButton.setOnClickListener(view -> requestPickerScan());
         receiveModeConfirmation.setOnCheckedChangeListener((button, isChecked) -> {
+            pickerState.setConfirmed(isChecked);
             startCoordinator.setReceiveModeConfirmed(isChecked);
-            startButton.setEnabled(startCoordinator.isStartEnabled() && !terminal);
+            updateStartEnabled();
         });
         startButton.setOnClickListener(view -> {
             startButton.setEnabled(false);
+            scanButton.setEnabled(false);
             receiveModeConfirmation.setEnabled(false);
             handleStartResult(startCoordinator.start());
         });
@@ -195,12 +214,6 @@ public final class ProbeActivity extends Activity
                 + "Required path: /sdcard/Android/data/com.openai.e87probe/files/update.bin\n"
                 + "Pinned size: " + packagePin.size() + "\n"
                 + "Pinned SHA256: " + packagePin.sha256() + "\n");
-        if (!BluetoothAdapter.checkBluetoothAddress(targetMac)) {
-            terminal = true;
-            startButton.setEnabled(false);
-            output.append("INVALID EXACT TARGET MAC - START DISABLED\n");
-            return;
-        }
     }
 
     private void handleStartResult(UploadStartCoordinator.Result result) {
@@ -215,15 +228,42 @@ public final class ProbeActivity extends Activity
         }
     }
 
+    private void updateStartEnabled() {
+        startButton.setEnabled(!terminal && pickerState.isStartEnabled()
+                && startCoordinator.isStartEnabled());
+    }
+
+    private void requestPickerScan() {
+        if (terminal || pickerScanning || pickerPermissionPending) return;
+        receiveModeConfirmation.setChecked(false);
+        candidateList.removeAllViews();
+        selectedTarget.setText("TARGET DEVICE - NO EXACT MAC SELECTED");
+        pickerGeneration = pickerState.beginScan();
+        if (!bluetoothPermissionsGranted()) {
+            pickerPermissionPending = true;
+            requestBluetoothPermissions();
+            return;
+        }
+        startPickerScan();
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
-        if (requestCode != CONNECT_PERMISSION_REQUEST) return;
+        if (requestCode != CONNECT_PERMISSION_REQUEST || !pickerPermissionPending) return;
+        pickerPermissionPending = false;
         boolean granted = results.length == permissions.length && results.length > 0;
         for (int result : results) {
             if (result != PackageManager.PERMISSION_GRANTED) granted = false;
         }
-        handleStartResult(startCoordinator.onPermissionResult(granted));
+        if (granted) startPickerScan();
+        else output.append("Nearby devices permission denied; no scan started.\n");
+    }
+
+    @Override
+    public String freezeSelectedAddress() {
+        targetMac = pickerState.consumeAndFreeze();
+        return targetMac;
     }
 
     @Override
@@ -319,12 +359,118 @@ public final class ProbeActivity extends Activity
                 == PackageManager.PERMISSION_GRANTED);
     }
 
-    @Override
-    public void requestBluetoothPermissions() {
+    private void requestBluetoothPermissions() {
         requestPermissions(new String[] {
                         Manifest.permission.BLUETOOTH_CONNECT,
                         Manifest.permission.BLUETOOTH_SCAN},
                 CONNECT_PERMISSION_REQUEST);
+    }
+
+    private void startPickerScan() {
+        BluetoothManager manager = getSystemService(BluetoothManager.class);
+        BluetoothAdapter adapter = manager == null ? null : manager.getAdapter();
+        if (adapter == null || !adapter.isEnabled()) {
+            output.append("Bluetooth is unavailable or disabled; no scan started.\n");
+            return;
+        }
+        scanner = adapter.getBluetoothLeScanner();
+        if (scanner == null) {
+            output.append("Bluetooth LE scanner is unavailable; no scan started.\n");
+            return;
+        }
+        pickerScanning = true;
+        scanButton.setEnabled(false);
+        output.append("Scanning for E87 candidates for 15 seconds (maximum 24 addresses).\n");
+        main.postDelayed(pickerScanTimeout, PICKER_SCAN_DURATION_MS);
+        pickerScanCallback = newPickerScanCallback(pickerGeneration);
+        try {
+            scanner.startScan(null, new ScanSettings.Builder()
+                    .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), pickerScanCallback);
+        } catch (Throwable error) {
+            stopPickerScan();
+            output.append("BLE candidate scan did not start: " + error + "\n");
+        }
+    }
+
+    private ScanCallback newPickerScanCallback(long generation) {
+        return new ScanCallback() {
+            @Override
+            public void onScanResult(int callbackType, ScanResult result) {
+                main.post(() -> handlePickerResult(result, generation));
+            }
+
+            @Override
+            public void onScanFailed(int errorCode) {
+                main.post(() -> {
+                    if (generation != pickerGeneration) return;
+                    stopPickerScan();
+                    output.append("BLE candidate scan failed with error=" + errorCode + "\n");
+                });
+            }
+        };
+    }
+
+    private void handlePickerResult(ScanResult result, long generation) {
+        if (!pickerScanning || generation != pickerGeneration || result == null
+                || result.getDevice() == null || result.getScanRecord() == null) return;
+        String name = result.getScanRecord().getDeviceName();
+        if (name == null || !name.toUpperCase(Locale.ROOT).contains("E87")) return;
+        List<ParcelUuid> advertised = result.getScanRecord().getServiceUuids();
+        BlePickerState.ServiceStatus status = BlePickerState.ServiceStatus.UNKNOWN;
+        if (advertised != null) {
+            status = BlePickerState.ServiceStatus.NOT_ADVERTISED;
+            for (ParcelUuid service : advertised) {
+                if (QixFactoryMemoryRead.SERVICE.equals(service.getUuid())) {
+                    status = BlePickerState.ServiceStatus.ADVERTISED;
+                    break;
+                }
+            }
+        }
+        if (pickerState.addCandidate(generation, result.getDevice().getAddress(), name,
+                result.getRssi(), status)) renderCandidates(generation);
+    }
+
+    private void renderCandidates(long generation) {
+        candidateList.removeAllViews();
+        for (BlePickerState.Candidate candidate : pickerState.candidates()) {
+            RadioButton choice = new RadioButton(this);
+            choice.setText(candidate.address + "\nname=" + candidate.name + "  RSSI="
+                    + candidate.rssi + " dBm\nstock receiving/update service="
+                    + candidate.serviceStatus);
+            choice.setOnClickListener(view -> {
+                if (!pickerState.select(generation, candidate.address)) return;
+                receiveModeConfirmation.setChecked(false);
+                selectedTarget.setText("TARGET DEVICE - EXACT MAC ONLY\n\n" + candidate.address);
+                stopPickerScan();
+                updateStartEnabled();
+                renderCandidates(generation);
+            });
+            choice.setChecked(candidate.address.equals(selectedTargetAddress()));
+            candidateList.addView(choice);
+        }
+    }
+
+    private String selectedTargetAddress() {
+        String text = selectedTarget.getText().toString();
+        int newline = text.lastIndexOf('\n');
+        return newline < 0 ? null : text.substring(newline + 1);
+    }
+
+    private void stopPickerScan() {
+        main.removeCallbacks(pickerScanTimeout);
+        if (!pickerScanning) return;
+        pickerScanning = false;
+        scanButton.setEnabled(!terminal);
+        BluetoothLeScanner stopping = scanner;
+        ScanCallback stoppingCallback = pickerScanCallback;
+        scanner = null;
+        pickerScanCallback = null;
+        if (stopping == null || stoppingCallback == null) return;
+        try {
+            stopping.stopScan(stoppingCallback);
+        } catch (Throwable error) {
+            output.append("stop candidate scan error: " + error + "\n");
+        }
     }
 
     @Override

@@ -50,18 +50,27 @@ class ActivitySafetyTest(unittest.TestCase):
         self.assertIn("startButton.setEnabled(false)", on_create)
         self.assertIn("startCoordinator.setReceiveModeConfirmed(isChecked)", on_create)
         self.assertIn("startCoordinator.start()", on_create)
-        self.assertIn("TARGET DEVICE - EXACT MAC ONLY", on_create)
+        self.assertIn("scanButton.setOnClickListener", on_create)
+        self.assertIn("TARGET DEVICE - NO EXACT MAC SELECTED", on_create)
         self.assertIn("DESTRUCTIVE ONE-SHOT LAB UPLOAD", on_create)
         self.assertIn("hardware receive/update mode", on_create)
 
-    def test_permission_callback_cannot_bypass_armed_one_shot(self):
+    def test_permission_is_picker_scan_only(self):
         callback = method_body(
             self.source,
             "public void onRequestPermissionsResult",
-            "private void startScan()",
+            "public String freezeSelectedAddress()",
         )
-        self.assertIn("startCoordinator.onPermissionResult(granted)", callback)
-        self.assertNotRegex(callback, r"ifs*(granted)s*startScan")
+        self.assertIn("!pickerPermissionPending", callback)
+        self.assertIn("if (granted) startPickerScan()", callback)
+        self.assertNotIn("startExactAddressScan", callback)
+        coordinator = (ROOT / "src/main/java/com/openai/e87probe/UploadStartCoordinator.java").read_text()
+        self.assertNotIn("requestBluetoothPermissions", coordinator)
+
+    def test_no_default_or_intent_upload_target(self):
+        self.assertNotIn("DEFAULT_MAC", self.source)
+        self.assertNotIn('getStringExtra("mac")', self.source)
+        self.assertIn("targetMac = pickerState.consumeAndFreeze()", self.source)
 
     def test_scan_and_result_are_exact_address_only(self):
         scan = method_body(

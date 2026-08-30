@@ -14,13 +14,22 @@ The label is `E87 One-Shot Lab Uploader`; the launcher activity is
 
 ## Safety contract
 
-Launching the Activity is inert. It displays the exact target MAC, a destructive
+Launching the Activity is inert. It displays no target, a Scan button, a destructive
 lab warning, an unchecked hardware receive/update-mode confirmation, and a
 disabled Start button. Launch does not touch external files, create evidence,
 log, request permissions, scan, connect, or upload.
 
-Checking the confirmation only enables Start. The first Start click consumes
-the attempt and disables both controls. It then:
+Only tapping Scan checks or requests Nearby devices permission. The bounded
+15-second scan retains at most 24 E87 advertisements, deduplicated by exact MAC,
+and displays each exact MAC, advertised name, RSSI, and whether the stock FD00
+receiving/update service was advertised (`ADVERTISED`, `NOT_ADVERTISED`, or
+`UNKNOWN` when the advertisement did not provide a service list). Selecting a
+listed candidate freezes the selection shown to the operator; changing the
+selection or starting a new scan clears receive-mode confirmation.
+
+Start is enabled only with one exact scanned candidate selected and the receive-
+mode checkbox checked. The first Start click consumes the attempt, freezes that
+exact address, and disables the controls. It then:
 
 1. loads only the exact app-specific `update.bin`;
 2. rejects missing, directory, or symlink inputs;
@@ -28,8 +37,8 @@ the attempt and disables both controls. It then:
 4. enforces the build-generated exact size, uppercase SHA-256, exact 27-byte
    header, and little-endian declared payload length;
 5. creates the evidence directory;
-6. checks or requests Bluetooth permissions;
-7. scans only the displayed address and rejects every name-only match;
+6. verifies the picker-granted Bluetooth permission is still present;
+7. scans only the frozen address and rejects every name-only match;
 8. runs the proven bind and C0/C1/C2/C3/C5 transfer.
 
 There is no asset, embedded package, fallback package, automatic start,
@@ -77,10 +86,12 @@ cd /home/jethac/.local/share/e87-dev/lab/e87-one-shot-uploader
 scripts/run-host-tests.sh
 ```
 
-The suite covers the one-shot state gate, permission ordering, exact-address
+The suite covers inert picker construction, exact-MAC deduplication, stale scan
+results and selections, candidate overflow, invalid addresses, confirmation reset,
+one-shot exact-address freezing with no fallback, permission ordering, exact-address
 source wiring, pin generation, pre-allocation bounds, size/hash/header/declared
-length checks, path policy, defensive copies, binary hashes, and build
-fail-closed behavior.
+length checks, path policy, defensive copies, binary hashes, and build fail-closed
+behavior.
 
 ## Build after the reviewed Qix is available
 
@@ -116,21 +127,20 @@ adb -s SERIAL push REVIEWED_QIX \
   /sdcard/Android/data/com.openai.e87probe/files/update.bin
 adb -s SERIAL install -r build/e87-one-shot-lab-uploader.apk
 adb -s SERIAL shell am start -n \
-  com.openai.e87probe/com.openai.e87probe.ProbeActivity \
-  --es mac 46:83:00:01:8A:E9
+  com.openai.e87probe/com.openai.e87probe.ProbeActivity
 ```
 
 The launch itself remains inert. On the phone:
 
-1. confirm the large displayed exact MAC;
-2. physically place that badge in hardware receive/update mode;
-3. check the receive-mode box;
-4. tap `START ONE-SHOT UPLOAD`;
-5. when Android/MIUI asks for Nearby devices, choose Allow.
+1. tap `SCAN FOR E87 DEVICES` and, when Android/MIUI asks, choose Allow;
+2. compare the displayed advertisements and select the intended exact MAC;
+3. physically place that exact badge in hardware receive/update mode;
+4. check the receive-mode box;
+5. tap `START ONE-SHOT UPLOAD`.
 
 If MIUI denies or suppresses the prompt, use **Settings > Apps > Manage apps >
 E87 One-Shot Lab Uploader > App permissions > Nearby devices > Allow**, then
-relaunch and reconfirm because the denied attempt is consumed. Bluetooth must
+return and tap Scan again. Bluetooth must
 already be enabled. No background/autostart permission is required for this
 foreground one-shot operation.
 

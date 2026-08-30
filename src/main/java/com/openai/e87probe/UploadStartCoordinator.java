@@ -7,16 +7,16 @@ import java.util.Objects;
  */
 public final class UploadStartCoordinator {
     public interface Host {
+        String freezeSelectedAddress();
         boolean validatePinnedPackage();
         boolean bluetoothPermissionsGranted();
-        void requestBluetoothPermissions();
         void startExactAddressScan();
     }
 
     public enum Result {
         NOT_CONFIRMED,
+        NO_EXACT_SELECTION,
         VALIDATION_FAILED,
-        PERMISSION_REQUESTED,
         SCAN_STARTED,
         PERMISSION_DENIED,
         ALREADY_CONSUMED
@@ -24,7 +24,6 @@ public final class UploadStartCoordinator {
 
     private enum State {
         READY,
-        AWAITING_PERMISSION,
         FINISHED
     }
 
@@ -56,25 +55,13 @@ public final class UploadStartCoordinator {
 
         // Consume before the first host call so re-entrancy and exceptions fail closed.
         state = State.FINISHED;
+        if (host.freezeSelectedAddress() == null) {
+            return Result.NO_EXACT_SELECTION;
+        }
         if (!host.validatePinnedPackage()) {
             return Result.VALIDATION_FAILED;
         }
-        if (host.bluetoothPermissionsGranted()) {
-            host.startExactAddressScan();
-            return Result.SCAN_STARTED;
-        }
-
-        state = State.AWAITING_PERMISSION;
-        host.requestBluetoothPermissions();
-        return Result.PERMISSION_REQUESTED;
-    }
-
-    public Result onPermissionResult(boolean granted) {
-        if (state != State.AWAITING_PERMISSION) {
-            return Result.ALREADY_CONSUMED;
-        }
-        state = State.FINISHED;
-        if (!granted) {
+        if (!host.bluetoothPermissionsGranted()) {
             return Result.PERMISSION_DENIED;
         }
         host.startExactAddressScan();

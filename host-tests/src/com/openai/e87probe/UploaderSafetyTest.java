@@ -15,9 +15,9 @@ public final class UploaderSafetyTest {
     public static void main(String[] args) throws Exception {
         testConstructionAndUncheckedStartHaveNoSideEffects();
         testValidationFailureConsumesTheSingleStart();
-        testPermissionRequestFollowsValidationAndGrantStartsExactScan();
+        testPermissionCannotBeRequestedByStart();
         testExistingPermissionStartsScanImmediatelyAfterValidation();
-        testPermissionDenialAndDuplicateCallbacksStayClosed();
+        testPickerStateSafety();
         testFreshTransferRejectsEveryNonzeroC1Offset();
         testC5DispositionRequiresCompletedFinalWriteOrFullC3();
         testValidPinnedPackageReturnsDefensiveHeaderAndPayload();
@@ -46,32 +46,26 @@ public final class UploaderSafetyTest {
         equal(UploadStartCoordinator.Result.VALIDATION_FAILED, coordinator.start(),
                 "invalid package fails before Android permissions");
         equal(1, host.validationCalls, "package is validated exactly once");
-        equal(0, host.permissionCalls, "invalid package cannot request permissions");
         equal(0, host.scanCalls, "invalid package cannot scan");
         equal(UploadStartCoordinator.Result.ALREADY_CONSUMED, coordinator.start(),
                 "failed destructive attempt is still one-shot");
         equal(1, host.validationCalls, "consumed Start cannot validate again");
     }
 
-    private static void testPermissionRequestFollowsValidationAndGrantStartsExactScan() {
+    private static void testPermissionCannotBeRequestedByStart() {
         FakeHost host = new FakeHost();
         host.packageValid = true;
         host.permissionsGranted = false;
         UploadStartCoordinator coordinator = new UploadStartCoordinator(host);
         coordinator.setReceiveModeConfirmed(true);
 
-        equal(UploadStartCoordinator.Result.PERMISSION_REQUESTED, coordinator.start(),
-                "permission request follows successful validation");
-        equal(1, host.validationCalls, "package validation ran first");
-        equal(1, host.permissionCalls, "permissions requested once");
-        equal(0, host.scanCalls, "scan waits for permission result");
-        equal(UploadStartCoordinator.Result.SCAN_STARTED, coordinator.onPermissionResult(true),
-                "granted callback starts exact-address scan");
-        equal(1, host.scanCalls, "scan starts once");
-        equal(UploadStartCoordinator.Result.ALREADY_CONSUMED,
-                coordinator.onPermissionResult(true),
-                "duplicate permission callback cannot scan again");
-        equal(1, host.scanCalls, "duplicate callback remains inert");
+        equal(UploadStartCoordinator.Result.PERMISSION_DENIED, coordinator.start(),
+                "Start cannot request picker permission");
+        equal(1, host.freezeCalls, "exact address freezes before package access");
+        equal(1, host.validationCalls, "package validation ran once");
+        equal(0, host.scanCalls, "upload scan cannot start without picker permission");
+        equal(UploadStartCoordinator.Result.ALREADY_CONSUMED, coordinator.start(),
+                "permission loss still consumes the attempt");
     }
 
     private static void testExistingPermissionStartsScanImmediatelyAfterValidation() {
@@ -82,31 +76,47 @@ public final class UploaderSafetyTest {
         coordinator.setReceiveModeConfirmed(true);
 
         equal(UploadStartCoordinator.Result.SCAN_STARTED, coordinator.start(),
-                "pre-granted permission starts scan after validation");
+                "pre-granted permission starts exact scan after validation");
+        equal("AA:BB:CC:DD:EE:FF", host.frozenAddress, "exact selected address was frozen");
         equal(1, host.validationCalls, "package validated before scan");
-        equal(0, host.permissionCalls, "pre-granted permission is not requested again");
         equal(1, host.scanCalls, "scan starts once");
         equal(UploadStartCoordinator.Result.ALREADY_CONSUMED, coordinator.start(),
                 "successful Start is one-shot");
         equal(1, host.scanCalls, "second click cannot rescan");
     }
 
-    private static void testPermissionDenialAndDuplicateCallbacksStayClosed() {
-        FakeHost host = new FakeHost();
-        host.packageValid = true;
-        UploadStartCoordinator coordinator = new UploadStartCoordinator(host);
-        coordinator.setReceiveModeConfirmed(true);
-
-        equal(UploadStartCoordinator.Result.PERMISSION_REQUESTED, coordinator.start(),
-                "permission request is armed");
-        equal(UploadStartCoordinator.Result.PERMISSION_DENIED,
-                coordinator.onPermissionResult(false),
-                "denial ends the one-shot attempt");
-        equal(0, host.scanCalls, "denial cannot start scanning");
-        equal(UploadStartCoordinator.Result.ALREADY_CONSUMED,
-                coordinator.onPermissionResult(true),
-                "late grant after denial remains inert");
-        equal(0, host.scanCalls, "late callback cannot bypass denial");
+    private static void testPickerStateSafety() {
+        BlePickerState picker = new BlePickerState(2);
+        equal(false, picker.isStartEnabled(), "inert launch has no selection");
+        long first = picker.beginScan();
+        equal(false, picker.addCandidate(first, "bad", "E87", -50,
+                BlePickerState.ServiceStatus.UNKNOWN), "invalid address rejected");
+        equal(true, picker.addCandidate(first, "aa:bb:cc:dd:ee:01", "E87 A", -60,
+                BlePickerState.ServiceStatus.ADVERTISED), "first candidate accepted");
+        equal(true, picker.addCandidate(first, "AA:BB:CC:DD:EE:01", "E87 A", -40,
+                BlePickerState.ServiceStatus.NOT_ADVERTISED), "duplicate updates exact MAC");
+        equal(1, picker.candidates().size(), "duplicates do not consume capacity");
+        picker.addCandidate(first, "AA:BB:CC:DD:EE:02", "E87 B", -55,
+                BlePickerState.ServiceStatus.UNKNOWN);
+        equal(false, picker.addCandidate(first, "AA:BB:CC:DD:EE:03", "E87 C", -45,
+                BlePickerState.ServiceStatus.UNKNOWN), "overflow rejected");
+        equal(true, picker.select(first, "AA:BB:CC:DD:EE:01"), "listed address selected");
+        picker.setConfirmed(true);
+        equal(true, picker.isStartEnabled(), "selection and confirmation enable Start");
+        equal(true, picker.select(first, "AA:BB:CC:DD:EE:02"), "selection can change");
+        equal(false, picker.isStartEnabled(), "selection change clears confirmation");
+        long second = picker.beginScan();
+        equal(false, picker.select(first, "AA:BB:CC:DD:EE:02"), "stale selection rejected");
+        equal(false, picker.addCandidate(first, "AA:BB:CC:DD:EE:04", "E87", -30,
+                BlePickerState.ServiceStatus.UNKNOWN), "stale result rejected");
+        picker.addCandidate(second, "AA:BB:CC:DD:EE:05", "E87", -30,
+                BlePickerState.ServiceStatus.ADVERTISED);
+        picker.select(second, "AA:BB:CC:DD:EE:05");
+        picker.setConfirmed(true);
+        equal("AA:BB:CC:DD:EE:05", picker.consumeAndFreeze(), "exact address freezes");
+        equal("AA:BB:CC:DD:EE:05", picker.frozenAddress(), "frozen address is retained");
+        equal(false, picker.select(second, "AA:BB:CC:DD:EE:01"), "consumed picker has no fallback");
+        equal(null, picker.consumeAndFreeze(), "consumed picker cannot return another target");
     }
 
     private static void testFreshTransferRejectsEveryNonzeroC1Offset() {
@@ -253,7 +263,7 @@ public final class UploaderSafetyTest {
     }
 
     private static void equal(Object expected, Object actual, String message) {
-        if (!expected.equals(actual)) {
+        if (expected == null ? actual != null : !expected.equals(actual)) {
             throw new AssertionError(message + ": expected=" + expected + " actual=" + actual);
         }
     }
@@ -283,9 +293,17 @@ public final class UploaderSafetyTest {
     private static final class FakeHost implements UploadStartCoordinator.Host {
         boolean packageValid;
         boolean permissionsGranted;
+        int freezeCalls;
         int validationCalls;
-        int permissionCalls;
         int scanCalls;
+        String frozenAddress;
+
+        @Override
+        public String freezeSelectedAddress() {
+            freezeCalls++;
+            frozenAddress = "AA:BB:CC:DD:EE:FF";
+            return frozenAddress;
+        }
 
         @Override
         public boolean validatePinnedPackage() {
@@ -299,17 +317,12 @@ public final class UploaderSafetyTest {
         }
 
         @Override
-        public void requestBluetoothPermissions() {
-            permissionCalls++;
-        }
-
-        @Override
         public void startExactAddressScan() {
             scanCalls++;
         }
 
         int totalCalls() {
-            return validationCalls + permissionCalls + scanCalls;
+            return freezeCalls + validationCalls + scanCalls;
         }
     }
 }
